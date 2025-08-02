@@ -1,65 +1,49 @@
-import { useEffect, useState } from 'react';
-import { getProducts } from '../lib/shopify';
+
+import React from 'react';
+import '../styles/customizer.css';
 
 export default function Home() {
-  const [products, setProducts] = useState([]);
+  const [selectedPot, setSelectedPot] = React.useState(null);
+  const [selectedPlant, setSelectedPlant] = React.useState(null);
+  const [customText, setCustomText] = React.useState("DOBO");
 
-  useEffect(() => {
-    getProducts().then(setProducts);
-  }, []);
+  const pots = [
+    "/pot1.png", "/pot2.png", "/pot3.png"
+  ];
+  const plants = [
+    "/plant1.png", "/plant2.png", "/plant3.png"
+  ];
 
   return (
-    <div>
+    <div className="customizer-container">
       <h1>DOBO Shop</h1>
       <p>Planta una idea</p>
 
-      <div className="scroll-container">
-        {products.map((product) => (
-          <div key={product.id}>
-            {product.images?.edges[0]?.node?.src && (
-              <img src={product.images.edges[0].node.src} alt={product.title} width="100" />
-            )}
-            <p>{product.title}</p>
-          </div>
+      <div className="product-preview">
+        {selectedPot && <img src={selectedPot} alt="Maceta" />}
+        {selectedPlant && <img src={selectedPlant} alt="Planta" style={{ position: 'absolute', top: 0 }} />}
+        <div className="text-overlay">{customText}</div>
+      </div>
+
+      <div className="scroll-selector">
+        {pots.map((pot, idx) => (
+          <img key={idx} src={pot} onClick={() => setSelectedPot(pot)} className={pot === selectedPot ? "selected" : ""} />
         ))}
       </div>
 
-      <div className="product-preview">
-        {products[0]?.images?.edges[0]?.node?.src && (
-          <img src={products[0].images.edges[0].node.src} alt="Preview" />
-        )}
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          fontSize: '24px',
-          color: '#000'
-        }}>DOBO</div>
+      <div className="scroll-selector">
+        {plants.map((plant, idx) => (
+          <img key={idx} src={plant} onClick={() => setSelectedPlant(plant)} className={plant === selectedPlant ? "selected" : ""} />
+        ))}
       </div>
 
-      <div>
-        <label>Texto personalizado</label>
-        <input type="text" defaultValue="DOBO" />
+      <input type="text" value={customText} onChange={(e) => setCustomText(e.target.value)} />
+
+      <div className="info-section">
+        <p>Descripción de planta y maceta seleccionadas...</p>
       </div>
 
-      <div>
-        <label>Cantidad</label>
-        <select>
-          <option>1</option>
-          <option>2</option>
-          <option>3</option>
-        </select>
-      </div>
-
-      <button>Comprar</button>
-
-      <h2>Reference image</h2>
-      <div className="scroll-container">
-        <div className="placeholder" />
-        <div className="placeholder" />
-        <div className="placeholder" />
-      </div>
+      <button className="buy-button">Comprar</button>
     </div>
   );
 }
