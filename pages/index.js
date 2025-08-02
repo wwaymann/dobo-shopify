@@ -1,63 +1,65 @@
-
 import Head from 'next/head'
-import Image from 'next/image'
 import { useState } from 'react'
+import styles from '../styles/Home.module.css'
 
 export default function Home() {
-  const [selectedPot, setSelectedPot] = useState('/pot1.png');
-  const [selectedPlant, setSelectedPlant] = useState('/plant1.png');
-  const [customText, setCustomText] = useState('Texto');
-
-  const pots = ['/pot1.png', '/pot2.png', '/pot3.png'];
-  const plants = ['/plant1.png', '/plant2.png', '/plant3.png'];
+  const [selectedPot, setSelectedPot] = useState('/pot1.jpg')
+  const [selectedPlant, setSelectedPlant] = useState('/plant1.png')
+  const [customText, setCustomText] = useState('DOBO')
+  const [quantity, setQuantity] = useState(1)
 
   return (
-    <div className="min-h-screen bg-white text-gray-800 flex flex-col items-center p-4">
+    <div className={styles.container}>
       <Head>
-        <title>DOBO Custom</title>
+        <title>DOBO Shop</title>
       </Head>
 
-      <h1 className="text-3xl font-bold mb-4">Personaliza tu DOBO</h1>
+      <header className={styles.header}>
+        <h1>DOBO Shop</h1>
+        <p>Planta una idea</p>
+      </header>
 
-      <div className="relative w-full max-w-md aspect-square mb-4">
-        <Image src={selectedPot} alt="Maceta" layout="fill" objectFit="contain" />
-        <Image src={selectedPlant} alt="Planta" layout="fill" objectFit="contain" />
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 text-xl font-bold text-black opacity-60">
-          {customText}
+      <main className={styles.main}>
+        <div className={styles.preview}>
+          <img src={selectedPot} alt="Maceta" className={styles.pot} />
+          <img src={selectedPlant} alt="Planta" className={styles.plant} />
+          <div className={styles.overlayText}>{customText}</div>
         </div>
-      </div>
 
-      <input
-        type="text"
-        value={customText}
-        onChange={(e) => setCustomText(e.target.value)}
-        className="border p-2 rounded w-full max-w-md mb-4"
-        placeholder="Texto sobre la maceta"
-      />
-
-      <div className="w-full max-w-md overflow-x-auto mb-4">
-        <h2 className="text-lg mb-2">Elige una maceta</h2>
-        <div className="flex space-x-2">
-          {pots.map((pot, index) => (
-            <button key={index} onClick={() => setSelectedPot(pot)} className="w-24 h-24 relative border rounded overflow-hidden">
-              <Image src={pot} alt={`Pot ${index}`} layout="fill" objectFit="contain" />
-            </button>
-          ))}
+        <div className={styles.selectors}>
+          <div>
+            <h3>Macetas</h3>
+            <div className={styles.scrollRow}>
+              {["/pot1.jpg","/pot2.jpg","/pot3.jpg"].map((src, i) => (
+                <img key={i} src={src} alt={`Maceta ${i}`} onClick={() => setSelectedPot(src)} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <h3>Plantas</h3>
+            <div className={styles.scrollRow}>
+              {["/plant1.png","/plant2.png","/plant3.png"].map((src, i) => (
+                <img key={i} src={src} alt={`Planta ${i}`} onClick={() => setSelectedPlant(src)} />
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="w-full max-w-md overflow-x-auto mb-4">
-        <h2 className="text-lg mb-2">Elige una planta</h2>
-        <div className="flex space-x-2">
-          {plants.map((plant, index) => (
-            <button key={index} onClick={() => setSelectedPlant(plant)} className="w-24 h-24 relative border rounded overflow-hidden">
-              <Image src={plant} alt={`Plant ${index}`} layout="fill" objectFit="contain" />
-            </button>
-          ))}
+        <div className={styles.controls}>
+          <input type="text" value={customText} onChange={e => setCustomText(e.target.value)} />
+          <select value={quantity} onChange={e => setQuantity(e.target.value)}>
+            {[1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <button>Comprar</button>
         </div>
-      </div>
 
-      <button className="bg-black text-white py-2 px-6 rounded mt-4">Comprar</button>
+        <section>
+          <h3>Reference image</h3>
+          <div className={styles.reference}>
+            {[1,2,3].map(i => <div key={i} className={styles.refBox}></div>)}
+          </div>
+        </section>
+      </main>
     </div>
   )
 }

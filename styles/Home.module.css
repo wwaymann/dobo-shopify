@@ -1,0 +1,58 @@
+.container {
+  font-family: sans-serif;
+  background: #f9f9f9;
+  padding: 20px;
+}
+.header {
+  text-align: center;
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.preview {
+  position: relative;
+  width: 250px;
+  height: 250px;
+}
+.pot, .plant {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+.overlayText {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  font-weight: bold;
+  font-size: 18px;
+  color: black;
+}
+.selectors {
+  margin: 20px 0;
+}
+.scrollRow {
+  display: flex;
+  overflow-x: auto;
+  gap: 10px;
+}
+.scrollRow img {
+  height: 60px;
+  cursor: pointer;
+}
+.controls {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+}
+.reference {
+  display: flex;
+  gap: 10px;
+}
+.refBox {
+  width: 60px;
+  height: 60px;
+  background: #ccc;
+}
