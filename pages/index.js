@@ -1,49 +1,63 @@
 
-import React from 'react';
-import '../styles/customizer.css';
+import Head from 'next/head'
+import Image from 'next/image'
+import { useState } from 'react'
 
 export default function Home() {
-  const [selectedPot, setSelectedPot] = React.useState(null);
-  const [selectedPlant, setSelectedPlant] = React.useState(null);
-  const [customText, setCustomText] = React.useState("DOBO");
+  const [selectedPot, setSelectedPot] = useState('/pot1.png');
+  const [selectedPlant, setSelectedPlant] = useState('/plant1.png');
+  const [customText, setCustomText] = useState('Texto');
 
-  const pots = [
-    "/pot1.png", "/pot2.png", "/pot3.png"
-  ];
-  const plants = [
-    "/plant1.png", "/plant2.png", "/plant3.png"
-  ];
+  const pots = ['/pot1.png', '/pot2.png', '/pot3.png'];
+  const plants = ['/plant1.png', '/plant2.png', '/plant3.png'];
 
   return (
-    <div className="customizer-container">
-      <h1>DOBO Shop</h1>
-      <p>Planta una idea</p>
+    <div className="min-h-screen bg-white text-gray-800 flex flex-col items-center p-4">
+      <Head>
+        <title>DOBO Custom</title>
+      </Head>
 
-      <div className="product-preview">
-        {selectedPot && <img src={selectedPot} alt="Maceta" />}
-        {selectedPlant && <img src={selectedPlant} alt="Planta" style={{ position: 'absolute', top: 0 }} />}
-        <div className="text-overlay">{customText}</div>
+      <h1 className="text-3xl font-bold mb-4">Personaliza tu DOBO</h1>
+
+      <div className="relative w-full max-w-md aspect-square mb-4">
+        <Image src={selectedPot} alt="Maceta" layout="fill" objectFit="contain" />
+        <Image src={selectedPlant} alt="Planta" layout="fill" objectFit="contain" />
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 text-xl font-bold text-black opacity-60">
+          {customText}
+        </div>
       </div>
 
-      <div className="scroll-selector">
-        {pots.map((pot, idx) => (
-          <img key={idx} src={pot} onClick={() => setSelectedPot(pot)} className={pot === selectedPot ? "selected" : ""} />
-        ))}
+      <input
+        type="text"
+        value={customText}
+        onChange={(e) => setCustomText(e.target.value)}
+        className="border p-2 rounded w-full max-w-md mb-4"
+        placeholder="Texto sobre la maceta"
+      />
+
+      <div className="w-full max-w-md overflow-x-auto mb-4">
+        <h2 className="text-lg mb-2">Elige una maceta</h2>
+        <div className="flex space-x-2">
+          {pots.map((pot, index) => (
+            <button key={index} onClick={() => setSelectedPot(pot)} className="w-24 h-24 relative border rounded overflow-hidden">
+              <Image src={pot} alt={`Pot ${index}`} layout="fill" objectFit="contain" />
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="scroll-selector">
-        {plants.map((plant, idx) => (
-          <img key={idx} src={plant} onClick={() => setSelectedPlant(plant)} className={plant === selectedPlant ? "selected" : ""} />
-        ))}
+      <div className="w-full max-w-md overflow-x-auto mb-4">
+        <h2 className="text-lg mb-2">Elige una planta</h2>
+        <div className="flex space-x-2">
+          {plants.map((plant, index) => (
+            <button key={index} onClick={() => setSelectedPlant(plant)} className="w-24 h-24 relative border rounded overflow-hidden">
+              <Image src={plant} alt={`Plant ${index}`} layout="fill" objectFit="contain" />
+            </button>
+          ))}
+        </div>
       </div>
 
-      <input type="text" value={customText} onChange={(e) => setCustomText(e.target.value)} />
-
-      <div className="info-section">
-        <p>Descripción de planta y maceta seleccionadas...</p>
-      </div>
-
-      <button className="buy-button">Comprar</button>
+      <button className="bg-black text-white py-2 px-6 rounded mt-4">Comprar</button>
     </div>
-  );
+  )
 }
