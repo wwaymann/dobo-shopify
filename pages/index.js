@@ -1,65 +1,51 @@
-import Head from 'next/head'
-import { useState } from 'react'
-import styles from '../styles/Home.module.css'
+import Head from 'next/head';
+import { useState } from 'react';
+import styles from '../styles/Home.module.css';
 
 export default function Home() {
-  const [selectedPot, setSelectedPot] = useState('/pot1.jpg')
-  const [selectedPlant, setSelectedPlant] = useState('/plant1.png')
-  const [customText, setCustomText] = useState('DOBO')
-  const [quantity, setQuantity] = useState(1)
+  const [pot, setPot] = useState('/images/pot1.png');
+  const [plant, setPlant] = useState('/images/plant1.png');
+  const [text, setText] = useState('DOBO');
 
   return (
     <div className={styles.container}>
       <Head>
         <title>DOBO Shop</title>
       </Head>
-
-      <header className={styles.header}>
-        <h1>DOBO Shop</h1>
-        <p>Planta una idea</p>
-      </header>
-
       <main className={styles.main}>
-        <div className={styles.preview}>
-          <img src={selectedPot} alt="Maceta" className={styles.pot} />
-          <img src={selectedPlant} alt="Planta" className={styles.plant} />
-          <div className={styles.overlayText}>{customText}</div>
-        </div>
-
-        <div className={styles.selectors}>
-          <div>
-            <h3>Macetas</h3>
-            <div className={styles.scrollRow}>
-              {["/pot1.jpg","/pot2.jpg","/pot3.jpg"].map((src, i) => (
-                <img key={i} src={src} alt={`Maceta ${i}`} onClick={() => setSelectedPot(src)} />
-              ))}
-            </div>
+        <h1 className={styles.title}>DOBO Shop</h1>
+        <p className={styles.subtitle}>Planta una idea</p>
+        <div className={styles.customizer}>
+          <div className={styles.scrollRow}>
+            {[1,2,3,4].map(i => (
+              <img key={i} src={`/images/pot${i}.png`} onClick={() => setPot(`/images/pot${i}.png`)} className={styles.thumb}/>
+            ))}
           </div>
-          <div>
-            <h3>Plantas</h3>
-            <div className={styles.scrollRow}>
-              {["/plant1.png","/plant2.png","/plant3.png"].map((src, i) => (
-                <img key={i} src={src} alt={`Planta ${i}`} onClick={() => setSelectedPlant(src)} />
-              ))}
-            </div>
+          <div className={styles.scrollRow}>
+            {[1,2,3,4].map(i => (
+              <img key={i} src={`/images/plant${i}.png`} onClick={() => setPlant(`/images/plant${i}.png`)} className={styles.thumb}/>
+            ))}
           </div>
-        </div>
-
-        <div className={styles.controls}>
-          <input type="text" value={customText} onChange={e => setCustomText(e.target.value)} />
-          <select value={quantity} onChange={e => setQuantity(e.target.value)}>
-            {[1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <button>Comprar</button>
-        </div>
-
-        <section>
-          <h3>Reference image</h3>
-          <div className={styles.reference}>
-            {[1,2,3].map(i => <div key={i} className={styles.refBox}></div>)}
+          <div className={styles.preview}>
+            <img src={pot} className={styles.previewImg} />
+            <img src={plant} className={styles.previewImgOverlay} />
+            <div className={styles.overlayText}>{text}</div>
           </div>
-        </section>
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            className={styles.textInput}
+          />
+          <button className={styles.buyButton}>Comprar</button>
+        </div>
+        <h2>Reference image</h2>
+        <div className={styles.referenceRow}>
+          {[1,2,3].map(i => (
+            <div key={i} className={styles.referenceBox}></div>
+          ))}
+        </div>
       </main>
     </div>
-  )
+  );
 }

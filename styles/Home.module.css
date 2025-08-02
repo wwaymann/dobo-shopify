@@ -1,58 +1,87 @@
 .container {
-  font-family: sans-serif;
-  background: #f9f9f9;
-  padding: 20px;
+  padding: 1rem;
+  font-family: Arial, sans-serif;
+  background-color: #f9f9f9;
 }
-.header {
+
+.main {
   text-align: center;
 }
-.main {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.preview {
-  position: relative;
-  width: 250px;
-  height: 250px;
-}
-.pot, .plant {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-}
-.overlayText {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
+
+.title {
+  font-size: 2rem;
   font-weight: bold;
-  font-size: 18px;
-  color: black;
 }
-.selectors {
-  margin: 20px 0;
+
+.subtitle {
+  color: #777;
 }
+
 .scrollRow {
   display: flex;
   overflow-x: auto;
-  gap: 10px;
+  margin: 1rem 0;
 }
-.scrollRow img {
-  height: 60px;
+
+.thumb {
+  height: 80px;
+  margin-right: 8px;
   cursor: pointer;
 }
-.controls {
-  display: flex;
-  gap: 10px;
-  margin: 20px 0;
+
+.preview {
+  position: relative;
+  display: inline-block;
+  margin: 1rem 0;
 }
-.reference {
-  display: flex;
-  gap: 10px;
+
+.previewImg {
+  width: 200px;
 }
-.refBox {
-  width: 60px;
-  height: 60px;
-  background: #ccc;
+
+.previewImgOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200px;
+  opacity: 0.95;
+}
+
+.overlayText {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  font-size: 20px;
+  font-weight: bold;
+  color: black;
+}
+
+.textInput {
+  padding: 0.5rem;
+  font-size: 1rem;
+  margin-top: 1rem;
+}
+
+.buyButton {
+  background-color: #eee0c8;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  margin-top: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.referenceRow {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.referenceBox {
+  width: 80px;
+  height: 80px;
+  background-color: #ccc;
+  margin: 0 4px;
 }

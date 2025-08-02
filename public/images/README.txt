@@ -1,0 +1,1 @@
+Put your plant and pot images here (pot1.png, plant1.png, etc.)
