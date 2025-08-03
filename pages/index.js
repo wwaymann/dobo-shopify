@@ -1,22 +1,18 @@
 // pages/index.js
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
 
-export default function HomePage() {
+export default function Home() {
   const [products, setProducts] = useState([]);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await fetch("/api/products");
-        if (!res.ok) {
-          throw new Error("Error fetching products");
-        }
+        const res = await fetch('/api/products');
         const data = await res.json();
         setProducts(data);
-      } catch (err) {
-        setError(err.message);
+      } catch (error) {
+        console.error('Error fetching products:', error);
       }
     }
 
@@ -24,26 +20,33 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div style={{ padding: "2rem" }}>
+    <div>
       <h1>DOBO Shop</h1>
       <p>Planta una idea</p>
-      {error && <p>Error: {error}</p>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
         {products.map((product) => (
-          <div key={product.id} style={{ border: "1px solid #ccc", padding: "1rem", width: "200px" }}>
-            {product.images?.edges[0]?.node?.url && (
+          <div
+            key={product.id}
+            style={{ border: '1px solid #ccc', padding: '1rem', width: '200px' }}
+          >
+            {product.images?.edges?.[0]?.node?.url ? (
               <img
                 src={product.images.edges[0].node.url}
                 alt={product.images.edges[0].node.altText || product.title}
-                style={{ width: "100%", height: "auto" }}
+                style={{ width: '100%', height: 'auto' }}
               />
+            ) : (
+              <div style={{ height: '150px', backgroundColor: '#f0f0f0' }}>
+                <p>Sin imagen</p>
+              </div>
             )}
             <h3>{product.title}</h3>
             <p>{product.description}</p>
             <p>
-              {product.variants?.edges[0]?.node?.price?.amount}
-              {" "}
-              {product.variants?.edges[0]?.node?.price?.currencyCode}
+              <strong>
+                {product.variants?.edges?.[0]?.node?.price?.amount || 'N/A'}{' '}
+                {product.variants?.edges?.[0]?.node?.price?.currencyCode || ''}
+              </strong>
             </p>
           </div>
         ))}
