@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
   const query = `
     {
-      products(first: 10) {
+      products(first: 20) {
         edges {
           node {
             id
@@ -59,8 +59,11 @@ export default async function handler(req, res) {
     }
 
     const json = await response.json();
-    return res.status(200).json(json.data.products.edges.map(edge => edge.node));
+
+    const products = json?.data?.products?.edges?.map(edge => edge.node) || [];
+    return res.status(200).json(products);
   } catch (error) {
     return res.status(500).json({ error: "Server error", details: error.message });
   }
 }
+
