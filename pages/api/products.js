@@ -1,69 +1,27 @@
-// pages/api/products.js
+// components/ProductCard.js
+export default function ProductCard({ product }) {
+  const imageUrl = product.images?.edges[0]?.node?.url;
+  const altText = product.images?.edges[0]?.node?.altText || product.title;
+  const price = product.variants?.edges[0]?.node?.price?.amount;
+  const currency = product.variants?.edges[0]?.node?.price?.currencyCode;
 
-export default async function handler(req, res) {
-  const domain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const storefrontAccessToken = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN;
-
-  if (!domain || !storefrontAccessToken) {
-    return res.status(500).json({ error: "Faltan variables de entorno" });
-  }
-
-  const endpoint = `https://${domain}/api/2023-04/graphql.json`;
-
-  const query = `
-    {
-      products(first: 20) {
-        edges {
-          node {
-            id
-            title
-            handle
-            description
-            images(first: 1) {
-              edges {
-                node {
-                  url
-                  altText
-                }
-              }
-            }
-            variants(first: 1) {
-              edges {
-                node {
-                  price {
-                    amount
-                    currencyCode
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token": storefrontAccessToken,
-      },
-      body: JSON.stringify({ query }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      return res.status(500).json({ error: "Shopify API error", details: errorData });
-    }
-
-    const json = await response.json();
-
-    const products = json?.data?.products?.edges?.map(edge => edge.node) || [];
-    return res.status(200).json(products);
-  } catch (error) {
-    return res.status(500).json({ error: "Server error", details: error.message });
-  }
+  return (
+    <div style={{ border: '1px solid #ccc', padding: 10, margin: 10, width: 200 }}>
+      {imageUrl ? (
+        <img src={imageUrl} alt={altText} style={{ width: '100%' }} />
+      ) : (
+        <div style={{ width: '100%', height: 150, backgroundColor: '#eee' }}>
+          <p style={{ textAlign: 'center', paddingTop: 60 }}>Sin imagen</p>
+        </div>
+      )}
+      <h3>{product.title}</h3>
+      <p>{product.description}</p>
+      <p>
+        <strong>
+          {currency} {price}
+        </strong>
+      </p>
+    </div>
+  );
 }
 
