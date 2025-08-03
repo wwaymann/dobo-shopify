@@ -1,70 +1,52 @@
-// pages/api/products.js
+// components/ProductList.js
 
-export default async function handler(req, res) {
-  const domain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const storefrontAccessToken = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+import React, { useEffect, useState } from 'react';
 
-  if (!domain || !storefrontAccessToken) {
-    return res.status(500).json({ error: "Faltan variables de entorno" });
-  }
+const ProductList = () => {
+  const [products, setProducts] = useState([]);
 
-  const endpoint = `https://${domain}/api/2023-04/graphql.json`;
-
-  const query = `
-    {
-      products(first: 20) {
-        edges {
-          node {
-            id
-            title
-            handle
-            description
-            images(first: 1) {
-              edges {
-                node {
-                  url
-                  altText
-                }
-              }
-            }
-            variants(first: 1) {
-              edges {
-                node {
-                  price {
-                    amount
-                    currencyCode
-                  }
-                }
-              }
-            }
-          }
-        }
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch('/api/products');
+        const data = await res.json();
+        setProducts(data);
+      } catch (error) {
+        console.error('Error fetching products:', error);
       }
-    }
-  `;
+    };
+    fetchProducts();
+  }, []);
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token": storefrontAccessToken,
-      },
-      body: JSON.stringify({ query }),
-    });
+  return (
+    <div>
+      <h1>DOBO Shop</h1>
+      <p>Planta una idea</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+        {products.map((product) => (
+          <div key={product.id} style={{ border: '1px solid #ccc', padding: '10px', width: '200px' }}>
+            {product.images?.edges?.[0]?.node?.url ? (
+              <img
+                src={product.images.edges[0].node.url}
+                alt={product.images.edges[0].node.altText || product.title}
+                style={{ width: '100%', height: 'auto' }}
+              />
+            ) : (
+              <div style={{ height: '150px', backgroundColor: '#eee' }}>Sin imagen</div>
+            )}
+            <h3>{product.title}</h3>
+            <p>{product.description}</p>
+            <p>
+              $
+              {product.variants.edges[0].node.price.amount}
+              {' '}
+              {product.variants.edges[0].node.price.currencyCode}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
-    const text = await response.text();
-    try {
-      const json = JSON.parse(text);
-      if (!json || !json.data || !json.data.products) {
-        return res.status(500).json({ error: "Respuesta inesperada de Shopify", raw: json });
-      }
-      return res.status(200).json(json.data.products.edges.map(edge => edge.node));
-    } catch (jsonError) {
-      return res.status(500).json({ error: "Error parseando JSON", raw: text });
-    }
-
-  } catch (error) {
-    return res.status(500).json({ error: "Error de servidor", message: error.message });
-  }
-}
+export default ProductList;
