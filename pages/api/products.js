@@ -1,7 +1,7 @@
 // pages/api/products.js
 
 export default async function handler(req, res) {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
+  const domain = process.env.SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const storefrontAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 
   if (!domain || !storefrontAccessToken) {
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
             images(first: 1) {
               edges {
                 node {
-                  src
+                  url
                   altText
                 }
               }
