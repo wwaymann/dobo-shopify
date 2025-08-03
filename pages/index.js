@@ -1,30 +1,36 @@
-import { useEffect, useState } from 'react';
+
+import { useEffect, useState } from "react";
 
 export default function Home() {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
-    fetch('/api/products')
-      .then(res => res.json())
-      .then(data => setProducts(data))
-      .catch(err => console.error('Error al obtener productos:', err));
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch("/api/products");
+        const data = await res.json();
+        setProducts(data);
+      } catch (err) {
+        console.error("Error fetching products:", err);
+      }
+    };
+    fetchProducts();
   }, []);
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Productos DOBO</h1>
-      <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
-        {products.map((product) => (
-          <div key={product.node.id} style={{ width: '200px' }}>
-            <img
-              src={product.node.images.edges[0]?.node.url}
-              alt={product.node.title}
-              style={{ width: '100%', borderRadius: '8px' }}
-            />
-            <h3>{product.node.title}</h3>
-            <p>{product.node.description}</p>
-          </div>
-        ))}
+    <div style={{ padding: 20, fontFamily: "Arial" }}>
+      <h1>DOBO Shop</h1>
+      <p>Planta una idea</p>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        {Array.isArray(products) &&
+          products.map((product, i) => (
+            <div key={i} style={{ border: "1px solid #ccc", padding: 10 }}>
+              <img src={product.image} alt={product.title} width="150" />
+              <h3>{product.title}</h3>
+              <p>{product.description}</p>
+              <strong>${product.price}</strong>
+            </div>
+          ))}
       </div>
     </div>
   );
