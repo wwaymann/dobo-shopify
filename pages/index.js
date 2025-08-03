@@ -21,70 +21,89 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  const pots = products.filter((p) => p.title.toLowerCase().includes("maceta"));
-  const plants = products.filter((p) => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"));
+  const potProducts = products.filter((p) => p.title.toLowerCase().includes("maceta"));
+  const plantProducts = products.filter((p) => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"));
 
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>DOBO Shop</h1>
       <p className={styles.subtitle}>Planta una idea</p>
 
-      {/* Scroll zona para elegir maceta */}
       <section className={styles.scrollZone + " " + styles.potZone}>
         <h2>Elige tu maceta</h2>
         <div className={styles.scrollContainer}>
-          {pots.map((product, i) => (
-            <img
-              key={i}
-              src={product.image}
-              alt={product.title}
-              className={styles.thumbnail + (selectedPot?.id === product.id ? " " + styles.selected : "")}
-              onClick={() => setSelectedPot(product)}
-            />
+          {potProducts.map((pot) => (
+            <div
+              key={pot.id}
+              className={styles.card}
+              onClick={() => setSelectedPot(pot)}
+            >
+              <img
+                src={pot.image}
+                alt={pot.title}
+                className={styles.thumbnail}
+              />
+              <p>{pot.title}</p>
+            </div>
           ))}
         </div>
       </section>
 
-      {/* Scroll zona para elegir planta */}
       <section className={styles.scrollZone + " " + styles.plantZone}>
         <h2>Elige tu planta</h2>
         <div className={styles.scrollContainer}>
-          {plants.map((product, i) => (
-            <img
-              key={i}
-              src={product.image}
-              alt={product.title}
-              className={styles.thumbnail + (selectedPlant?.id === product.id ? " " + styles.selected : "")}
-              onClick={() => setSelectedPlant(product)}
-            />
+          {plantProducts.map((plant) => (
+            <div
+              key={plant.id}
+              className={styles.card}
+              onClick={() => setSelectedPlant(plant)}
+            >
+              <img
+                src={plant.image}
+                alt={plant.title}
+                className={styles.thumbnail}
+              />
+              <p>{plant.title}</p>
+            </div>
           ))}
         </div>
       </section>
 
-      {/* Vista previa combinada */}
-      <section className={styles.previewZone}>
+      <section className={styles.preview}>
+        <h2>Vista previa</h2>
+        <div className={styles.previewBox}>
+          {selectedPot && (
+            <img
+              src={selectedPot.image}
+              alt={selectedPot.title}
+              className={styles.previewPot}
+            />
+          )}
+          {selectedPlant && (
+            <img
+              src={selectedPlant.image}
+              alt={selectedPlant.title}
+              className={styles.previewPlant}
+            />
+          )}
+          <div className={styles.overlayText}>Tu texto aquí</div>
+        </div>
+
         {selectedPot && (
-          <div className={styles.potPreview}>
-            <img src={selectedPot.image} alt={selectedPot.title} className={styles.previewImage} />
-            <div className={styles.overlayText}>Tu texto aquí</div>
-            {selectedPlant && (
-              <img src={selectedPlant.image} alt={selectedPlant.title} className={styles.plantOverlay} />
-            )}
+          <div className={styles.info}>
+            <h3>{selectedPot.title}</h3>
+            <p>{selectedPot.description}</p>
+            <strong>${selectedPot.price}</strong>
+            <br />
+            <button className={styles.buyButton}>Comprar</button>
           </div>
         )}
       </section>
 
-      {/* Info producto y comprar */}
-      {selectedPot && (
-        <div className={styles.productInfo}>
-          <h3>{selectedPot.title}</h3>
-          <p>{selectedPot.description}</p>
-          <strong>${selectedPot.price}</strong>
-          <button className={styles.buyButton}>Comprar</button>
-        </div>
-      )}
-
-      <h4 className={styles.referenceLabel}>Imágenes de referencia</h4>
+      <section>
+        <h3>Imágenes de referencia</h3>
+        {/* Aquí se mostrarían renders preestablecidos */}
+      </section>
     </div>
   );
 }
