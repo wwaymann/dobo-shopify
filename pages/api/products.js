@@ -1,7 +1,7 @@
 // pages/api/products.js
 
 export default async function handler(req, res) {
-  const domain = process.env. NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const domain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const storefrontAccessToken = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 
   if (!domain || !storefrontAccessToken) {
@@ -63,6 +63,4 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ error: "Server error", details: error.message });
   }
-}
-
 }
