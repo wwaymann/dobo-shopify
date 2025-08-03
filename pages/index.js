@@ -14,11 +14,6 @@ export default function Home() {
         const res = await fetch("/api/products");
         const data = await res.json();
         setProducts(data);
-        // Por defecto, asignar primera maceta y planta
-        const pots = data.filter(p => p.title.toLowerCase().includes("maceta"));
-        const plants = data.filter(p => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"));
-        setSelectedPot(pots[0] || null);
-        setSelectedPlant(plants[0] || null);
       } catch (err) {
         console.error("Error fetching products:", err);
       }
@@ -26,72 +21,70 @@ export default function Home() {
     fetchProducts();
   }, []);
 
+  const pots = products.filter((p) => p.title.toLowerCase().includes("maceta"));
+  const plants = products.filter((p) => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"));
+
   return (
     <div className={styles.container}>
-      <h1>DOBO Shop</h1>
-      <p>Planta una idea</p>
+      <h1 className={styles.title}>DOBO Shop</h1>
+      <p className={styles.subtitle}>Planta una idea</p>
 
+      {/* Scroll zona para elegir maceta */}
       <section className={styles.scrollZone + " " + styles.potZone}>
         <h2>Elige tu maceta</h2>
         <div className={styles.scrollContainer}>
-          {products
-            .filter(p => p.title.toLowerCase().includes("maceta"))
-            .map((product, i) => (
-              <img
-                key={i}
-                src={product.image}
-                alt={product.title}
-                onClick={() => setSelectedPot(product)}
-                className={styles.thumb}
-              />
-            ))}
+          {pots.map((product, i) => (
+            <img
+              key={i}
+              src={product.image}
+              alt={product.title}
+              className={styles.thumbnail + (selectedPot?.id === product.id ? " " + styles.selected : "")}
+              onClick={() => setSelectedPot(product)}
+            />
+          ))}
         </div>
       </section>
 
+      {/* Scroll zona para elegir planta */}
+      <section className={styles.scrollZone + " " + styles.plantZone}>
+        <h2>Elige tu planta</h2>
+        <div className={styles.scrollContainer}>
+          {plants.map((product, i) => (
+            <img
+              key={i}
+              src={product.image}
+              alt={product.title}
+              className={styles.thumbnail + (selectedPlant?.id === product.id ? " " + styles.selected : "")}
+              onClick={() => setSelectedPlant(product)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* Vista previa combinada */}
       <section className={styles.previewZone}>
         {selectedPot && (
-          <div>
-            <img
-              src={selectedPot.image}
-              alt={selectedPot.title}
-              className={styles.previewImage}
-            />
+          <div className={styles.potPreview}>
+            <img src={selectedPot.image} alt={selectedPot.title} className={styles.previewImage} />
             <div className={styles.overlayText}>Tu texto aquí</div>
+            {selectedPlant && (
+              <img src={selectedPlant.image} alt={selectedPlant.title} className={styles.plantOverlay} />
+            )}
           </div>
         )}
       </section>
 
-      <section className={styles.scrollZone + " " + styles.plantZone}>
-        <h2>Elige tu planta</h2>
-        <div className={styles.scrollContainer}>
-          {products
-            .filter(p => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"))
-            .map((product, i) => (
-              <img
-                key={i}
-                src={product.image}
-                alt={product.title}
-                onClick={() => setSelectedPlant(product)}
-                className={styles.thumb}
-              />
-            ))}
-        </div>
-      </section>
-
+      {/* Info producto y comprar */}
       {selectedPot && (
-        <section>
+        <div className={styles.productInfo}>
           <h3>{selectedPot.title}</h3>
           <p>{selectedPot.description}</p>
           <strong>${selectedPot.price}</strong>
-          <br />
           <button className={styles.buyButton}>Comprar</button>
-        </section>
+        </div>
       )}
 
-      <section>
-        <h3>Imágenes de referencia</h3>
-        {/* Aquí podrías agregar imágenes inspiradoras */}
-      </section>
+      <h4 className={styles.referenceLabel}>Imágenes de referencia</h4>
     </div>
   );
 }
