@@ -1,3 +1,4 @@
+// pages/index.js
 import { useEffect, useState } from "react";
 import styles from "../styles/Home.module.css";
 
@@ -17,53 +18,71 @@ export default function Home() {
     fetchProducts();
   }, []);
 
+  const macetas = products.filter(p => p.title.toLowerCase().includes("maceta"));
+  const plantas = products.filter(p => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"));
+  const activeMaceta = macetas[0];
+
   return (
     <div className={styles.container}>
-      <header className={styles.header}>
-        <h1>DOBO Shop</h1>
-        <p>Planta una idea</p>
-      </header>
+      <h1>DOBO Shop</h1>
+      <p>Planta una idea</p>
 
-      <main className={styles.mainContent}>
-        <section className={styles.scrollZone + " " + styles.potZone}>
-          <h2>Elige tu maceta</h2>
-          <div className={styles.scrollContainer}>
-            {/* Aquí podrían renderizarse miniaturas de productos tipo maceta */}
-          </div>
-        </section>
+      <section className={styles.scrollZone + " " + styles.potZone}>
+        <h2>Elige tu maceta</h2>
+        <div className={styles.scrollContainer}>
+          {macetas.map((product, i) => (
+            <div key={i} className={styles.thumbnailCard}>
+              <img src={product.images?.edges[0]?.node?.url} alt={product.title} />
+              <p>{product.title}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <section className={styles.previewZone}>
-          {/* Previsualización central con imagen y texto */}
-          <div className={styles.previewImage}>
+      <section className={styles.previewZone}>
+        {activeMaceta && (
+          <>
             <img
-              src={products[0]?.images?.edges[0]?.node?.url}
-              alt={products[0]?.title || "Producto"}
+              src={activeMaceta.images?.edges[0]?.node?.url}
+              alt={activeMaceta.title}
+              className={styles.previewImage}
             />
-            <div className={styles.customText}>Tu texto aquí</div>
-          </div>
-        </section>
+            <p>Tu texto aquí</p>
+          </>
+        )}
+      </section>
 
-        <section className={styles.scrollZone + " " + styles.plantZone}>
-          <h2>Elige tu planta</h2>
-          <div className={styles.scrollContainer}>
-            {/* Aquí podrían renderizarse miniaturas de productos tipo planta */}
-          </div>
-        </section>
+      <section className={styles.scrollZone + " " + styles.plantZone}>
+        <h2>Elige tu planta</h2>
+        <div className={styles.scrollContainer}>
+          {plantas.map((product, i) => (
+            <div key={i} className={styles.thumbnailCard}>
+              <img src={product.images?.edges[0]?.node?.url} alt={product.title} />
+              <p>{product.title}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <section className={styles.detailsZone}>
-          <h2>{products[0]?.title}</h2>
-          <p>{products[0]?.description}</p>
-          <p><strong>${products[0]?.variants?.edges[0]?.node?.price?.amount}</strong></p>
-          <button className={styles.buyButton}>Comprar</button>
-        </section>
+      <section className={styles.detailsZone}>
+        {activeMaceta && (
+          <>
+            <h3>{activeMaceta.title}</h3>
+            <p>{activeMaceta.description}</p>
+            <p>
+              ${
+                activeMaceta.variants?.edges[0]?.node?.price?.amount || "N/A"
+              }
+            </p>
+            <button className={styles.buyButton}>Comprar</button>
+          </>
+        )}
+      </section>
 
-        <section className={styles.referenceGallery}>
-          <h3>Imágenes de referencia</h3>
-          <div className={styles.galleryGrid}>
-            {/* Aquí podrían ir imágenes de ambientación */}
-          </div>
-        </section>
-      </main>
+      <section className={styles.galleryZone}>
+        <h2>Imágenes de referencia</h2>
+        {/* Aquí podrías poner imágenes de productos en uso */}
+      </section>
     </div>
   );
 }
