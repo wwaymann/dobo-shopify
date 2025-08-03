@@ -1,22 +1,28 @@
-¿// pages/index.js
+// pages/index.js
 import { useEffect, useState } from "react";
 import styles from "../styles/home.module.css";
 
 export default function Home() {
   const [products, setProducts] = useState([]);
-  const [selectedMaceta, setSelectedMaceta] = useState(null);
-  const [selectedPlanta, setSelectedPlanta] = useState(null);
+  const [selectedPot, setSelectedPot] = useState(null);
+  const [selectedPlant, setSelectedPlant] = useState(null);
   const [customText, setCustomText] = useState("DOBO");
 
   useEffect(() => {
-    fetch("/api/products")
-      .then((res) => res.json())
-      .then((data) => setProducts(data))
-      .catch((err) => console.error("Error fetching products:", err));
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch("/api/products");
+        const data = await res.json();
+        setProducts(data);
+      } catch (err) {
+        console.error("Error fetching products:", err);
+      }
+    };
+    fetchProducts();
   }, []);
 
-  const macetas = products.filter((p) => p.title.toLowerCase().includes("maceta"));
-  const plantas = products.filter((p) => p.title.toLowerCase().includes("planta") || p.title.toLowerCase().includes("ficus"));
+  const pots = products.filter(p => p.title.toLowerCase().includes("maceta"));
+  const plants = products.filter(p => p.title.toLowerCase().includes("planta"));
 
   return (
     <div className={styles.container}>
@@ -24,73 +30,61 @@ export default function Home() {
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        {/* Zona de selección de macetas */}
         <section className={styles.scrollZone + " " + styles.potZone}>
           <h2>Elige tu maceta</h2>
           <div className={styles.scrollRow}>
-            {macetas.map((maceta, i) => (
+            {pots.map((p, i) => (
               <img
                 key={i}
-                src={maceta.image}
-                alt={maceta.title}
+                src={p.image}
+                alt={p.title}
                 className={styles.thumb}
-                onClick={() => setSelectedMaceta(maceta)}
+                onClick={() => setSelectedPot(p)}
               />
             ))}
           </div>
         </section>
 
-        {/* Zona de selección de plantas */}
         <section className={styles.scrollZone + " " + styles.plantZone}>
           <h2>Elige tu planta</h2>
           <div className={styles.scrollRow}>
-            {plantas.map((planta, i) => (
+            {plants.map((p, i) => (
               <img
                 key={i}
-                src={planta.image}
-                alt={planta.title}
+                src={p.image}
+                alt={p.title}
                 className={styles.thumb}
-                onClick={() => setSelectedPlanta(planta)}
+                onClick={() => setSelectedPlant(p)}
               />
             ))}
           </div>
         </section>
 
-        {/* Vista previa */}
         <div className={styles.preview}>
-          {selectedMaceta && (
-            <img
-              src={selectedMaceta.image}
-              alt="Maceta seleccionada"
-              className={styles.previewImg}
-            />
+          {selectedPot && (
+            <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
           )}
-          {selectedPlanta && (
-            <img
-              src={selectedPlanta.image}
-              alt="Planta seleccionada"
-              className={styles.previewImgOverlay}
-            />
+          {selectedPlant && (
+            <img src={selectedPlant.image} alt="Planta" className={styles.previewImgOverlay} />
           )}
-          <div className={styles.overlayText}>{customText}</div>
+          {customText && (
+            <div className={styles.overlayText}>{customText}</div>
+          )}
         </div>
 
         <input
           type="text"
           value={customText}
           onChange={(e) => setCustomText(e.target.value)}
-          placeholder="Texto personalizado"
           className={styles.textInput}
         />
-
         <button className={styles.buyButton}>Comprar</button>
 
-        {/* Galería de referencia */}
-        <h3 style={{ marginTop: "2rem" }}>Imágenes de referencia</h3>
+        <h3>Imágenes de referencia</h3>
         <div className={styles.referenceRow}>
-          {[1, 2, 3].map((n) => (
-            <div key={n} className={styles.referenceBox}></div>
-          ))}
+          <div className={styles.referenceBox}></div>
+          <div className={styles.referenceBox}></div>
+          <div className={styles.referenceBox}></div>
         </div>
       </main>
     </div>
