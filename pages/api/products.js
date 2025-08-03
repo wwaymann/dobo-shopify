@@ -1,8 +1,8 @@
 // pages/api/products.js
 
 export default async function handler(req, res) {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const storefrontAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+  const domain = process.env. NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const storefrontAccessToken = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 
   if (!domain || !storefrontAccessToken) {
     return res.status(500).json({ error: "Faltan variables de entorno" });
@@ -63,4 +63,6 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ error: "Server error", details: error.message });
   }
+}
+
 }
