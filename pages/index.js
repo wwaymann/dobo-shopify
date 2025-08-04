@@ -64,13 +64,13 @@ export default function Home() {
           </div>
         </div>
 
-        <div className={styles.scrollRow} style={{ justifyContent: "center" }}>
-          <div style={{ display: "flex", overflowX: "scroll", width: "300px", scrollSnapType: "x mandatory" }}>
+        <div className={styles.scrollWrapper}>
+          <div className={styles.scrollInner}>
             {pots.map((p, i) => (
               <div
                 key={i}
+                className={styles.scrollItem}
                 onClick={() => setSelectedPot(p)}
-                style={{ scrollSnapAlign: "center", flexShrink: 0, width: "300px" }}
               >
                 <img
                   src={p.image}
