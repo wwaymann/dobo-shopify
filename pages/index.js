@@ -35,50 +35,22 @@ export default function Home() {
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        <section className={styles.scrollZone + " " + styles.potZone}>
-          <h2>Elige tu maceta</h2>
-          <div className={styles.scrollRow}>
-            {pots.map((p, i) => (
-              <img
-                key={i}
-                src={p.image}
-                alt={p.title}
-                className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
-                onClick={() => setSelectedPot(p)}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.scrollZone + " " + styles.plantZone}>
-          <h2>Elige tu planta</h2>
-          <div className={styles.scrollRow}>
-            {plants.map((p, i) => (
-              <img
-                key={i}
-                src={p.image}
-                alt={p.title}
-                className={`${styles.thumb} ${selectedPlant?.id === p.id ? styles.thumbSelected : ""}`}
-                onClick={() => setSelectedPlant(p)}
-              />
-            ))}
-          </div>
-        </section>
-
+        {/* Vista previa principal con planta sobre maceta */}
         <div className={styles.previewScroll}>
-  <div className={styles.preview}>
-    {selectedPot && (
-      <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
-    )}
-    {selectedPlant && (
-      <img src={selectedPlant.image} alt="Planta" className={styles.previewImgOverlay} />
-    )}
-    {customText && (
-      <div className={styles.overlayText}>{customText}</div>
-    )}
-  </div>
-</div>
+          <div className={styles.preview}>
+            {selectedPot && (
+              <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
+            )}
+            {selectedPlant && (
+              <img src={selectedPlant.image} alt="Planta" className={styles.previewImgOverlay} />
+            )}
+            {customText && (
+              <div className={styles.overlayText}>{customText}</div>
+            )}
+          </div>
+        </div>
 
+        {/* Entrada de texto y botón */}
         <input
           type="text"
           value={customText}
@@ -87,25 +59,26 @@ export default function Home() {
         />
         <button className={styles.buyButton}>Comprar</button>
 
+        {/* Imágenes de referencia */}
         <h3>Imágenes de referencia</h3>
         <div className={styles.referenceRow}>
           <div className={styles.referenceBox}></div>
           <div className={styles.referenceBox}></div>
           <div className={styles.referenceBox}></div>
         </div>
+
+        {/* Zona de prueba scroll de macetas */}
+        <div className={styles.testScrollRow}>
+          {pots.map((p, i) => (
+            <img
+              key={i}
+              src={p.image}
+              alt={p.title}
+              onClick={() => setSelectedPot(p)}
+            />
+          ))}
+        </div>
       </main>
     </div>
-<div className={styles.testScrollRow}>
-  {pots.map((p, i) => (
-    <img
-      key={i}
-      src={p.image}
-      alt={p.title}
-      onClick={() => setSelectedPot(p)}
-    />
-  ))}
-</div>
-        
-</main>
   );
 }
