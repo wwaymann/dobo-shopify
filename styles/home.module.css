@@ -1,4 +1,4 @@
-/* styles/home.module.css (versión de prueba para scroll y touch) */
+/* styles/home.module.css */
 
 .container {
   padding: 2rem;
@@ -37,7 +37,7 @@
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  touch-action: pan-x; /* <-- Añadido para habilitar scroll táctil */
+  touch-action: pan-x;
   z-index: 10;
 }
 
@@ -61,7 +61,7 @@
   cursor: pointer;
   border: 2px solid transparent;
   flex-shrink: 0;
-  z-index: 20; /* Elevar para evitar superposición */
+  z-index: 10;
 }
 
 .thumb:hover {
@@ -78,12 +78,18 @@
   width: 100%;
   max-width: 400px;
   margin: 2rem auto;
-  z-index: 5;
-  pointer-events: none; /* evita que intercepte el scroll */
+  pointer-events: none;
 }
 
-.previewImg,
+.previewImg {
+  width: 100%;
+  object-fit: contain;
+}
+
 .previewImgOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   object-fit: contain;
   pointer-events: none;
