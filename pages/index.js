@@ -30,7 +30,8 @@ export default function Home() {
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        <section className={styles.scrollZone + " " + styles.potZone}>
+        {/* Galería scrollable de macetas */}
+        <section className={`${styles.scrollZone} ${styles.potZone}`}>
           <h2>Elige tu maceta</h2>
           <div className={styles.scrollRow}>
             {pots.map((p, i) => (
@@ -38,14 +39,15 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={styles.thumb + (selectedPot?.id === p.id ? " " + styles.thumbSelected : "")}
+                className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
                 onClick={() => setSelectedPot(p)}
               />
             ))}
           </div>
         </section>
 
-        <section className={styles.scrollZone + " " + styles.plantZone}>
+        {/* Galería scrollable de plantas */}
+        <section className={`${styles.scrollZone} ${styles.plantZone}`}>
           <h2>Elige tu planta</h2>
           <div className={styles.scrollRow}>
             {plants.map((p, i) => (
@@ -53,13 +55,14 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={styles.thumb + (selectedPlant?.id === p.id ? " " + styles.thumbSelected : "")}
+                className={`${styles.thumb} ${selectedPlant?.id === p.id ? styles.thumbSelected : ""}`}
                 onClick={() => setSelectedPlant(p)}
               />
             ))}
           </div>
         </section>
 
+        {/* Previsualización de la maceta seleccionada */}
         <div className={styles.preview}>
           {selectedPot && (
             <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
