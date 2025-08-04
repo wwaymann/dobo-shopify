@@ -38,7 +38,7 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={styles.thumb}
+                className={styles.thumb + (selectedPot?.id === p.id ? " " + styles.thumbSelected : "")}
                 onClick={() => setSelectedPot(p)}
               />
             ))}
@@ -53,7 +53,7 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={styles.thumb}
+                className={styles.thumb + (selectedPlant?.id === p.id ? " " + styles.thumbSelected : "")}
                 onClick={() => setSelectedPlant(p)}
               />
             ))}
