@@ -64,16 +64,22 @@ export default function Home() {
           </div>
         </div>
 
-        <div className={styles.scrollRow}>
-          {pots.map((p, i) => (
-            <img
-              key={i}
-              src={p.image}
-              alt={p.title}
-              className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
-              onClick={() => setSelectedPot(p)}
-            />
-          ))}
+        <div className={styles.scrollRow} style={{ justifyContent: "center" }}>
+          <div style={{ display: "flex", overflowX: "scroll", width: "300px", scrollSnapType: "x mandatory" }}>
+            {pots.map((p, i) => (
+              <div
+                key={i}
+                onClick={() => setSelectedPot(p)}
+                style={{ scrollSnapAlign: "center", flexShrink: 0, width: "300px" }}
+              >
+                <img
+                  src={p.image}
+                  alt={p.title}
+                  className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
+                />
+              </div>
+            ))}
+          </div>
         </div>
 
         <input
