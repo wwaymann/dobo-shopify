@@ -13,6 +13,12 @@ export default function Home() {
       try {
         const res = await fetch("/api/products");
         const data = await res.json();
+
+        if (!Array.isArray(data)) {
+          console.error("Expected array from /api/products, got:", data);
+          return;
+        }
+
         setProducts(data);
 
         const pot = data.find(p => p.title.toLowerCase().includes("maceta"));
@@ -27,7 +33,6 @@ export default function Home() {
   }, []);
 
   const pots = products.filter(p => p.title.toLowerCase().includes("maceta"));
-  const plants = products.filter(p => p.title.toLowerCase().includes("planta"));
 
   return (
     <div className={styles.container}>
@@ -35,22 +40,31 @@ export default function Home() {
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        {/* Vista previa principal con planta sobre maceta */}
+        {/* Zona de scroll horizontal por maceta */}
         <div className={styles.previewScroll}>
-          <div className={styles.preview}>
-            {selectedPot && (
-              <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
-            )}
-            {selectedPlant && (
-              <img src={selectedPlant.image} alt="Planta" className={styles.previewImgOverlay} />
-            )}
-            {customText && (
-              <div className={styles.overlayText}>{customText}</div>
-            )}
+          <div className={styles.previewWrapper}>
+            {pots.map((p, i) => (
+              <div
+                key={i}
+                className={styles.preview}
+                onClick={() => setSelectedPot(p)}
+              >
+                <img src={p.image} alt={p.title} className={styles.previewImg} />
+                {selectedPlant && (
+                  <img
+                    src={selectedPlant.image}
+                    alt="Planta"
+                    className={styles.previewImgOverlay}
+                  />
+                )}
+                {customText && (
+                  <div className={styles.overlayText}>{customText}</div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Entrada de texto y botón */}
         <input
           type="text"
           value={customText}
@@ -59,24 +73,11 @@ export default function Home() {
         />
         <button className={styles.buyButton}>Comprar</button>
 
-        {/* Imágenes de referencia */}
         <h3>Imágenes de referencia</h3>
         <div className={styles.referenceRow}>
           <div className={styles.referenceBox}></div>
           <div className={styles.referenceBox}></div>
           <div className={styles.referenceBox}></div>
-        </div>
-
-        {/* Zona de prueba scroll de macetas */}
-        <div className={styles.testScrollRow}>
-          {pots.map((p, i) => (
-            <img
-              key={i}
-              src={p.image}
-              alt={p.title}
-              onClick={() => setSelectedPot(p)}
-            />
-          ))}
         </div>
       </main>
     </div>
