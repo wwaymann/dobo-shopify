@@ -43,13 +43,13 @@ export default function Home() {
         {/* Zona de scroll horizontal por maceta */}
         <div className={styles.previewScroll}>
           <div className={styles.previewWrapper}>
-            {pots.map((p, i) => (
-              <div
-                key={i}
-                className={styles.preview}
-                onClick={() => setSelectedPot(p)}
-              >
-                <img src={p.image} alt={p.title} className={styles.previewImg} />
+            {selectedPot && (
+              <div className={styles.preview}>
+                <img
+                  src={selectedPot.image}
+                  alt={selectedPot.title}
+                  className={styles.previewImg}
+                />
                 {selectedPlant && (
                   <img
                     src={selectedPlant.image}
@@ -61,7 +61,7 @@ export default function Home() {
                   <div className={styles.overlayText}>{customText}</div>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </div>
 
