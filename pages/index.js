@@ -84,4 +84,19 @@ export default function Home() {
 
         <input
           type="text"
-       
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          className={styles.textInput}
+        />
+        <button className={styles.buyButton}>Comprar</button>
+
+        <h3>Imágenes de referencia</h3>
+        <div className={styles.referenceRow}>
+          <div className={styles.referenceBox}></div>
+          <div className={styles.referenceBox}></div>
+          <div className={styles.referenceBox}></div>
+        </div>
+      </main>
+    </div>
+  );
+}
