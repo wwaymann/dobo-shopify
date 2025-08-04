@@ -17,43 +17,39 @@ export default function Home() {
         <div className="text-3xl">&#9776;</div>
       </header>
 
-      {/* Scrollable maceta selector */}
-      <div className="mb-4">
-        <h2 className="text-md font-bold mb-2">Elige tu maceta</h2>
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-          {["maceta1.png", "maceta2.png", "maceta3.png", "maceta4.png"].map(
-            (src, i) => (
-              <img
-                key={i}
-                src={`/${src}`}
-                alt={`maceta ${i + 1}`}
-                className="w-20 h-20 object-contain border rounded cursor-pointer flex-shrink-0"
-              />
-            )
-          )}
-        </div>
+      {/* Scrollable macetas */}
+      <h2 className="font-semibold text-lg mb-2">Elige tu maceta</h2>
+      <div className="flex gap-2 overflow-x-auto mb-4 pb-2">
+        {["maceta1.png", "maceta2.png", "maceta3.png", "maceta4.png"].map((img, i) => (
+          <img
+            key={i}
+            src={`/${img}`}
+            alt={`Maceta ${i + 1}`}
+            className="h-20 w-auto rounded shadow cursor-pointer"
+          />
+        ))}
       </div>
 
-      {/* Scrollable planta selector */}
-      <div className="mb-4">
-        <h2 className="text-md font-bold mb-2">Elige tu planta</h2>
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-          {["planta1.png", "planta2.png", "planta3.png", "planta4.png"].map(
-            (src, i) => (
-              <img
-                key={i}
-                src={`/${src}`}
-                alt={`planta ${i + 1}`}
-                className="w-20 h-20 object-contain border rounded cursor-pointer flex-shrink-0"
-              />
-            )
-          )}
-        </div>
+      {/* Scrollable plantas */}
+      <h2 className="font-semibold text-lg mb-2">Elige tu planta</h2>
+      <div className="flex gap-2 overflow-x-auto mb-4 pb-2">
+        {["planta1.png", "planta2.png", "planta3.png", "planta4.png"].map((img, i) => (
+          <img
+            key={i}
+            src={`/${img}`}
+            alt={`Planta ${i + 1}`}
+            className="h-20 w-auto rounded shadow cursor-pointer"
+          />
+        ))}
       </div>
 
       {/* Product Preview */}
       <div className="relative mx-auto w-[300px]">
-        <img src="/maceta.png" alt="Maceta" className="w-full object-contain" />
+        <img
+          src="/maceta.png"
+          alt="Maceta"
+          className="w-full object-contain"
+        />
         <img
           src="/planta.png"
           alt="Planta"
@@ -77,10 +73,7 @@ export default function Home() {
             <div
               key={i}
               className="w-14 h-14 bg-gray-300 rounded"
-              style={{
-                backgroundImage: img ? `url(/${img})` : "none",
-                backgroundSize: "cover",
-              }}
+              style={{ backgroundImage: img ? `url(/${img})` : "none", backgroundSize: "cover" }}
             ></div>
           ))}
         </div>
@@ -89,13 +82,11 @@ export default function Home() {
       {/* Descripciones */}
       <div className="px-2 text-sm">
         <p>
-          <strong>Planta</strong>
-          <br />
+          <strong>Planta</strong><br />
           Lorem ipsum dolor sit amet, consectetur adipiscing elit.
         </p>
         <p className="mt-2">
-          <strong>Maceta</strong>
-          <br />
+          <strong>Maceta</strong><br />
           Lorem ipsum dolor sit amet, consectetur adipiscing elit.
         </p>
       </div>
