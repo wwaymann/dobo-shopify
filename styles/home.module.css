@@ -1,69 +1,66 @@
-// Objetivo: Empezar a adaptar el estilo visual y funcional del frontend actual a la propuesta UI
-// Requiere aplicar estilo moderno con layout responsive, tipografía y controles visuales refinados
+/* Objetivo: Empezar a adaptar el estilo visual y funcional del frontend actual a la propuesta UI */
+/* Requiere aplicar estilo moderno con layout responsive, tipografía y controles visuales refinados */
 
-// Pasos iniciales:
-
-// 1. Ajustar estructura visual general:
-// - Centrar el contenido vertical y horizontalmente
-// - Ampliar previsualización
-// - Mejorar jerarquía visual de secciones y textos
-
-// 2. Estilo: Crear base moderna y limpia
-
-/* styles/home.module.css */
 .container {
+  padding: 2rem;
+  font-family: 'Arial', sans-serif;
+  background-color: #f9f9f9;
+  min-height: 100vh;
+}
+
+.main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2rem;
-  font-family: "Inter", sans-serif;
-  background-color: #fefefe;
-  color: #222;
+  gap: 2rem;
 }
 
-.title {
-  font-size: 2.2rem;
+title {
+  font-size: 2.5rem;
   font-weight: bold;
-  margin-bottom: 0.2rem;
+  color: #111;
 }
 
 .subtitle {
-  font-size: 1rem;
-  color: #999;
-  margin-bottom: 2rem;
+  font-size: 1.2rem;
+  color: #666;
+  margin-bottom: 1rem;
 }
 
 .scrollZone {
   width: 100%;
-  max-width: 960px;
-  margin-bottom: 2rem;
-}
-
-.scrollZone h2 {
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
+  overflow-x: auto;
+  padding: 1rem 0;
 }
 
 .scrollRow {
   display: flex;
   overflow-x: auto;
-  padding: 0.5rem 0;
-  gap: 0.75rem;
+  gap: 1rem;
+  padding: 0 1rem;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
 }
 
+.scrollRow::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scrollRow::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
 .thumb {
-  height: 84px;
-  width: 84px;
-  border-radius: 12px;
+  width: 80px;
+  height: 80px;
   object-fit: cover;
-  background: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
   cursor: pointer;
-  scroll-snap-align: center;
-  transition: transform 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   border: 2px solid transparent;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  scroll-snap-align: center;
 }
 
 .thumb:hover {
@@ -72,76 +69,77 @@
 }
 
 .thumbSelected {
-  border-color: #111;
+  border-color: #000;
 }
 
 .preview {
   position: relative;
-  width: 260px;
-  height: 260px;
-  margin: 1rem 0;
+  width: 240px;
+  height: 240px;
+  margin: 2rem auto;
 }
 
 .previewImg {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  position: absolute;
-  z-index: 1;
 }
 
 .previewImgOverlay {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   position: absolute;
-  z-index: 2;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  object-fit: contain;
 }
 
 .overlayText {
   position: absolute;
-  z-index: 3;
-  bottom: 20px;
-  width: 100%;
-  text-align: center;
-  font-weight: bold;
-  color: #111;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1rem;
+  color: #000;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .textInput {
-  padding: 0.4rem 1rem;
+  padding: 0.5rem 1rem;
   font-size: 1rem;
-  margin-bottom: 1rem;
   border: 1px solid #ccc;
-  border-radius: 6px;
+  border-radius: 4px;
+  width: 200px;
+  text-align: center;
 }
 
 .buyButton {
-  background-color: #111;
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  background: #000;
   color: #fff;
   border: none;
-  padding: 0.6rem 1.5rem;
-  font-size: 1rem;
-  border-radius: 12px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.2s ease;
 }
 
 .buyButton:hover {
-  background-color: #444;
+  background: #444;
 }
 
 .referenceRow {
   display: flex;
   justify-content: center;
   gap: 1rem;
-  margin-top: 1.5rem;
+  margin-top: 1rem;
 }
 
 .referenceBox {
-  width: 120px;
-  height: 120px;
-  background-color: #eee;
-  border-radius: 12px;
+  width: 100px;
+  height: 100px;
+  background: #e0e0e0;
+  border-radius: 8px;
 }
