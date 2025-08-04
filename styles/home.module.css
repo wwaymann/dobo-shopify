@@ -27,7 +27,7 @@
 .scrollZone,
 .scrollZone h2,
 .scrollRow {
-  display: none;
+  display: none !important;
 }
 
 /* Contenedor scroll horizontal para previews */
@@ -41,6 +41,8 @@
   padding: 1rem 0;
   touch-action: pan-x;
   scroll-behavior: smooth;
+  justify-content: center;
+  scroll-padding: 0 1rem;
 }
 
 .previewScroll::-webkit-scrollbar {
@@ -49,14 +51,15 @@
 
 .preview {
   position: relative;
-  flex: 0 0 100%;
+  flex: 0 0 auto;
+  width: 100%;
   max-width: 400px;
   margin: 0 auto;
   scroll-snap-align: center;
   overflow: hidden;
   background: white;
   border-radius: 10px;
-  touch-action: none;
+  touch-action: manipulation;
 }
 
 .previewImg,
