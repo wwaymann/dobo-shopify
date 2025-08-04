@@ -14,6 +14,7 @@ export default function Home() {
         const res = await fetch("/api/products");
         const data = await res.json();
         setProducts(data);
+
         const pot = data.find(p => p.title.toLowerCase().includes("maceta"));
         const plant = data.find(p => p.title.toLowerCase().includes("planta"));
         if (pot) setSelectedPot(pot);
@@ -42,10 +43,7 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={
-                  styles.thumb +
-                  (selectedPot?.id === p.id ? " " + styles.thumbSelected : "")
-                }
+                className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
                 onClick={() => setSelectedPot(p)}
               />
             ))}
@@ -60,10 +58,7 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={
-                  styles.thumb +
-                  (selectedPlant?.id === p.id ? " " + styles.thumbSelected : "")
-                }
+                className={`${styles.thumb} ${selectedPlant?.id === p.id ? styles.thumbSelected : ""}`}
                 onClick={() => setSelectedPlant(p)}
               />
             ))}
