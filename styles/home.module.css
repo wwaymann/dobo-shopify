@@ -30,21 +30,36 @@
   display: none;
 }
 
-/* Estilos para scrollear sobre las imágenes centrales */
+/* Contenedor scroll horizontal para previews */
+.previewScroll {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+
+.previewScroll::-webkit-scrollbar {
+  display: none;
+}
+
 .preview {
   position: relative;
-  width: 100%;
+  flex: 0 0 100%;
   max-width: 400px;
-  margin: 2rem auto;
+  margin: 0 auto;
+  scroll-snap-align: center;
   overflow: hidden;
+  background: white;
+  border-radius: 10px;
 }
 
 .previewImg,
 .previewImgOverlay {
   width: 100%;
   object-fit: contain;
-  scroll-snap-align: center;
-  transition: transform 0.3s ease;
 }
 
 .previewImg {
@@ -53,23 +68,10 @@
 
 .previewImgOverlay {
   position: absolute;
-  top: -20%;
+  top: -25%;
   left: 0;
   pointer-events: none;
   z-index: 2;
-}
-
-.previewScroll {
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  gap: 0;
-  width: 100%;
-}
-
-.previewScroll::-webkit-scrollbar {
-  display: none;
 }
 
 .overlayText {
