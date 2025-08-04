@@ -25,6 +25,8 @@
 
 .scrollZone {
   margin: 2rem 0;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .scrollRow {
@@ -134,4 +136,10 @@
   width: 100px;
   height: 100px;
   background-color: #ddd;
+}
+
+/* Esconde las listas de selección para depuración */
+.scrollZone h2,
+.scrollRow {
+  display: none;
 }
