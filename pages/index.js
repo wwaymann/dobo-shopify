@@ -40,7 +40,6 @@ export default function Home() {
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        {/* Zona de scroll horizontal por maceta */}
         <div className={styles.previewScroll}>
           <div className={styles.previewWrapper}>
             {selectedPot && (
@@ -63,6 +62,18 @@ export default function Home() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className={styles.scrollRow}>
+          {pots.map((p, i) => (
+            <img
+              key={i}
+              src={p.image}
+              alt={p.title}
+              className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
+              onClick={() => setSelectedPot(p)}
+            />
+          ))}
         </div>
 
         <input
