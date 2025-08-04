@@ -30,22 +30,26 @@
   display: none !important;
 }
 
-/* Contenedor scroll horizontal para previews */
+/* Contenedor scroll horizontal para previews individuales */
 .previewScroll {
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
   width: 100%;
-  gap: 1rem;
-  padding: 1rem 0;
-  touch-action: pan-x;
-  scroll-behavior: smooth;
-  justify-content: center;
-  scroll-padding: 0 1rem;
+  overflow-x: hidden;
+  position: relative;
+  margin-bottom: 2rem;
 }
 
-.previewScroll::-webkit-scrollbar {
+.previewWrapper {
+  display: flex;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  gap: 1rem;
+  scroll-padding: 1rem;
+  padding: 1rem 0;
+  justify-content: center;
+}
+
+.previewWrapper::-webkit-scrollbar {
   display: none;
 }
 
@@ -54,7 +58,6 @@
   flex: 0 0 auto;
   width: 100%;
   max-width: 400px;
-  margin: 0 auto;
   scroll-snap-align: center;
   overflow: hidden;
   background: white;
