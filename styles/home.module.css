@@ -1,4 +1,4 @@
-/* styles/home.module.css */
+/* styles/home.module.css (versión de prueba para scroll y touch) */
 
 .container {
   padding: 2rem;
@@ -37,6 +37,8 @@
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  touch-action: pan-x; /* <-- Añadido para habilitar scroll táctil */
+  z-index: 10;
 }
 
 .scrollRow::-webkit-scrollbar {
@@ -59,6 +61,7 @@
   cursor: pointer;
   border: 2px solid transparent;
   flex-shrink: 0;
+  z-index: 20; /* Elevar para evitar superposición */
 }
 
 .thumb:hover {
@@ -75,17 +78,12 @@
   width: 100%;
   max-width: 400px;
   margin: 2rem auto;
+  z-index: 5;
+  pointer-events: none; /* evita que intercepte el scroll */
 }
 
-.previewImg {
-  width: 100%;
-  object-fit: contain;
-}
-
+.previewImg,
 .previewImgOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
   width: 100%;
   object-fit: contain;
   pointer-events: none;
@@ -136,10 +134,4 @@
   width: 100px;
   height: 100px;
   background-color: #ddd;
-}
-
-/* Esconde las listas de selección para depuración */
-.scrollZone h2,
-.scrollRow {
-  display: none;
 }
