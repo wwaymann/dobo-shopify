@@ -95,5 +95,16 @@ export default function Home() {
         </div>
       </main>
     </div>
+<div className={styles.testScrollRow}>
+  {pots.map((p, i) => (
+    <img
+      key={i}
+      src={p.image}
+      alt={p.title}
+      onClick={() => setSelectedPot(p)}
+    />
+  ))}
+</div>
+
   );
 }
