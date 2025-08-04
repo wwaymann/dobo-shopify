@@ -65,17 +65,19 @@ export default function Home() {
           </div>
         </section>
 
-        <div className={styles.preview}>
-          {selectedPot && (
-            <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
-          )}
-          {selectedPlant && (
-            <img src={selectedPlant.image} alt="Planta" className={styles.previewImgOverlay} />
-          )}
-          {customText && (
-            <div className={styles.overlayText}>{customText}</div>
-          )}
-        </div>
+        <div className={styles.previewScroll}>
+  <div className={styles.preview}>
+    {selectedPot && (
+      <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
+    )}
+    {selectedPlant && (
+      <img src={selectedPlant.image} alt="Planta" className={styles.previewImgOverlay} />
+    )}
+    {customText && (
+      <div className={styles.overlayText}>{customText}</div>
+    )}
+  </div>
+</div>
 
         <input
           type="text"
