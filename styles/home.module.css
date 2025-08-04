@@ -1,24 +1,5 @@
 /* styles/home.module.css - seccion mejorada para las galerias scrollables */
 
-.container {
-  padding: 1rem;
-  font-family: Arial, sans-serif;
-  background-color: #f9f9f9;
-}
-
-.main {
-  text-align: center;
-}
-
-.title {
-  font-size: 2rem;
-  font-weight: bold;
-}
-
-.subtitle {
-  color: #777;
-}
-
 .scrollZone {
   margin-top: 2rem;
 }
@@ -68,61 +49,4 @@
 
 .thumbSelected {
   border-color: #302b27;
-}
-
-.preview {
-  position: relative;
-  display: inline-block;
-  margin: 1rem 0;
-}
-
-.previewImg {
-  width: 200px;
-}
-
-.previewImgOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 200px;
-  opacity: 0.95;
-}
-
-.overlayText {
-  position: absolute;
-  bottom: 10px;
-  left: 0;
-  right: 0;
-  font-size: 20px;
-  font-weight: bold;
-  color: black;
-}
-
-.textInput {
-  padding: 0.5rem;
-  font-size: 1rem;
-  margin-top: 1rem;
-}
-
-.buyButton {
-  background-color: #eee0c8;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  margin-top: 1rem;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.referenceRow {
-  display: flex;
-  justify-content: center;
-  margin-top: 1rem;
-}
-
-.referenceBox {
-  width: 80px;
-  height: 80px;
-  background-color: #ccc;
-  margin: 0 4px;
 }
