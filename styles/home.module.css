@@ -23,72 +23,53 @@
   margin-bottom: 2rem;
 }
 
-.scrollZone {
-  margin: 2rem 0;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
+/* Oculta las filas tradicionales */
+.scrollZone,
+.scrollZone h2,
 .scrollRow {
-  display: flex;
-  overflow-x: auto;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
+  display: none;
 }
 
-.scrollRow::-webkit-scrollbar {
-  height: 6px;
-}
-
-.scrollRow::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 3px;
-}
-
-.thumb {
-  height: 90px;
-  width: 90px;
-  object-fit: cover;
-  border-radius: 10px;
-  box-shadow: 2px 4px 4px rgba(0, 0, 0, 0.1);
-  transition: transform 0.25s ease, outline 0.25s ease;
-  scroll-snap-align: center;
-  cursor: pointer;
-  border: 2px solid transparent;
-  flex-shrink: 0;
-}
-
-.thumb:hover {
-  transform: scale(1.05);
-  border-color: #eee;
-}
-
-.thumbSelected {
-  border-color: #333;
-}
-
+/* Estilos para scrollear sobre las imágenes centrales */
 .preview {
   position: relative;
   width: 100%;
   max-width: 400px;
   margin: 2rem auto;
+  overflow: hidden;
+}
+
+.previewImg,
+.previewImgOverlay {
+  width: 100%;
+  object-fit: contain;
+  scroll-snap-align: center;
+  transition: transform 0.3s ease;
 }
 
 .previewImg {
-  width: 100%;
-  object-fit: contain;
+  z-index: 1;
 }
 
 .previewImgOverlay {
   position: absolute;
   top: -20%;
   left: 0;
-  width: 100%;
-  object-fit: contain;
   pointer-events: none;
+  z-index: 2;
+}
+
+.previewScroll {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  gap: 0;
+  width: 100%;
+}
+
+.previewScroll::-webkit-scrollbar {
+  display: none;
 }
 
 .overlayText {
@@ -102,6 +83,7 @@
   font-size: 1.2rem;
   border-radius: 4px;
   pointer-events: none;
+  z-index: 3;
 }
 
 .textInput {
@@ -136,10 +118,4 @@
   width: 100px;
   height: 100px;
   background-color: #ddd;
-}
-
-/* Visibles nuevamente para permitir interacción táctil/mouse */
-.scrollZone h2,
-.scrollRow {
-  display: block;
 }
