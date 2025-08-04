@@ -1,48 +1,40 @@
-/*
-  Objetivo: Empezar a adaptar el estilo visual y funcional del frontend actual a la propuesta UI
-  Requiere aplicar estilo moderno con layout responsive, tipografía y controles visuales refinados
-*/
+/* styles/home.module.css */
 
 .container {
   padding: 2rem;
-  font-family: 'Arial', sans-serif;
-  background-color: #fdfdfd;
-  text-align: center;
+  font-family: Arial, sans-serif;
+  background-color: #f9f9f9;
 }
 
 .main {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
+  text-align: center;
 }
 
 .title {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
+  font-size: 2rem;
   font-weight: bold;
 }
 
 .subtitle {
   font-size: 1.2rem;
-  color: #888;
+  color: #666;
   margin-bottom: 2rem;
 }
 
 .scrollZone {
-  margin-bottom: 1.5rem;
-}
-
-.scrollZone h2 {
-  font-size: 1.2rem;
-  margin-bottom: 0.5rem;
+  margin: 2rem 0;
 }
 
 .scrollRow {
   display: flex;
   overflow-x: auto;
   gap: 0.75rem;
-  padding: 0.5rem;
+  padding: 0.5rem 0;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
 .scrollRow::-webkit-scrollbar {
@@ -55,16 +47,16 @@
 }
 
 .thumb {
-  height: 88px;
-  width: 88px;
-  flex: 0 0 auto;
+  height: 90px;
+  width: 90px;
   object-fit: cover;
   border-radius: 10px;
-  box-shadow: 2px 4px 9px rgba(0,0,0,0.1);
-  transition: transform .25s ease, outline .25s ease;
+  box-shadow: 2px 4px 4px rgba(0, 0, 0, 0.1);
+  transition: transform 0.25s ease, outline 0.25s ease;
   scroll-snap-align: center;
   cursor: pointer;
   border: 2px solid transparent;
+  flex-shrink: 0;
 }
 
 .thumb:hover {
@@ -73,76 +65,73 @@
 }
 
 .thumbSelected {
-  border-color: #000;
+  border-color: #333;
 }
 
 .preview {
-  margin-top: 2rem;
   position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: 2rem auto;
 }
 
 .previewImg {
-  max-width: 220px;
-  margin: 0 auto;
-  display: block;
+  width: 100%;
+  object-fit: contain;
 }
 
 .previewImgOverlay {
-  max-width: 220px;
-  margin: 0 auto;
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .overlayText {
   position: absolute;
-  bottom: 5px;
-  width: 100%;
-  text-align: center;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 0.25rem 0.5rem;
   font-weight: bold;
-  color: #333;
-  font-size: 0.8rem;
-  background: rgba(255,255,255,0.6);
-  padding: 0.25rem;
+  font-size: 1.2rem;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 .textInput {
-  margin-top: 1rem;
+  margin: 1rem 0;
   padding: 0.5rem;
   font-size: 1rem;
-  width: 60%;
-  max-width: 250px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  width: 200px;
 }
 
 .buyButton {
-  margin-left: 0.5rem;
-  padding: 0.5rem 1rem;
-  font-size: 1rem;
-  background: #000;
+  background-color: #000;
   color: #fff;
   border: none;
-  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background 0.2s;
 }
 
 .buyButton:hover {
-  background: #222;
+  background-color: #444;
 }
 
 .referenceRow {
   display: flex;
   gap: 1rem;
   justify-content: center;
-  margin-top: 2rem;
+  margin-top: 1rem;
 }
 
 .referenceBox {
   width: 100px;
   height: 100px;
-  background: #eee;
-  border-radius: 8px;
+  background-color: #ddd;
 }
