@@ -27,10 +27,6 @@
   margin: 2rem 0;
   overflow-x: auto;
   white-space: nowrap;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
-  pointer-events: none;
-  height: 1px;
 }
 
 .scrollRow {
@@ -41,9 +37,6 @@
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  touch-action: pan-x;
-  pointer-events: auto;
-  height: 1px;
 }
 
 .scrollRow::-webkit-scrollbar {
@@ -91,7 +84,7 @@
 
 .previewImgOverlay {
   position: absolute;
-  top: 0;
+  top: -20%;
   left: 0;
   width: 100%;
   object-fit: contain;
@@ -143,4 +136,10 @@
   width: 100px;
   height: 100px;
   background-color: #ddd;
+}
+
+/* Visibles nuevamente para permitir interacción táctil/mouse */
+.scrollZone h2,
+.scrollRow {
+  display: block;
 }
