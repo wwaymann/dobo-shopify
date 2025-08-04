@@ -8,22 +8,22 @@ export default function Home() {
   const [selectedPlant, setSelectedPlant] = useState(null);
   const [customText, setCustomText] = useState("DOBO");
 
-useEffect(() => {
-  const fetchProducts = async () => {
-    try {
-      const res = await fetch("/api/products");
-      const data = await res.json();
-      setProducts(data);
-      const pot = data.find(p => p.title.toLowerCase().includes("maceta"));
-      const plant = data.find(p => p.title.toLowerCase().includes("planta"));
-      if (pot) setSelectedPot(pot);
-      if (plant) setSelectedPlant(plant);
-    } catch (err) {
-      console.error("Error fetching products:", err);
-    }
-  };
-  fetchProducts();
-}, []);
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch("/api/products");
+        const data = await res.json();
+        setProducts(data);
+        const pot = data.find(p => p.title.toLowerCase().includes("maceta"));
+        const plant = data.find(p => p.title.toLowerCase().includes("planta"));
+        if (pot) setSelectedPot(pot);
+        if (plant) setSelectedPlant(plant);
+      } catch (err) {
+        console.error("Error fetching products:", err);
+      }
+    };
+    fetchProducts();
+  }, []);
 
   const pots = products.filter(p => p.title.toLowerCase().includes("maceta"));
   const plants = products.filter(p => p.title.toLowerCase().includes("planta"));
@@ -34,8 +34,7 @@ useEffect(() => {
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        {/* Galería scrollable de macetas */}
-        <section className={`${styles.scrollZone} ${styles.potZone}`}>
+        <section className={styles.scrollZone + " " + styles.potZone}>
           <h2>Elige tu maceta</h2>
           <div className={styles.scrollRow}>
             {pots.map((p, i) => (
@@ -43,15 +42,17 @@ useEffect(() => {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
+                className={
+                  styles.thumb +
+                  (selectedPot?.id === p.id ? " " + styles.thumbSelected : "")
+                }
                 onClick={() => setSelectedPot(p)}
               />
             ))}
           </div>
         </section>
 
-        {/* Galería scrollable de plantas */}
-        <section className={`${styles.scrollZone} ${styles.plantZone}`}>
+        <section className={styles.scrollZone + " " + styles.plantZone}>
           <h2>Elige tu planta</h2>
           <div className={styles.scrollRow}>
             {plants.map((p, i) => (
@@ -59,14 +60,16 @@ useEffect(() => {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={`${styles.thumb} ${selectedPlant?.id === p.id ? styles.thumbSelected : ""}`}
+                className={
+                  styles.thumb +
+                  (selectedPlant?.id === p.id ? " " + styles.thumbSelected : "")
+                }
                 onClick={() => setSelectedPlant(p)}
               />
             ))}
           </div>
         </section>
 
-        {/* Previsualización de la maceta seleccionada */}
         <div className={styles.preview}>
           {selectedPot && (
             <img src={selectedPot.image} alt="Maceta" className={styles.previewImg} />
