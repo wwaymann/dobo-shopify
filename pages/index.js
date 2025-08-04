@@ -8,18 +8,22 @@ export default function Home() {
   const [selectedPlant, setSelectedPlant] = useState(null);
   const [customText, setCustomText] = useState("DOBO");
 
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const res = await fetch("/api/products");
-        const data = await res.json();
-        setProducts(data);
-      } catch (err) {
-        console.error("Error fetching products:", err);
-      }
-    };
-    fetchProducts();
-  }, []);
+useEffect(() => {
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch("/api/products");
+      const data = await res.json();
+      setProducts(data);
+      const pot = data.find(p => p.title.toLowerCase().includes("maceta"));
+      const plant = data.find(p => p.title.toLowerCase().includes("planta"));
+      if (pot) setSelectedPot(pot);
+      if (plant) setSelectedPlant(plant);
+    } catch (err) {
+      console.error("Error fetching products:", err);
+    }
+  };
+  fetchProducts();
+}, []);
 
   const pots = products.filter(p => p.title.toLowerCase().includes("maceta"));
   const plants = products.filter(p => p.title.toLowerCase().includes("planta"));
