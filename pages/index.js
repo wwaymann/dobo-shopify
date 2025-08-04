@@ -38,7 +38,7 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={`${styles.thumb} ${selectedPot === p ? styles.thumbSelected : ""}`}
+                className={styles.thumb}
                 onClick={() => setSelectedPot(p)}
               />
             ))}
@@ -53,7 +53,7 @@ export default function Home() {
                 key={i}
                 src={p.image}
                 alt={p.title}
-                className={`${styles.thumb} ${selectedPlant === p ? styles.thumbSelected : ""}`}
+                className={styles.thumb}
                 onClick={() => setSelectedPlant(p)}
               />
             ))}
