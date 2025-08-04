@@ -1,4 +1,4 @@
-import { useState } from "react";
+ import { useState } from "react";
 
 export default function Home() {
   const [text, setText] = useState("DOBO");
@@ -17,29 +17,14 @@ export default function Home() {
         <div className="text-3xl">&#9776;</div>
       </header>
 
-      {/* Scrollable macetas */}
-      <h2 className="font-semibold text-lg mb-2">Elige tu maceta</h2>
-      <div className="flex gap-2 overflow-x-auto mb-4 pb-2">
-        {["maceta1.png", "maceta2.png", "maceta3.png", "maceta4.png"].map((img, i) => (
-          <img
+      {/* Scrollable color selector */}
+      <div className="flex gap-2 overflow-x-auto mb-4">
+        {["#c7b299", "#ce8136", "#302b27", "#fff6b2"].map((color, i) => (
+          <div
             key={i}
-            src={`/${img}`}
-            alt={`Maceta ${i + 1}`}
-            className="h-20 w-auto rounded shadow cursor-pointer"
-          />
-        ))}
-      </div>
-
-      {/* Scrollable plantas */}
-      <h2 className="font-semibold text-lg mb-2">Elige tu planta</h2>
-      <div className="flex gap-2 overflow-x-auto mb-4 pb-2">
-        {["planta1.png", "planta2.png", "planta3.png", "planta4.png"].map((img, i) => (
-          <img
-            key={i}
-            src={`/${img}`}
-            alt={`Planta ${i + 1}`}
-            className="h-20 w-auto rounded shadow cursor-pointer"
-          />
+            className="w-6 h-6 rounded-full"
+            style={{ backgroundColor: color }}
+          ></div>
         ))}
       </div>
 
@@ -73,7 +58,7 @@ export default function Home() {
             <div
               key={i}
               className="w-14 h-14 bg-gray-300 rounded"
-              style={{ backgroundImage: img ? `url(/${img})` : "none", backgroundSize: "cover" }}
+              style={{ backgroundImage: img ? url(/${img}) : "none", backgroundSize: "cover" }}
             ></div>
           ))}
         </div>
