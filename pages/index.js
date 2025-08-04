@@ -4,7 +4,7 @@ import styles from "../styles/home.module.css";
 
 export default function Home() {
   const [products, setProducts] = useState([]);
-  const [selectedPot, setSelectedPot] = useState(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedPlant, setSelectedPlant] = useState(null);
   const [customText, setCustomText] = useState("DOBO");
 
@@ -21,9 +21,7 @@ export default function Home() {
 
         setProducts(data);
 
-        const pot = data.find(p => p.title.toLowerCase().includes("maceta"));
         const plant = data.find(p => p.title.toLowerCase().includes("planta"));
-        if (pot) setSelectedPot(pot);
         if (plant) setSelectedPlant(plant);
       } catch (err) {
         console.error("Error fetching products:", err);
@@ -34,52 +32,40 @@ export default function Home() {
 
   const pots = products.filter(p => p.title.toLowerCase().includes("maceta"));
 
+  const handleScroll = (e) => {
+    const container = e.target;
+    const scrollLeft = container.scrollLeft;
+    const itemWidth = container.firstChild.offsetWidth;
+    const index = Math.round(scrollLeft / itemWidth);
+    setSelectedIndex(index);
+  };
+
   return (
     <div className={styles.container}>
       <main className={styles.main}>
         <h1 className={styles.title}>DOBO Shop</h1>
         <p className={styles.subtitle}>Planta una idea</p>
 
-        <div className={styles.previewScroll}>
-          <div className={styles.previewWrapper}>
-            {selectedPot && (
-              <div className={styles.preview}>
+        <div className={styles.carouselWrapper} onScroll={handleScroll}>
+          {pots.map((p, i) => (
+            <div key={i} className={styles.carouselItem}>
+              <img
+                src={p.image}
+                alt={p.title}
+                className={styles.previewImg}
+              />
+              {selectedPlant && (
                 <img
-                  src={selectedPot.image}
-                  alt={selectedPot.title}
-                  className={styles.previewImg}
+                  src={selectedPlant.image}
+                  alt="Planta"
+                  className={styles.previewImgOverlay}
                 />
-                {selectedPlant && (
-                  <img
-                    src={selectedPlant.image}
-                    alt="Planta"
-                    className={styles.previewImgOverlay}
-                  />
-                )}
-                {customText && (
-                  <div className={styles.overlayText}>{customText}</div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className={styles.scrollWrapper}>
-          <div className={styles.scrollInner}>
-            {pots.map((p, i) => (
-              <div
-                key={i}
-                className={styles.scrollItem}
-                onClick={() => setSelectedPot(p)}
-              >
-                <img
-                  src={p.image}
-                  alt={p.title}
-                  className={`${styles.thumb} ${selectedPot?.id === p.id ? styles.thumbSelected : ""}`}
-                />
-              </div>
-            ))}
-          </div>
+              )}
+              {customText && (
+                <div className={styles.overlayText}>{customText}</div>
+              )}
+            </div>
+          ))}
         </div>
 
         <input
