@@ -1,84 +1,117 @@
-// Análisis inicial basado en la arquitectura y el .env
-
-// Supuestos y confirmaciones:
-// - Estás usando la Storefront API de Shopify (NO la Admin API).
-// - El dominio en tu .env contiene https://, lo cual es innecesario para esta API.
-// - El JSON resultante desde Shopify NO está entregando bien las URLs de las imágenes o están en campos que no se están utilizando correctamente en el frontend.
-// - El error 500 puede estar vinculado al parseo incorrecto del JSON o estructura inesperada del response.
-
-// Corrección y simplificación en la API `pages/api/products.js`:
-
+// pages/api/products.js
 export default async function handler(req, res) {
-  const domain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const token = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN;
-
-  if (!domain || !token) {
-    return res.status(500).json({ error: "Faltan variables de entorno" });
-  }
-
-  const endpoint = `https://${domain}/api/2023-04/graphql.json`;
-  const query = `
-    query {
-      products(first: 20) {
-        edges {
-          node {
-            id
-            title
-            handle
-            description
-            images(first: 1) {
-              edges {
-                node {
-                  url
-                  altText
-                }
-              }
-            }
-            variants(first: 1) {
-              edges {
-                node {
-                  price {
-                    amount
-                    currencyCode
+  try {
+    const response = await fetch(
+      "https://um7xus-0u.myshopify.com/api/2023-01/graphql.json",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Storefront-Access-Token": process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN,
+        },
+        body: JSON.stringify({
+          query: `
+            {
+              products(first: 100) {
+                edges {
+                  node {
+                    id
+                    title
+                    description
+                    tags
+                    images(first: 100) {
+                      edges {
+                        node {
+                          id
+                          url
+                        }
+                      }
+                    }
+                    variants(first: 100) {
+                      edges {
+                        node {
+                          id
+                          title
+                          price { amount }
+                          compareAtPrice { amount }
+                          selectedOptions { name value }
+                          image { 
+                            id
+                            url
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
-          }
-        }
+          `,
+        }),
       }
-    }
-  `;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token": token,
-      },
-      body: JSON.stringify({ query }),
-    });
+    );
 
     const json = await response.json();
 
-    if (!json || !json.data || !json.data.products) {
-      return res.status(500).json({ error: "Respuesta de Shopify inválida", details: json });
+    // Defensa por si la respuesta viene con errores
+    if (!json?.data?.products?.edges) {
+      console.error("Shopify response error:", json?.errors || json);
+      return res.status(500).json({ error: "Error al obtener productos" });
     }
 
-    const products = json.data.products.edges.map(({ node }) => ({
-      id: node.id,
-      title: node.title,
-      handle: node.handle,
-      description: node.description,
-      image: node.images.edges[0]?.node?.url || '',
-      altText: node.images.edges[0]?.node?.altText || '',
-      price: node.variants.edges[0]?.node?.price?.amount || '0',
-      currency: node.variants.edges[0]?.node?.price?.currencyCode || 'USD',
-    }));
+    const products = json.data.products.edges.map(({ node }) => {
+      const productImages = (node.images?.edges || []).map(e => ({
+        id: e.node.id,
+        url: e.node.url
+      }));
 
-    return res.status(200).json(products);
+      // 1) Primero obtenemos variantes “raw”
+const rawVariants = (node.variants?.edges || []).map(({ node: v }) => ({
+  id: v.id,
+  title: v.title,
+  price: v.price?.amount ?? null,
+  compareAtPrice: v.compareAtPrice?.amount ?? null,
+  selectedOptions: v.selectedOptions || [],
+  image: v.image?.url ?? null,
+  imageId: v.image?.id ?? null,
+}));
+
+// 2) Contamos cuántas variantes usan cada imageId
+const imgCount = rawVariants.reduce((acc, v) => {
+  if (v.imageId) acc[v.imageId] = (acc[v.imageId] || 0) + 1;
+  return acc;
+}, {});
+
+// 3) Consideramos “imagen propia” solo si el imageId es único entre variantes
+const variants = rawVariants.map(v => {
+  const hasOwnImage = !!v.imageId && imgCount[v.imageId] === 1;
+  return {
+    ...v,
+    hasOwnImage,
+    // si NO es propia, anulamos la imagen para el frontend
+    image: hasOwnImage ? v.image : null,
+  };
+});
+
+
+      return {
+        id: node.id,
+        title: node.title,
+        description: node.description,
+        tags: node.tags || [],
+        // Featured image del producto (no confundir con la de variante)
+        image: productImages[0]?.url || "",
+        images: productImages,
+        // Precio base (por si quieres mostrar algo cuando no hay variante)
+        price: variants[0]?.price ?? "0",
+        compareAtPrice: variants[0]?.compareAtPrice ?? null,
+        variants,
+      };
+    });
+
+    res.status(200).json(products);
   } catch (error) {
-    return res.status(500).json({ error: "Shopify fetch error", details: error.message });
+    console.error("Error en /api/products:", error);
+    res.status(500).json({ error: "Error al obtener productos" });
   }
 }

@@ -89,7 +89,6 @@ export default function Home() {
   const plantScrollRef = useRef(null);
   const potScrollRef = useRef(null);
 
-  
   // Estado de edición emitido por CustomizationOverlay
   const [editing, setEditing] = useState(false);
   useEffect(() => {
