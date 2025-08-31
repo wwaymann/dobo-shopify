@@ -1,61 +1,34 @@
-// pages/api/plants.js
-export default async function handler(req, res) {
+// pages/plants.js
+export default function Plants({ items = [] }) {
+  return (
+    <main style={{ padding: 16 }}>
+      <h1>Plantas</h1>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+        {items.map(p => (
+          <article key={p.id} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 8 }}>
+            {p.image ? (
+              <img
+                src={p.image}
+                alt={p.title}
+                style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 6 }}
+              />
+            ) : null}
+            <div style={{ marginTop: 8, fontSize: 14 }}>{p.title}</div>
+          </article>
+        ))}
+        {items.length === 0 && <p>Sin resultados.</p>}
+      </div>
+    </main>
+  );
+}
+
+export async function getServerSideProps({ req }) {
+  const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://${req.headers.host}`;
   try {
-    const STORE_DOMAIN =
-      process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_STORE_DOMAIN;
-    const TOKEN =
-      process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
-      process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN ||
-      process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN;
-
-    if (!STORE_DOMAIN || !TOKEN) {
-      return res.status(500).json({ error: 'missing_shopify_env' });
-    }
-
-    const response = await fetch(
-      `https://${STORE_DOMAIN}/api/2023-01/graphql.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': TOKEN,
-        },
-        body: JSON.stringify({
-          query: `
-            {
-              products(first: 100, query: "tag:plantas") {
-                edges {
-                  node {
-                    id
-                    title
-                    images(first: 1) {
-                      edges { node { url } }
-                    }
-                  }
-                }
-              }
-            }
-          `,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      return res.status(response.status).json({ error: 'shopify_error', detail: text });
-    }
-
-    const json = await response.json();
-    const products =
-      json?.data?.products?.edges?.map(({ node }) => ({
-        id: node.id,
-        title: node.title,
-        image: node.images?.edges?.[0]?.node?.url || '',
-      })) || [];
-
-    res.status(200).json(products);
-  } catch (error) {
-    console.error('Error en /api/plants:', error);
-    res.status(500).json({ error: 'server_error' });
+    const r = await fetch(`${base}/api/plants`);
+    const items = r.ok ? await r.json() : [];
+    return { props: { items } };
+  } catch {
+    return { props: { items: [] } };
   }
 }
