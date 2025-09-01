@@ -1,10 +1,11 @@
 // pages/plants.js
 export default function Plants({ items = [] }) {
+  const list = Array.isArray(items) ? items : [];
   return (
     <main style={{ padding: 16 }}>
       <h1>Plantas</h1>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-        {items.map(p => (
+        {list.map(p => (
           <article key={p.id} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 8 }}>
             {p.image ? (
               <img
@@ -16,7 +17,7 @@ export default function Plants({ items = [] }) {
             <div style={{ marginTop: 8, fontSize: 14 }}>{p.title}</div>
           </article>
         ))}
-        {items.length === 0 && <p>Sin resultados.</p>}
+        {list.length === 0 && <p>Sin resultados.</p>}
       </div>
     </main>
   );
@@ -25,9 +26,9 @@ export default function Plants({ items = [] }) {
 export async function getServerSideProps({ req }) {
   const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://${req.headers.host}`;
   try {
-    const r = await fetch(`${base}/api/plants`);
+    const r = await fetch(`${base}/api/plants`, { cache: 'no-store' });
     const items = r.ok ? await r.json() : [];
-    return { props: { items } };
+    return { props: { items: Array.isArray(items) ? items : [] } };
   } catch {
     return { props: { items: [] } };
   }
