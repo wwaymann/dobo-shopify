@@ -274,41 +274,63 @@ export default function Home() {
     Beige: "#EAD8AB",
   };
 
-  // cargar productos
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const res = await fetch("/api/products");
-        const data = await res.json();
+ // cargar productos
+useEffect(() => {
+  async function fetchProducts() {
+    try {
+      const res = await fetch("/api/products", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-        const plantas = data.filter(
-          (p) =>
-            Array.isArray(p.tags) &&
-            p.tags.some((tag) => tag.toLowerCase().includes("plantas"))
-        );
-        const macetas = data.filter(
-          (p) =>
-            Array.isArray(p.tags) &&
-            p.tags.some((tag) => tag.toLowerCase().includes("macetas"))
-        );
-        const accesorios = data.filter(
-          (p) =>
-            Array.isArray(p.tags) &&
-            p.tags.some((tag) => tag.toLowerCase().includes("accesorios"))
+      // Acepta distintos "shapes" y fuerza array
+      const arr = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.products)
+        ? data.products
+        : [];
+
+      // Normaliza campos usados más abajo
+      const safe = arr.map((p) => ({
+        ...p,
+        tags: Array.isArray(p?.tags) ? p.tags : [],
+        variants: Array.isArray(p?.variants) ? p.variants : [],
+        image:
+          p?.image?.src ||
+          p?.image ||
+          (Array.isArray(p?.images) && p.images[0]?.src) ||
+          "",
+      }));
+
+      const byTag = (t) =>
+        safe.filter((p) =>
+          p.tags.some((tag) => String(tag).toLowerCase().includes(t))
         );
 
-        setPlants(plantas);
-        setPots(macetas);
-        if (macetas.length > 0 && macetas[0].variants?.length > 0) {
-          setSelectedPotVariant(macetas[0].variants[0]);
-        }
-        setAccessories(accesorios);
-      } catch (err) {
-        console.error("Error fetching products:", err);
+      const plantas = byTag("plantas");
+      const macetas = byTag("macetas");
+      const accesorios = byTag("accesorios");
+
+      setPlants(plantas);
+      setPots(macetas);
+      setAccessories(accesorios);
+
+      if (macetas.length > 0) {
+        const firstVariant =
+          (macetas[0].variants || []).find((v) => v?.image) ||
+          macetas[0].variants?.[0] ||
+          null;
+        setSelectedPotVariant(firstVariant);
       }
-    };
-    fetchProducts();
-  }, []);
+    } catch (err) {
+      console.error("Error fetching products:", err);
+      setPlants([]);
+      setPots([]);
+      setAccessories([]);
+    }
+  }
+  fetchProducts();
+}, []);
+
 
   const createHandlers = (items, setIndex) => ({
     prev: () => setIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1)),
