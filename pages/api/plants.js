@@ -1,14 +1,18 @@
 // pages/api/plants.js
 export default async function handler(req, res) {
-  try {
-    const STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
-    const API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-01';
-    const TOKEN =
-      process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
-      process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN;
+  const STORE_DOMAIN =
+    process.env.SHOPIFY_STORE_DOMAIN || process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+  const API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-01';
+  const TOKEN =
+    process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
+    process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN;
 
+  let items = []; // siempre devolveremos un array
+
+  try {
     if (!STORE_DOMAIN || !TOKEN) {
-      return res.status(500).json({ error: 'missing_shopify_env' });
+      console.error('Missing Shopify envs');
+      return res.status(200).json(items);
     }
 
     const r = await fetch(`https://${STORE_DOMAIN}/api/${API_VERSION}/graphql.json`, {
@@ -35,21 +39,24 @@ export default async function handler(req, res) {
     });
 
     if (!r.ok) {
-      const text = await r.text();
-      return res.status(r.status).json({ error: 'shopify_error', detail: text });
+      console.error('Shopify error', await r.text());
+      return res.status(200).json(items);
     }
 
     const json = await r.json();
-    const items =
-      json?.data?.products?.edges?.map(({ node }) => ({
+    const edges = json?.data?.products?.edges;
+
+    if (Array.isArray(edges)) {
+      items = edges.map(({ node }) => ({
         id: node.id,
         title: node.title,
         image: node.images?.edges?.[0]?.node?.url || '',
-      })) || [];
+      }));
+    }
 
-    res.status(200).json(items);
-  } catch (err) {
-    console.error('Error /api/plants:', err);
-    res.status(500).json({ error: 'server_error' });
+    return res.status(200).json(items);
+  } catch (e) {
+    console.error('Error /api/plants', e);
+    return res.status(200).json(items);
   }
 }
