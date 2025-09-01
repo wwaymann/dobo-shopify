@@ -302,25 +302,31 @@ useEffect(() => {
       }));
 
       const byTag = (t) =>
-        safe.filter((p) =>
-          p.tags.some((tag) => String(tag).toLowerCase().includes(t))
-        );
+  safe.filter((p) => p.tags.some((tag) => String(tag).toLowerCase().includes(t)));
 
-      const plantas = byTag("plantas");
-      const macetas = byTag("macetas");
-      const accesorios = byTag("accesorios");
+let plantas = byTag("plantas");
+let macetas = byTag("macetas");
+let accesorios = byTag("accesorios");
 
-      setPlants(plantas);
-      setPots(macetas);
-      setAccessories(accesorios);
+// Fallback: si no hay tags, usa todo como "macetas"
+if ((plantas.length + macetas.length + accesorios.length) === 0 && safe.length > 0) {
+  macetas = safe;
+  plantas = [];
+  accesorios = [];
+}
 
-      if (macetas.length > 0) {
-        const firstVariant =
-          (macetas[0].variants || []).find((v) => v?.image) ||
-          macetas[0].variants?.[0] ||
-          null;
-        setSelectedPotVariant(firstVariant);
-      }
+setPlants(plantas);
+setPots(macetas);
+setAccessories(accesorios);
+
+if (macetas.length > 0) {
+  const firstVariant =
+    (macetas[0].variants || []).find((v) => v?.image) ||
+    macetas[0].variants?.[0] ||
+    null;
+  setSelectedPotVariant(firstVariant);
+}
+
     } catch (err) {
       console.error("Error fetching products:", err);
       setPlants([]);
