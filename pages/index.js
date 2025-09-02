@@ -1024,37 +1024,23 @@ const getTotalComparePrice = () => {
             
 {/* Precio combinado */}
 <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
-  {/* Precio maceta pequeño, mostrando SOLO el precio sin rebaja (compareAt) tachado */}
-  {(pots[selectedPotIndex] || selectedPotVariant) && (
-    (() => {
-      const potPrice = selectedPotVariant?.price
-        ? num(selectedPotVariant.price)
-        : firstVariantPrice(pots[selectedPotIndex]);
-      const potCmp = selectedPotVariant?.compareAtPrice
-        ? num(selectedPotVariant.compareAtPrice)
-        : null;
-      const code = selectedPotVariant?.price?.currencyCode || 'CLP';
+  {(() => {
+    const code = selectedPotVariant?.price?.currencyCode || 'CLP';
+    const total = getTotalPrice() * quantity;                  // precio actual
+    const base  = getTotalComparePrice() * quantity || total;  // "sin rebaja"
+    return (
+      <p style={{ marginTop: 8, fontSize: '0.95rem', color: '#6c757d' }}>
+        <span style={{ fontWeight: 600, marginRight: 6 }}>Precio combinado:</span>
+        <span style={{ textDecoration: 'line-through' }}>{money(base, code)}</span>
+      </p>
+    );
+  })()}
 
-      return (
-        <p style={{ marginTop: 8, fontSize: '0.95rem', color: '#6c757d' }}>
-          <span style={{ fontWeight: 600, marginRight: 6 }}>Precio maceta:</span>
-          {potCmp && potCmp > potPrice ? (
-            <span style={{ textDecoration: 'line-through' }}>
-              {money(potCmp, code)}
-            </span>
-          ) : (
-            <span>{money(potPrice, code)}</span>
-          )}
-        </p>
-      );
-    })()
-  )}
-
-  {/* Total grande */}
   <span style={{ fontWeight: 'bold', fontSize: '3rem' }}>
     {money(getTotalPrice() * quantity, selectedPotVariant?.price?.currencyCode || 'CLP')}
   </span>
 </div>
+
 
 
               {/* Color */}
