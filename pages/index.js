@@ -300,7 +300,6 @@ useEffect(() => {
     Beige: "#EAD8AB",
   };
 
-// cargar productos
 useEffect(() => {
   async function fetchProducts() {
     try {
@@ -348,6 +347,7 @@ useEffect(() => {
   }
   fetchProducts();
 }, []);
+
 
 
 
