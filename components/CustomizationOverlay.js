@@ -21,12 +21,11 @@ const FONT_OPTIONS = [
 ];
 
 export default function CustomizationOverlay({
-  stageRef,            // opcional
-  anchorRef,           // carrusel de macetas (área a cubrir)
-  containerRef,        // contenedor NO escalado (sceneWrapRef)
+  stageRef,          // nodo escalado (donde está la maceta)
+  anchorRef,         // carrusel de macetas (área a cubrir)
   visible = true,
-  zoom,
-  setZoom,
+  zoom,              // opcional: si lo pasas lo uso para medir y para el display
+  setZoom,           // opcional: si lo pasas lo uso para cambiar el zoom
 }) {
   // ===== Refs / estado =====
   const overlayRef = useRef(null);
@@ -39,6 +38,8 @@ export default function CustomizationOverlay({
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState("none");
+
+  // caja del overlay en el sistema de coordenadas del stage (antes del scale)
   const [box, setBox] = useState({ left: 0, top: 0, width: 1, height: 1 });
 
   // tipografía
@@ -55,36 +56,62 @@ export default function CustomizationOverlay({
   const [vecInvert, setVecInvert] = useState(false);
   const [vecBias, setVecBias] = useState(0);
 
-  // ===== Medición: posiciona overlay sobre anchorRef dentro de containerRef =====
+  // zoom local (fallback si no pasas props)
+  const [localZoom, setLocalZoom] = useState(1);
+  const getZoom = () => (typeof zoom === "number" ? zoom : localZoom);
+  const setZoomValue = (z) => {
+    const val = clamp(z, 0.8, 2.5);
+    if (typeof setZoom === "function") {
+      setZoom(val);
+    } else {
+      const s = stageRef?.current;
+      if (s) s.style.setProperty("--zoom", String(val));
+      setLocalZoom(val);
+    }
+  };
+
+  // ===== Medición: ubicar overlay respecto al stage (corrigiendo por scale) =====
+  const measureOverlay = () => {
+    const stage = stageRef?.current;
+    const anchor = anchorRef?.current;
+    if (!stage || !anchor) return;
+
+    const sr = stage.getBoundingClientRect();
+    const ar = anchor.getBoundingClientRect();
+    const s = getZoom() || 1;
+
+    setBox({
+      left: (ar.left - sr.left) / s,
+      top: (ar.top - sr.top) / s,
+      width: Math.max(1, ar.width / s),
+      height: Math.max(1, ar.height / s),
+    });
+  };
+
   useLayoutEffect(() => {
-    const cont = containerRef?.current;
-    const anch = anchorRef?.current;
-    if (!cont || !anch) return;
+    measureOverlay();
+    const stage = stageRef?.current;
+    const anchor = anchorRef?.current;
+    if (!stage || !anchor) return;
 
-    const update = () => {
-      const cr = cont.getBoundingClientRect();
-      const ar = anch.getBoundingClientRect();
-      setBox({
-        left: Math.round(ar.left - cr.left),
-        top: Math.round(ar.top - cr.top),
-        width: Math.max(1, Math.round(ar.width)),
-        height: Math.max(1, Math.round(ar.height)),
-      });
-    };
+    const roS = new ResizeObserver(measureOverlay);
+    const roA = new ResizeObserver(measureOverlay);
+    try { roS.observe(stage); roA.observe(anchor); } catch {}
 
-    update();
-    const roA = new ResizeObserver(update);
-    const roC = new ResizeObserver(update);
-    try { roA.observe(anch); roC.observe(cont); } catch {}
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
+    const onWin = () => measureOverlay();
+    window.addEventListener("resize", onWin);
+    window.addEventListener("scroll", onWin, { passive: true });
 
     return () => {
-      try { roA.disconnect(); roC.disconnect(); } catch {}
-      window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
+      try { roS.disconnect(); roA.disconnect(); } catch {}
+      window.removeEventListener("resize", onWin);
+      window.removeEventListener("scroll", onWin);
     };
-  }, [anchorRef, containerRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageRef, anchorRef]);
+
+  // Recalcular cuando cambie el zoom
+  useEffect(() => { measureOverlay(); }, [zoom, localZoom]); // eslint-disable-line
 
   // ===== Fabric init =====
   useEffect(() => {
@@ -100,16 +127,15 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-    // Evitar select/callout en iOS
     const upper = c.upperCanvasEl;
     if (upper) {
-      upper.style.touchAction = "none";        // importante: que Fabric reciba el drag
+      upper.style.touchAction = "none";
       upper.style.pointerEvents = "auto";
       upper.style.webkitUserSelect = "none";
       upper.style.userSelect = "none";
     }
 
-    // Doble clic para editar texto
+    // Doble clic: editar texto
     c.on("mouse:dblclick", (e) => {
       const t = e.target;
       if (t && (t.type === "i-text" || t.type === "textbox" || t.type === "text") && typeof t.enterEditing === "function") {
@@ -118,7 +144,7 @@ export default function CustomizationOverlay({
       }
     });
 
-    // Reflejar selección
+    // Helpers de tipo
     const isText = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
     const isImage = (o) => o && o.type === "image";
     const classify = (a) => {
@@ -145,7 +171,66 @@ export default function CustomizationOverlay({
         setTextAlign(first.textAlign || "center");
       }
     };
-    const onSel = () => { setSelType(classify(c.getActiveObject())); reflectTypo(); };
+
+    const ensureTextDeboss = (t) => {
+      if (!t) return;
+      const c = t.canvas;
+      const sh = t._debossers?.shadow;
+      const hi = t._debossers?.highlight;
+      if (!sh || !hi) return;
+
+      // re-sincroniza listeners (evita duplicados)
+      try { if (t._debossSync) t.off("changed", t._debossSync); } catch {}
+      try { if (t._debossSync) t.off("modified", t._debossSync); } catch {}
+      try { if (t._debossSync) t.off("moving", t._debossSync); } catch {}
+      try { if (t._debossSync) t.off("scaling", t._debossSync); } catch {}
+      try { if (t._debossSync) t.off("rotating", t._debossSync); } catch {}
+      try { if (t._debossSync) t.off("resizing", t._debossSync); } catch {}
+
+      const sync = () => {
+        const props = ["left","top","scaleX","scaleY","angle","width","fontSize","fontFamily","fontWeight","fontStyle","charSpacing","textAlign","underline","text","originX","originY"];
+        [sh, hi].forEach((o) => { props.forEach((p) => o.set(p, t[p])); });
+        sh.set({ left: t.left - 1, top: t.top - 1 });
+        hi.set({ left: t.left + 1, top: t.top + 1 });
+        c?.requestRenderAll();
+      };
+      t._debossSync = sync;
+      t.on("changed",  sync);
+      t.on("modified", sync);
+      t.on("moving",   sync);
+      t.on("scaling",  sync);
+      t.on("rotating", sync);
+      t.on("resizing", sync);
+      sync();
+    };
+
+    const ensureImageDeboss = (o) => {
+      if (!o || !o._deboss) return;
+      const sync = o._debossSync;
+      if (sync) {
+        // re-engancha listeners por si Fabric los limpió internamente
+        ["modified","moving","scaling","rotating","skewing"].forEach((ev) => {
+          try { o.off(ev, sync); } catch {}
+          try { o.on(ev, sync); } catch {}
+        });
+        sync();
+      }
+    };
+
+    const ensureAllDeboss = () => {
+      (c.getObjects?.() || []).forEach((o) => {
+        if (o.type === "i-text" || o.type === "textbox" || o.type === "text") ensureTextDeboss(o);
+        else ensureImageDeboss(o);
+      });
+      c.requestRenderAll?.();
+    };
+
+    const onSel = () => {
+      setSelType(classify(c.getActiveObject()));
+      reflectTypo();
+      ensureAllDeboss(); // <- evita “separación” al re-seleccionar tras salir/entrar
+    };
+
     c.on("selection:created", onSel);
     c.on("selection:updated", onSel);
     c.on("selection:cleared", () => setSelType("none"));
@@ -160,19 +245,19 @@ export default function CustomizationOverlay({
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
+  }, [visible, stageRef]);
 
-  // Ajustar tamaño del lienzo al box
+  // Ajuste de tamaño del lienzo al box
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
-    c.setWidth(box.width);
-    c.setHeight(box.height);
+    c.setWidth(Math.max(1, Math.round(box.width)));
+    c.setHeight(Math.max(1, Math.round(box.height)));
     c.calcOffset?.();
     c.requestRenderAll?.();
   }, [box.width, box.height]);
 
-  // ===== Alternar modo edición =====
+  // ===== Alternar modo edición & notificar a la página =====
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -197,60 +282,94 @@ export default function CustomizationOverlay({
       upper.tabIndex = on ? 0 : -1;
     }
 
-    c.discardActiveObject?.();
-    c.calcOffset?.();
-    c.requestRenderAll?.();
+    // re-sincroniza capas de relieve al entrar en modo edición
+    if (on) {
+      const objs = c.getObjects?.() || [];
+      objs.forEach((o) => {
+        if (o.type === "i-text" || o.type === "textbox" || o.type === "text") {
+          // fuerza propiedades para nuestro relieve
+          o.globalCompositeOperation = "multiply";
+          if (o._debossSync) o._debossSync();
+        } else if (o._debossSync) {
+          o._debossSync();
+        }
+      });
+      c.requestRenderAll?.();
+    }
 
-    // notificar a la página para bloquear carruseles, etc.
     window.dispatchEvent(new CustomEvent("dobo-editing", { detail: { editing: on } }));
   }, [editing]);
 
-  // ===== Dejar pasar WHEEL (zoom con mouse) y ceder pinch (2 dedos) al contenedor =====
+  // ===== Zoom en modo diseñar (rueda & pinch), sin romper Fabric ni los clicks =====
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
-    const container = containerRef?.current;
-    if (!upper || !container) return;
+    if (!upper) return;
 
-    // NO bloquear wheel (que burbujee al contenedor)
-    const blockWheel = (e) => { /* intencionalmente vacío: no preventDefault */ };
+    // Rueda: capturamos ANTES que Fabric y actualizamos zoom
+    const onWheel = (e) => {
+      if (!editing) return;              // fuera de diseñar, deja que lo maneje tu contenedor
+      e.preventDefault();                // evita que Fabric bloquee el evento
+      const step = e.deltaY > 0 ? -0.08 : 0.08;
+      setZoomValue((getZoom() || 1) + step);
+      // al cambiar zoom, la caja del overlay debe recalcularse
+      measureOverlay();
+    };
 
-    // Si hay dos toques, cede eventos al contenedor para su pinch-zoom
-    let touchCount = 0;
+    // Pinch: sólo cuando hay 2 toques; con 1 toque dejamos a Fabric mover/seleccionar
+    const pts = new Map();
+    let startDist = 0;
+    let startScale = getZoom() || 1;
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
     const onPD = (e) => {
-      if (!editing) return;
-      if (e.pointerType === "touch") {
-        touchCount++;
-        if (touchCount >= 2) {
-          upper.style.pointerEvents = "none"; // cede
-        }
+      if (!editing || e.pointerType !== "touch") return;
+      upper.setPointerCapture?.(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        const [p1, p2] = [...pts.values()];
+        startDist = dist(p1, p2);
+        startScale = getZoom() || 1;
+      }
+    };
+    const onPM = (e) => {
+      if (!editing || e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
+      if (pts.size < 2) return; // deja a Fabric arrastrar con 1 dedo
+      e.preventDefault(); // evita que Fabric “consuma” el gesto
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (startDist > 0) {
+        const [p1, p2] = [...pts.values()];
+        const factor = dist(p1, p2) / startDist;
+        setZoomValue(clamp(startScale * Math.pow(factor, 0.9), 0.8, 2.5));
+        measureOverlay();
       }
     };
     const onPU = (e) => {
-      if (!editing) return;
-      if (e.pointerType === "touch") {
-        touchCount = Math.max(0, touchCount - 1);
-        if (touchCount < 2) {
-          // pequeño delay para no “parpadear”
-          setTimeout(() => { if (touchCount < 2) upper.style.pointerEvents = "auto"; }, 0);
-        }
+      if (e.pointerType !== "touch") return;
+      pts.delete(e.pointerId);
+      if (pts.size < 2) {
+        startDist = 0;
+        startScale = getZoom() || 1;
       }
     };
 
-    upper.addEventListener("wheel", blockWheel, { passive: true });
-    window.addEventListener("pointerdown", onPD, { passive: true });
+    upper.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    upper.addEventListener("pointerdown", onPD, { passive: false });
+    upper.addEventListener("pointermove", onPM, { passive: false });
     window.addEventListener("pointerup", onPU, { passive: true });
     window.addEventListener("pointercancel", onPU, { passive: true });
 
     return () => {
-      upper.removeEventListener("wheel", blockWheel);
-      window.removeEventListener("pointerdown", onPD);
+      upper.removeEventListener("wheel", onWheel, { capture: true });
+      upper.removeEventListener("pointerdown", onPD);
+      upper.removeEventListener("pointermove", onPM);
       window.removeEventListener("pointerup", onPU);
       window.removeEventListener("pointercancel", onPU);
     };
-  }, [editing, containerRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, stageRef, zoom, localZoom]);
 
-  // ===== Utils imagen / vectorización =====
+  // ===== Utils imagen / vectorización / relieve =====
   const downscale = (imgEl) => {
     const w = imgEl.naturalWidth || imgEl.width;
     const h = imgEl.naturalHeight || imgEl.height;
@@ -321,7 +440,6 @@ export default function CustomizationOverlay({
     return bm;
   };
 
-  // ===== Relieve =====
   const attachDebossToBase = (c, baseObj, { offset = 1 } = {}) => {
     const cloneFrom = () => {
       const el = typeof baseObj.getElement === "function" ? baseObj.getElement() : baseObj._element;
@@ -390,8 +508,7 @@ export default function CustomizationOverlay({
     };
     const shadow = makeClone(-1, -1, "rgba(0,0,0,0.48)", 1, "multiply");
     const highlight = makeClone(1, 1, "rgba(255,255,255,0.65)", 0.6, "screen");
-    t.__debossClones = [shadow, highlight];
-    c.add(t); c.add(shadow); c.add(highlight); c.setActiveObject(t);
+    t._debossers = { shadow, highlight };
     const sync = () => {
       const props = ["left","top","scaleX","scaleY","angle","width","fontSize","fontFamily","fontWeight","fontStyle","charSpacing","textAlign","underline","text","originX","originY"];
       [shadow, highlight].forEach((o) => { props.forEach((p) => o.set(p, t[p])); });
@@ -399,13 +516,15 @@ export default function CustomizationOverlay({
       highlight.set({ left: t.left + 1, top: t.top + 1 });
       c.requestRenderAll();
     };
-    t._debossers = { shadow, highlight }; t._debossSync = sync;
+    t._debossSync = sync;
     t.on("changed",  sync);
     t.on("modified", sync);
     t.on("moving",   sync);
     t.on("scaling",  sync);
     t.on("rotating", sync);
     t.on("resizing", sync);
+
+    c.add(t); c.add(shadow); c.add(highlight); c.setActiveObject(t);
     sync();
   };
 
@@ -535,14 +654,8 @@ export default function CustomizationOverlay({
     setSelType("none");
     c.requestRenderAll();
   };
-  const enterDesignMode = () => {
-    clearSelectionHard();
-    setEditing(true);
-  };
-  const exitDesignMode = () => {
-    clearSelectionHard();
-    setEditing(false);
-  };
+  const enterDesignMode = () => { clearSelectionHard(); setEditing(true); };
+  const exitDesignMode = () => { clearSelectionHard(); setEditing(false); };
 
   // ===== Aplicar a selección (texto) =====
   const applyToSelection = (mutator) => {
@@ -563,7 +676,8 @@ export default function CustomizationOverlay({
     const rebuild = (obj) => {
       let element = null;
       const pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
-      if (obj._vecSourceEl) { element = obj._vecSourceEl; clearDeboss(obj); try { c.remove(obj); } catch {} }
+      if (obj._deboss) clearDeboss(obj);
+      if (obj._vecSourceEl) { element = obj._vecSourceEl; try { c.remove(obj); } catch {} }
       else if (obj.type === "image") { element = (typeof obj.getElement === "function" ? obj.getElement() : (obj._originalElement || obj._element)); try { c.remove(obj); } catch {} }
       else { return; }
 
@@ -579,7 +693,7 @@ export default function CustomizationOverlay({
     } else { rebuild(a); }
 
     c.requestRenderAll();
-  }, [vecBias, vecInvert]);
+  }, [vecBias, vecInvert]); // eslint-disable-line
 
   // Profundidad en caliente
   useEffect(() => {
@@ -592,7 +706,7 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
-  // ===== Overlay (absoluto dentro del contenedor NO escalado) =====
+  // ===== Overlay (hijo del STAGE, escala con la maceta) =====
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -609,8 +723,8 @@ export default function CustomizationOverlay({
     >
       <canvas
         ref={canvasRef}
-        width={box.width}
-        height={box.height}
+        width={Math.max(1, Math.round(box.width))}
+        height={Math.max(1, Math.round(box.height))}
         style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
       />
     </div>
@@ -618,6 +732,7 @@ export default function CustomizationOverlay({
 
   // ===== Menú =====
   function Menu() {
+    const zVal = Math.round((getZoom() || 1) * 100);
     return (
       <div
         style={{
@@ -638,18 +753,16 @@ export default function CustomizationOverlay({
         }}
       >
         <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {typeof setZoom === "function" && (
-            <div className="input-group input-group-sm" style={{ width: 180 }}>
-              <span className="input-group-text">Zoom</span>
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom((z) => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center" value={`${Math.round((zoom || 1) * 100)}%`} />
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
-            </div>
-          )}
-          <button type="button" className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={exitDesignMode} style={{ minWidth: "16ch" }}>
+          <div className="input-group input-group-sm" style={{ width: 180 }}>
+            <span className="input-group-text">Zoom</span>
+            <button type="button" className="btn btn-outline-secondary" onClick={() => setZoomValue((getZoom() || 1) - 0.1)}>−</button>
+            <input type="text" readOnly className="form-control form-control-sm text-center" value={`${zVal}%`} />
+            <button type="button" className="btn btn-outline-secondary" onClick={() => setZoomValue((getZoom() || 1) + 0.1)}>+</button>
+          </div>
+          <button type="button" className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={() => { clearSelectionHard(); setEditing(false); }} style={{ minWidth: "16ch" }}>
             Seleccionar Maceta
           </button>
-          <button type="button" className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={enterDesignMode} style={{ minWidth: "12ch" }}>
+          <button type="button" className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={() => { clearSelectionHard(); setEditing(true); }} style={{ minWidth: "12ch" }}>
             Diseñar
           </button>
         </div>
@@ -735,7 +848,7 @@ export default function CustomizationOverlay({
   // ===== Render =====
   return (
     <>
-      {containerRef?.current ? createPortal(OverlayCanvas, containerRef.current) : null}
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
       {typeof document !== "undefined"
         ? createPortal(
             <div
