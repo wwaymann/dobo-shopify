@@ -445,27 +445,7 @@ setupSwipe(potScrollRef, potHandlers);
     }
   }, [pots, selectedPotIndex]);
 
-  // color por defecto que tenga imagen con el tamaño actual
-  useEffect(() => {
-    const pot = pots[selectedPotIndex];
-    if (!pot) return;
-    if (
-      selectedColor &&
-      hasVariantOwnImage({ pot, color: selectedColor, size: selectedSize })
-    ) {
-      return;
-    }
-    const firstValidColor = colorOptions.find((c) =>
-      hasVariantOwnImage({ pot, color: c, size: selectedSize })
-    );
-    if (firstValidColor) setSelectedColor(firstValidColor);
-    else {
-      const anyColorWithImage = colorOptions.find((c) =>
-        hasVariantOwnImage({ pot, color: c, size: null })
-      );
-      if (anyColorWithImage) setSelectedColor(anyColorWithImage);
-    }
-  }, [pots, selectedPotIndex, colorOptions, selectedSize, selectedColor]);
+
 
 // === Variantes: opciones, color/size por defecto y variante seleccionada ===
 useEffect(() => {
@@ -481,41 +461,30 @@ useEffect(() => {
   const valid = (pot.variants || []).filter(v => !!v.image);
   const lower = (s) => (s ?? '').toString().trim().toLowerCase();
 
-  // opciones únicas
-  const colors = [
-    ...new Set(
-      valid.flatMap(v =>
-        (v.selectedOptions || [])
-          .filter(o => lower(o.name) === 'color')
-          .map(o => o.value)
-      )
-    ),
-  ];
+  const colors = [...new Set(
+    valid.flatMap(v => (v.selectedOptions || [])
+      .filter(o => lower(o.name) === 'color')
+      .map(o => o.value))
+  )];
 
-  const sizes = [
-    ...new Set(
-      valid.flatMap(v =>
-        (v.selectedOptions || [])
-          .filter(o => {
-            const n = lower(o.name);
-            return n === 'tamaño' || n === 'size';
-          })
-          .map(o => o.value)
-      )
-    ),
-  ];
+  const sizes = [...new Set(
+    valid.flatMap(v => (v.selectedOptions || [])
+      .filter(o => {
+        const n = lower(o.name);
+        return n === 'tamaño' || n === 'size';
+      })
+      .map(o => o.value))
+  )];
 
   setColorOptions(colors);
   setSizeOptions(sizes);
 
-  // tamaño por defecto
   if (!selectedSize || !sizes.includes(selectedSize)) {
     if (sizes.length >= 2) setSelectedSize(sizes[1]);
     else if (sizes.length === 1) setSelectedSize(sizes[0]);
     else setSelectedSize(null);
   }
 
-  // si el color actual no calza, elige uno válido
   const variantMatches = (v, color, size) => {
     const opts = v.selectedOptions || [];
     const colorOK = color ? opts.some(o => lower(o.name) === 'color' && lower(o.value) === lower(color)) : true;
@@ -531,10 +500,10 @@ useEffect(() => {
     if (firstColor) setSelectedColor(firstColor);
   }
 
-  // variante seleccionada
   const chosen = valid.find(v => variantMatches(v, selectedColor, selectedSize)) || valid[0] || null;
   setSelectedPotVariant(chosen || null);
 }, [pots, selectedPotIndex, selectedColor, selectedSize]);
+
 
 
 
