@@ -21,16 +21,15 @@ const FONT_OPTIONS = [
   { name: "Poppins", css: "Poppins, Arial, sans-serif" },
 ];
 
-/** ===== Componente ===== */
 export default function CustomizationOverlay({
-  stageRef,   // contenedor escalado (donde está la maceta)
-  anchorRef,  // carrusel de macetas (área a cubrir)
+  stageRef,   // contenedor escalado (opcional, sólo para zoom externo)
+  anchorRef,  // elemento que cubre el overlay (carrusel de macetas)
   visible = true,
   zoom,       // opcional
   setZoom,    // opcional
 }) {
   /** ----- Refs/estado ----- */
-  const overlayRef = useRef(null);
+  const canvasWrapRef = useRef(null);
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
 
@@ -41,8 +40,8 @@ export default function CustomizationOverlay({
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState("none");
 
-  // caja del overlay en coords del stage (antes del scale)
-  const [box, setBox] = useState({ left: 0, top: 0, width: 1, height: 1 });
+  // tamaño del anchor (el overlay se ajusta 1:1 aquí)
+  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
   // tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -71,42 +70,30 @@ export default function CustomizationOverlay({
     }
   };
 
-  /** ===== Medición overlay (corrige por zoom) ===== */
-  const measureOverlay = () => {
-    const stage = stageRef?.current;
-    const anchor = anchorRef?.current;
-    if (!stage || !anchor) return;
-    const sr = stage.getBoundingClientRect();
-    const ar = anchor.getBoundingClientRect();
-    const s = getZoom() || 1;
-    setBox({
-      left: (ar.left - sr.left) / s,
-      top: (ar.top - sr.top) / s,
-      width: Math.max(1, ar.width / s),
-      height: Math.max(1, ar.height / s),
-    });
-  };
-
+  /** ===== Medición directa del anchor ===== */
   useLayoutEffect(() => {
-    measureOverlay();
-    const stage = stageRef?.current;
-    const anchor = anchorRef?.current;
-    if (!stage || !anchor) return;
-    const roS = new ResizeObserver(measureOverlay);
-    const roA = new ResizeObserver(measureOverlay);
-    try { roS.observe(stage); roA.observe(anchor); } catch {}
-    const onWin = () => measureOverlay();
-    window.addEventListener("resize", onWin);
-    window.addEventListener("scroll", onWin, { passive: true });
-    return () => {
-      try { roS.disconnect(); roA.disconnect(); } catch {}
-      window.removeEventListener("resize", onWin);
-      window.removeEventListener("scroll", onWin);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageRef, anchorRef]);
+    const el = anchorRef?.current;
+    if (!el) return;
+    // Garantiza posición para el overlay absoluto interno
+    const prev = el.style.position;
+    if (getComputedStyle(el).position === "static") el.style.position = "relative";
 
-  useEffect(() => { measureOverlay(); }, [zoom, localZoom]); // eslint-disable-line
+    const measure = () => {
+      const w = Math.max(1, Math.round(el.clientWidth));
+      const h = Math.max(1, Math.round(el.clientHeight));
+      setBaseSize({ w, h });
+    };
+    measure();
+
+    const ro = new ResizeObserver(measure);
+    try { ro.observe(el); } catch {}
+    window.addEventListener("resize", measure);
+    return () => {
+      try { ro.disconnect(); } catch {}
+      window.removeEventListener("resize", measure);
+      try { el.style.position = prev; } catch {}
+    };
+  }, [anchorRef]);
 
   /** ===== Helpers Imagen ===== */
   const downscale = (imgEl) => {
@@ -170,13 +157,39 @@ export default function CustomizationOverlay({
     return new fabric.Image(cv, { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, selectable: true, evented: true });
   };
 
-  /** ===== Grupos de relieve (mantiene capas unidas y centradas) ===== */
+  /** ===== Util: centrar en el canvas ===== */
   const centerOnCanvas = (obj, c) => {
     const cx = c.getWidth() / 2;
     const cy = c.getHeight() / 2;
     obj.set({ originX: "center", originY: "center" });
     obj.setPositionByOrigin(new fabric.Point(cx, cy), "center", "center");
     obj.setCoords?.();
+  };
+
+  /** ===== Grupos de relieve (capas pegadas + offsets normalizados) ===== */
+  const normalizeImageOffsets = (group) => {
+    if (!group || group._kind !== "imgDeboss") return;
+    const { shadow, highlight } = group._debossChildren || {};
+    if (!shadow || !highlight) return;
+    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
+    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
+    const ox = vecOffset / sx;
+    const oy = vecOffset / sy;
+    shadow.set({ left: -ox, top: -oy });
+    highlight.set({ left: +ox, top: +oy });
+  };
+
+  const normalizeTextOffsets = (group) => {
+    if (!group || group._kind !== "textDeboss") return;
+    const { shadow, highlight, base } = group._textChildren || {};
+    if (!shadow || !highlight || !base) return;
+    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
+    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
+    const ox = 1 / sx;
+    const oy = 1 / sy;
+    shadow.set({ left: -ox, top: -oy });
+    highlight.set({ left: +ox, top: +oy });
+    base.set({ left: 0, top: 0 });
   };
 
   // Imagen: Group(base, shadow, highlight)
@@ -186,6 +199,7 @@ export default function CustomizationOverlay({
     const shadow = new fabric.Image(base.getElement(), { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, globalCompositeOperation: "multiply" });
     const highlight = new fabric.Image(base.getElement(), { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, globalCompositeOperation: "screen", opacity: 1 });
 
+    // offsets iniciales, se normalizan luego
     shadow.left = -vecOffset; shadow.top = -vecOffset;
     highlight.left = +vecOffset; highlight.top = +vecOffset;
     base.left = 0; base.top = 0;
@@ -196,6 +210,12 @@ export default function CustomizationOverlay({
     group._kind = "imgDeboss";
     group._vecSourceEl = element;
     group._debossChildren = { shadow, highlight, base };
+
+    // Mantener offsets correctos al escalar/mover
+    const sync = () => { normalizeImageOffsets(group); group.setCoords?.(); group.canvas?.requestRenderAll?.(); };
+    group.on("scaling", sync);
+    group.on("modified", sync);
+
     return group;
   };
 
@@ -223,16 +243,20 @@ export default function CustomizationOverlay({
     c.add(fresh);
     fresh.set({ originX: "center", originY: "center" });
     fresh.setPositionByOrigin(center, "center", "center");
+
+    // volver a enganchar normalización
+    const sync = () => { normalizeImageOffsets(fresh); fresh.setCoords?.(); c.requestRenderAll?.(); };
+    fresh.on("scaling", sync);
+    fresh.on("modified", sync);
+    sync();
+
     c.setActiveObject(fresh);
     c.requestRenderAll();
   };
 
   const updateImageOffset = (group) => {
     if (!group || group._kind !== "imgDeboss") return;
-    const { shadow, highlight } = group._debossChildren || {};
-    if (!shadow || !highlight) return;
-    shadow.set({ left: -vecOffset, top: -vecOffset });
-    highlight.set({ left: +vecOffset, top: +vecOffset });
+    normalizeImageOffsets(group);
     group.canvas?.requestRenderAll();
   };
 
@@ -259,6 +283,12 @@ export default function CustomizationOverlay({
     });
     group._kind = "textDeboss";
     group._textChildren = { shadow, highlight, base };
+
+    const sync = () => { normalizeTextOffsets(group); group.setCoords?.(); group.canvas?.requestRenderAll?.(); };
+    group.on("scaling", sync);
+    group.on("modified", sync);
+    sync();
+
     return group;
   };
 
@@ -266,9 +296,7 @@ export default function CustomizationOverlay({
     if (!group || group._kind !== "textDeboss") return;
     const { shadow, highlight, base } = group._textChildren || {};
     [shadow, highlight, base].forEach((o) => mutator(o));
-    shadow.set({ left: -1, top: -1 });
-    highlight.set({ left: +1, top: +1 });
-    base.set({ left: 0, top: 0 });
+    normalizeTextOffsets(group);
     group.setCoords?.();
     group.canvas?.requestRenderAll();
   };
@@ -299,7 +327,7 @@ export default function CustomizationOverlay({
       upper.style.userSelect = "none";
     }
     if (lower) {
-      lower.style.pointerEvents = "none"; // evita que el host consuma eventos bajo el canvas
+      lower.style.pointerEvents = "none"; // no bloquear clics del host fuera de edición
     }
 
     // Doble click -> editar texto (sobre el hijo base)
@@ -346,7 +374,6 @@ export default function CustomizationOverlay({
 
     setReady(true);
 
-    // API mínima debug
     if (typeof window !== "undefined") {
       window.doboDesignAPI = {
         getCanvas: () => c,
@@ -365,17 +392,17 @@ export default function CustomizationOverlay({
     };
   }, [visible]);
 
-  // Ajustar lienzo a la caja
+  // Ajustar lienzo al tamaño del anchor
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
-    c.setWidth(Math.max(1, Math.round(box.width)));
-    c.setHeight(Math.max(1, Math.round(box.height)));
+    c.setWidth(Math.max(1, Math.round(baseSize.w)));
+    c.setHeight(Math.max(1, Math.round(baseSize.h)));
     c.calcOffset?.();
     c.requestRenderAll?.();
-  }, [box.width, box.height]);
+  }, [baseSize.w, baseSize.h]);
 
-  /** ===== Alternar modo edición ===== */
+  /** ===== Alternar modo edición (pointer-events sólo dentro del anchor) ===== */
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -393,45 +420,12 @@ export default function CustomizationOverlay({
     });
 
     const upper = c.upperCanvasEl;
-    const lower = c.lowerCanvasEl;
     if (upper) {
       upper.style.pointerEvents = on ? "auto" : "none";
       upper.style.touchAction = on ? "none" : "auto";
       upper.tabIndex = on ? 0 : -1;
     }
-    if (lower) lower.style.pointerEvents = "none";
-
-    window.dispatchEvent(new CustomEvent("dobo-editing", { detail: { editing: on } }));
   }, [editing]);
-
-  /** ===== Bloquear eventos del host cuando se edita (mouse OK) ===== */
-  useEffect(() => {
-    const host = stageRef?.current;
-    if (!host) return;
-
-    const allowedNodes = () => {
-      const c = fabricCanvasRef.current;
-      return [overlayRef.current, c?.upperCanvasEl].filter(Boolean);
-    };
-    const insideAllowed = (e) => {
-      const allowed = allowedNodes();
-      if (e.composedPath) return e.composedPath().some((n) => allowed.includes(n));
-      const t = e.target;
-      return allowed.some((n) => n && (n === t || n.contains?.(t)));
-    };
-
-    const stop = (e) => {
-      if (!editing) return;
-      if (insideAllowed(e)) return;
-      e.stopPropagation();
-      if (e.type === "wheel" || e.type.startsWith("touch")) e.preventDefault();
-    };
-
-    const optsActive = { capture: true, passive: false };
-    const events = ["pointerdown", "mousedown", "click", "wheel", "touchstart", "touchmove"];
-    events.forEach((ev) => host.addEventListener(ev, stop, optsActive));
-    return () => events.forEach((ev) => host.removeEventListener(ev, stop, optsActive));
-  }, [editing, stageRef]);
 
   /** ===== Zoom (rueda/pinch) sólo en “Diseñar” ===== */
   useEffect(() => {
@@ -444,7 +438,6 @@ export default function CustomizationOverlay({
       e.preventDefault();
       const step = e.deltaY > 0 ? -0.08 : 0.08;
       setZoomValue((getZoom() || 1) + step);
-      measureOverlay();
     };
 
     // pinch 2 dedos
@@ -471,7 +464,6 @@ export default function CustomizationOverlay({
       if (!p1 || !p2 || !startDist) return;
       const factor = dist(p1, p2) / startDist;
       setZoomValue(clamp(startScale * Math.pow(factor, 0.9), 0.8, 2.5));
-      measureOverlay();
     };
     const onPU = (e) => {
       if (e.pointerType !== "touch") return;
@@ -527,6 +519,7 @@ export default function CustomizationOverlay({
       if (group) {
         c.add(group);
         centerOnCanvas(group, c);
+        normalizeImageOffsets(group);
         c.setActiveObject(group);
         c.requestRenderAll();
         setEditing(true);
@@ -579,13 +572,11 @@ export default function CustomizationOverlay({
   const enterDesignMode = () => { clearSelectionHard(); setEditing(true); };
   const exitDesignMode = () => { clearSelectionHard(); setEditing(false); };
 
-  // Aplicar a selección (texto en grupo)
+  // Aplicar a selección (texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
-    if (a._kind === "textDeboss") {
-      mutateTextGroup(a, mutator);
-    }
+    if (a._kind === "textDeboss") mutateTextGroup(a, mutator);
     a.setCoords?.();
     c.requestRenderAll();
   };
@@ -608,16 +599,13 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
-  /** ===== Overlay dentro del stage (escala con maceta) ===== */
+  /** ===== Overlay pegado al anchor (no tapa otros carrousels) ===== */
   const OverlayCanvas = (
     <div
-      ref={overlayRef}
+      ref={canvasWrapRef}
       style={{
         position: "absolute",
-        left: `${box.left}px`,
-        top: `${box.top}px`,
-        width: `${box.width}px`,
-        height: `${box.height}px`,
+        inset: 0,
         zIndex: Z_CANVAS,
         pointerEvents: editing ? "auto" : "none",
         touchAction: editing ? "none" : "auto",
@@ -625,8 +613,8 @@ export default function CustomizationOverlay({
     >
       <canvas
         ref={canvasRef}
-        width={Math.max(1, Math.round(box.width))}
-        height={Math.max(1, Math.round(box.height))}
+        width={Math.max(1, Math.round(baseSize.w))}
+        height={Math.max(1, Math.round(baseSize.h))}
         style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
       />
     </div>
@@ -747,7 +735,9 @@ export default function CustomizationOverlay({
   /** ===== Render ===== */
   return (
     <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+      {/* Ahora el overlay se monta DIRECTO en el anchor (match perfecto y clicks OK) */}
+      {anchorRef?.current ? createPortal(OverlayCanvas, anchorRef.current) : null}
+
       {typeof document !== "undefined"
         ? createPortal(
             <div
