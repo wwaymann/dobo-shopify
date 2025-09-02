@@ -467,10 +467,10 @@ setupSwipe(potScrollRef, potHandlers);
     }
   }, [pots, selectedPotIndex, colorOptions, selectedSize, selectedColor]);
 
-  // selectedPotVariant segun color/size, priorizando la que tenga imagen
- // opciones color/size derivadas de variantes con imagen
+// opciones color/size derivadas de variantes con imagen
 useEffect(() => {
   const pot = pots[selectedPotIndex];
+
   if (!pot) {
     setColorOptions([]);
     setSizeOptions([]);
@@ -479,28 +479,24 @@ useEffect(() => {
 
   const validVariants = (pot.variants || []).filter(v => !!v.image);
 
-  const potColors = [
-    ...new Set(
-      validVariants.flatMap(v =>
-        (v.selectedOptions || [])
-          .filter(o => (o.name || '').toLowerCase() === 'color')
-          .map(o => o.value)
-      )
-    ),
-  ];
+  const potColors = Array.from(new Set(
+    validVariants.flatMap(v =>
+      (v.selectedOptions || [])
+        .filter(o => (o.name || '').toLowerCase() === 'color')
+        .map(o => o.value)
+    )
+  ));
 
-  const potSizes = [
-    ...new Set(
-      validVariants.flatMap(v =>
-        (v.selectedOptions || [])
-          .filter(o => {
-            const n = (o.name || '').toLowerCase();
-            return n === 'tamaño' || n === 'size';
-          })
-          .map(o => o.value)
-      )
-    ),
-  ];
+  const potSizes = Array.from(new Set(
+    validVariants.flatMap(v =>
+      (v.selectedOptions || [])
+        .filter(o => {
+          const n = (o.name || '').toLowerCase();
+          return n === 'tamaño' || n === 'size';
+        })
+        .map(o => o.value)
+    )
+  ));
 
   setColorOptions(potColors);
   setSizeOptions(potSizes);
@@ -511,6 +507,7 @@ useEffect(() => {
     else setSelectedSize(null);
   }
 }, [pots, selectedPotIndex, selectedSize]);
+
 
 
   const toggleAccessory = (index) => {
