@@ -933,13 +933,7 @@ const getTotalPrice = () => {
                 className="d-flex justify-content-center align-items-baseline gap-3 mb-4"
                 style={{ marginTop: "20px" }}
               >
-                {getTotalComparePrice() > getTotalPrice() && (
-                  <span
-                    className="text-muted"
-                    style={{
-                      textDecoration: "line-through",
-                      fontSize: "1.2rem",
-                    }}
+                
                   >
                     ${(getTotalComparePrice() * quantity).toFixed(0)}
                   </span>
@@ -955,9 +949,7 @@ const getTotalPrice = () => {
 )}
 
 
-<span style={{ fontWeight: "bold", fontSize: "3rem" }}>
-                  ${(getTotalPrice() * quantity).toFixed(0)}
-                </span>
+
                   <span style={{ fontWeight: "bold", fontSize: "3rem" }}>
   {money(getTotalPrice() * quantity, selectedPotVariant?.price?.currencyCode || 'CLP')}
 </span>
