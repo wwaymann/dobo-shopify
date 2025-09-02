@@ -1029,8 +1029,8 @@ const getTotalComparePrice = () => {
     const total = getTotalPrice() * quantity;                  // precio actual
     const base  = getTotalComparePrice() * quantity || total;  // "sin rebaja"
     return (
-      <p style={{ marginTop: 8, fontSize: '0.95rem', color: '#6c757d' }}>
-        <span style={{ fontWeight: 600, marginRight: 6 }}>Precio combinado:</span>
+      <p style={{ marginTop: 8, fontSize: '1.2rem', color: '#6c757d' }}>
+        <span style={{ fontWeight: 600, marginRight: 6 }}></span>
         <span style={{ textDecoration: 'line-through' }}>{money(base, code)}</span>
       </p>
     );
