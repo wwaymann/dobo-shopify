@@ -192,20 +192,98 @@ const [selectedAccessories, setSelectedAccessories] = useState([]); // array de 
     }
   }, [editing]);
 
-  // Zoom con rueda solo sobre el stage. Sin Ctrl.
-  useEffect(() => {
-    const el = stageRef?.current || sceneWrapRef?.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      const stage = stageRef?.current || el;
-      if (!stage || !stage.contains(e.target)) return;
+// Zoom con rueda (desktop) + pinch (móvil)
+useEffect(() => {
+  const container = sceneWrapRef.current;
+  if (!container) return;
+
+  // límites
+  const clamp = (v) => Math.min(2.5, Math.max(0.8, v));
+
+  // — wheel (desktop)
+  const onWheel = (e) => {
+    const stage = stageRef.current || container;
+    if (!stage || !stage.contains(e.target)) return;
+    e.preventDefault();
+    const dz = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom((z) => clamp(+(z + dz).toFixed(2)));
+  };
+  container.addEventListener('wheel', onWheel, { passive: false });
+
+  // — pinch (Pointer Events)
+  const pts = new Map();
+  let startDist = 0;
+  let startScale = 1;
+
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  const onPD = (e) => {
+    if (e.pointerType !== 'touch') return;
+    container.setPointerCapture?.(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [p1, p2] = [...pts.values()];
+      startDist = dist(p1, p2);
+      startScale = zoom;
+    }
+  };
+
+  const onPM = (e) => {
+    if (e.pointerType !== 'touch' || !pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2 && startDist > 0) {
+      const [p1, p2] = [...pts.values()];
+      const factor = dist(p1, p2) / startDist;
+      setZoom(clamp(+(startScale * factor).toFixed(2)));
       e.preventDefault();
-      const dz = e.deltaY > 0 ? -0.1 : 0.1;
-      setZoom((z) => Math.min(2.5, Math.max(0.8, +(z + dz).toFixed(2))));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    return () => el.removeEventListener("wheel", onWheel, { capture: true });
-  }, []);
+    }
+  };
+
+  const onPU = (e) => {
+    if (e.pointerType !== 'touch') return;
+    pts.delete(e.pointerId);
+    if (pts.size < 2) {
+      startDist = 0;
+      startScale = zoom;
+    }
+  };
+
+  container.addEventListener('pointerdown', onPD, { passive: false });
+  container.addEventListener('pointermove', onPM, { passive: false });
+  window.addEventListener('pointerup', onPU, { passive: true });
+  window.addEventListener('pointercancel', onPU, { passive: true });
+
+  // — fallback iOS Touch
+  const onTS = (e) => {
+    if (e.touches.length === 2) {
+      const [a, b] = e.touches;
+      startDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      startScale = zoom;
+    }
+  };
+  const onTM = (e) => {
+    if (e.touches.length === 2 && startDist > 0) {
+      const [a, b] = e.touches;
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const factor = d / startDist;
+      setZoom(clamp(+(startScale * factor).toFixed(2)));
+      e.preventDefault();
+    }
+  };
+  container.addEventListener('touchstart', onTS, { passive: true });
+  container.addEventListener('touchmove', onTM, { passive: false });
+
+  return () => {
+    container.removeEventListener('wheel', onWheel);
+    container.removeEventListener('pointerdown', onPD);
+    container.removeEventListener('pointermove', onPM);
+    window.removeEventListener('pointerup', onPU);
+    window.removeEventListener('pointercancel', onPU);
+    container.removeEventListener('touchstart', onTS);
+    container.removeEventListener('touchmove', onTM);
+  };
+}, [zoom]);
+
 
   // === Hover preview (ÚNICO) ===
   const [accPreview, setAccPreview] = useState({ visible:false, x:0, y:0, html:"" });
@@ -846,6 +924,7 @@ const getTotalComparePrice = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden'
+                touchAction: 'none',  
    }} 
  >
 
