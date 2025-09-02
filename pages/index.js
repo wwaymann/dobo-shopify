@@ -826,7 +826,7 @@ function Home() {
             className="position-relative"
             ref={sceneWrapRef}
             style={{
-              width: "400px",
+              width: "500px",
               height: "650px",
               background: "linear-gradient(135deg, #f8f9fa 0%, #ebefe9ff 100%)",
               border: "3px dashed #6c757d",
