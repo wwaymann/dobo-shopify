@@ -389,13 +389,15 @@ useEffect(() => {
       const data = await res.json();
 
       const arr = Array.isArray(data) ? data : [];
-      const safe = arr.map(p => ({
-        ...p,
-        tags: Array.isArray(p?.tags) ? p.tags : [],
-        variants: Array.isArray(p?.variants) ? p.variants : [],
-        image: p?.image || '',
-        minPrice: p?.minPrice || { amount: 0, currencyCode: 'CLP' },
-      }));
+const safe = arr.map(p => ({
+  ...p,
+  description: p?.description || p?.descriptionHtml || p?.body_html || "",
+  tags: Array.isArray(p?.tags) ? p.tags : [],
+  variants: Array.isArray(p?.variants) ? p.variants : [],
+  image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || '',
+  minPrice: p?.minPrice || { amount: 0, currencyCode: 'CLP' },
+}));
+
 
       const byTag = (t) =>
         safe.filter(p => p.tags.some(tag => String(tag).toLowerCase().includes(t)));
@@ -1259,17 +1261,23 @@ const getTotalComparePrice = () => {
             <h6>
               <strong>Planta</strong>
             </h6>
-            <p style={{ fontSize: "1.2rem" }}>
-              {plants[selectedPlantIndex]?.description ||
-                "Descripción de la planta no disponible."}
-            </p>
+           {(() => {
+  const d = plants[selectedPlantIndex]?.description;
+  return d && /<[^>]+>/.test(d)
+    ? <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: d }} />
+    : <p style={{ fontSize: "1.2rem" }}>{d || "Descripción de la planta no disponible."}</p>;
+})()}
+
             <h6>
               <strong>Maceta</strong>
             </h6>
-            <p style={{ fontSize: "1.2rem" }}>
-              {pots[selectedPotIndex]?.description ||
-                "Descripción de la maceta no disponible."}
-            </p>
+           {(() => {
+  const d = pots[selectedPotIndex]?.description;
+  return d && /<[^>]+>/.test(d)
+    ? <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: d }} />
+    : <p style={{ fontSize: "1.2rem" }}>{d || "Descripción de la maceta no disponible."}</p>;
+})()}
+
           </div>
         </div>
       </div>
