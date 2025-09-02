@@ -440,7 +440,7 @@ const safe = arr.map(p => ({
   const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
   const potHandlers = createHandlers(pots, setSelectedPotIndex);
 
-// Drag/Swipe horizontal con scroll vertical habilitado
+// Swipe horizontal con fallback sin duplicar eventos
 const setupSwipe = (ref, handlers) => {
   useEffect(() => {
     const el = ref.current;
@@ -448,22 +448,11 @@ const setupSwipe = (ref, handlers) => {
 
     let startX = 0, startY = 0, tracking = false;
 
-    const onDown = (ev) => {
-      const e = ev.touches ? ev.touches[0] : ev;
-      startX = e.clientX;
-      startY = e.clientY;
-      tracking = true;
-    };
-
-    const onMove = (ev) => {
+    const begin = (x, y) => { startX = x; startY = y; tracking = true; };
+    const move  = (x, y, ev) => {
       if (!tracking) return;
-      const e = ev.touches ? ev.touches[0] : ev;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      // solo gesto horizontal claro
+      const dx = x - startX, dy = y - startY;
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
-        // bloquea scroll solo en swipe horizontal
         ev.preventDefault();
         if (Math.abs(dx) > 48) {
           dx > 0 ? handlers.prev() : handlers.next();
@@ -471,41 +460,61 @@ const setupSwipe = (ref, handlers) => {
         }
       }
     };
+    const end = () => { tracking = false; };
 
-    const onUp = () => { tracking = false; };
+    let cleanup = () => {};
 
-    // Pointer Events
-    el.addEventListener('pointerdown', onDown, { passive: false });
-    el.addEventListener('pointermove', onMove, { passive: false });
-    window.addEventListener('pointerup', onUp, { passive: true });
-    window.addEventListener('pointercancel', onUp, { passive: true });
+    if (window.PointerEvent) {
+      const pd = (e) => begin(e.clientX, e.clientY);
+      const pm = (e) => move(e.clientX, e.clientY, e);
+      const pu = end;
 
-    // Fallback Touch (iOS)
-    el.addEventListener('touchstart', onDown, { passive: true });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    el.addEventListener('touchend', onUp, { passive: true });
-    el.addEventListener('touchcancel', onUp, { passive: true });
+      el.addEventListener('pointerdown', pd, { passive: false });
+      el.addEventListener('pointermove', pm, { passive: false });
+      window.addEventListener('pointerup', pu, { passive: true });
+      window.addEventListener('pointercancel', pu, { passive: true });
 
-    // Fallback Mouse
-    el.addEventListener('mousedown', onDown, { passive: false });
-    el.addEventListener('mousemove', onMove, { passive: false });
-    window.addEventListener('mouseup', onUp, { passive: true });
+      cleanup = () => {
+        el.removeEventListener('pointerdown', pd);
+        el.removeEventListener('pointermove', pm);
+        window.removeEventListener('pointerup', pu);
+        window.removeEventListener('pointercancel', pu);
+      };
+    } else {
+      // Touch fallback
+      const ts = (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY); };
+      const tm = (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e); };
+      const tu = end;
 
-    return () => {
-      el.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      el.removeEventListener('touchstart', onDown);
-      el.removeEventListener('touchmove', onMove);
-      el.removeEventListener('touchend', onUp);
-      el.removeEventListener('touchcancel', onUp);
-      el.removeEventListener('mousedown', onDown);
-      el.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
+      el.addEventListener('touchstart', ts, { passive: true });
+      el.addEventListener('touchmove', tm, { passive: false });
+      el.addEventListener('touchend', tu, { passive: true });
+      el.addEventListener('touchcancel', tu, { passive: true });
+
+      // Mouse fallback
+      const md = (e) => { begin(e.clientX, e.clientY); e.preventDefault(); };
+      const mm = (e) => move(e.clientX, e.clientY, e);
+      const mu = end;
+
+      el.addEventListener('mousedown', md, { passive: false });
+      window.addEventListener('mousemove', mm, { passive: false });
+      window.addEventListener('mouseup', mu, { passive: true });
+
+      cleanup = () => {
+        el.removeEventListener('touchstart', ts);
+        el.removeEventListener('touchmove', tm);
+        el.removeEventListener('touchend', tu);
+        el.removeEventListener('touchcancel', tu);
+        el.removeEventListener('mousedown', md);
+        window.removeEventListener('mousemove', mm);
+        window.removeEventListener('mouseup', mu);
+      };
+    }
+
+    return cleanup;
   }, [ref, handlers]);
 };
+
 
 
 
