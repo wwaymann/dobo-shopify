@@ -98,7 +98,7 @@ export default function Home() {
   const [quantity, setQuantity] = useState(1);
 
   // Zoom de la escena
-  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
   const sceneWrapRef = useRef(null);
 
   // refs (escena y carruseles)
@@ -192,29 +192,43 @@ const [selectedAccessories, setSelectedAccessories] = useState([]); // array de 
     }
   }, [editing]);
 
-// Zoom con rueda (desktop) + pinch (móvil)
+// Zoom con rueda (desktop) + pinch (móvil) sin re-render
 useEffect(() => {
   const container = sceneWrapRef.current;
-  if (!container) return;
+  const stage = stageRef.current;
+  if (!container || !stage) return;
 
-  // límites
-  const clamp = (v) => Math.min(2.5, Math.max(0.8, v));
+  // init
+  zoomRef.current = zoomRef.current || 1;
+  stage.style.setProperty('--zoom', String(zoomRef.current));
 
-  // — wheel (desktop)
+  const MIN = 0.8, MAX = 2.5;
+  let target = zoomRef.current;
+  let raf = 0;
+
+  const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
+  const schedule = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      stage.style.setProperty('--zoom', String(target));
+    });
+  };
+
+  // wheel
   const onWheel = (e) => {
-    const stage = stageRef.current || container;
-    if (!stage || !stage.contains(e.target)) return;
+    if (!stage.contains(e.target)) return;
     e.preventDefault();
-    const dz = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((z) => clamp(+(z + dz).toFixed(2)));
+    const step = e.deltaY > 0 ? -0.08 : 0.08; // más rápido que antes
+    zoomRef.current = clamp(zoomRef.current + step);
+    target = zoomRef.current;
+    schedule();
   };
   container.addEventListener('wheel', onWheel, { passive: false });
 
-  // — pinch (Pointer Events)
+  // pinch con Pointer Events
   const pts = new Map();
-  let startDist = 0;
-  let startScale = 1;
-
+  let startDist = 0, startScale = zoomRef.current;
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
   const onPD = (e) => {
@@ -224,27 +238,28 @@ useEffect(() => {
     if (pts.size === 2) {
       const [p1, p2] = [...pts.values()];
       startDist = dist(p1, p2);
-      startScale = zoom;
+      startScale = zoomRef.current;
     }
   };
-
   const onPM = (e) => {
     if (e.pointerType !== 'touch' || !pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2 && startDist > 0) {
       const [p1, p2] = [...pts.values()];
       const factor = dist(p1, p2) / startDist;
-      setZoom(clamp(+(startScale * factor).toFixed(2)));
+      // leve suavizado exponencial
+      zoomRef.current = clamp(startScale * Math.pow(factor, 0.9));
+      target = zoomRef.current;
+      schedule();
       e.preventDefault();
     }
   };
-
   const onPU = (e) => {
     if (e.pointerType !== 'touch') return;
     pts.delete(e.pointerId);
     if (pts.size < 2) {
       startDist = 0;
-      startScale = zoom;
+      startScale = zoomRef.current;
     }
   };
 
@@ -253,36 +268,16 @@ useEffect(() => {
   window.addEventListener('pointerup', onPU, { passive: true });
   window.addEventListener('pointercancel', onPU, { passive: true });
 
-  // — fallback iOS Touch
-  const onTS = (e) => {
-    if (e.touches.length === 2) {
-      const [a, b] = e.touches;
-      startDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      startScale = zoom;
-    }
-  };
-  const onTM = (e) => {
-    if (e.touches.length === 2 && startDist > 0) {
-      const [a, b] = e.touches;
-      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      const factor = d / startDist;
-      setZoom(clamp(+(startScale * factor).toFixed(2)));
-      e.preventDefault();
-    }
-  };
-  container.addEventListener('touchstart', onTS, { passive: true });
-  container.addEventListener('touchmove', onTM, { passive: false });
-
   return () => {
     container.removeEventListener('wheel', onWheel);
     container.removeEventListener('pointerdown', onPD);
     container.removeEventListener('pointermove', onPM);
     window.removeEventListener('pointerup', onPU);
     window.removeEventListener('pointercancel', onPU);
-    container.removeEventListener('touchstart', onTS);
-    container.removeEventListener('touchmove', onTM);
+    if (raf) cancelAnimationFrame(raf);
   };
-}, [zoom]);
+}, []);
+
 
 
   // === Hover preview (ÚNICO) ===
@@ -914,8 +909,8 @@ const getTotalComparePrice = () => {
    className="position-relative"
    ref={sceneWrapRef}
    style={{ 
-                width: '500px', 
-                height: '800px', 
+                width: '450px', 
+                height: '700px', 
                 background: 'linear-gradient(135deg, #f8f9fa 0%, #ebefe9ff 100%)',
                 border: '3px dashed #6c757d',
                 borderRadius: '20px',
@@ -934,12 +929,14 @@ const getTotalComparePrice = () => {
               ref={stageRef}
               data-capture-stage="1"
               className="d-flex justify-content-center align-items-end"
-              style={{
-                height: "100%",
-                transform: `scale(${zoom})`,
-                transformOrigin: "50% 70%",
-                transition: "transform 120ms ease"
-              }}
+             style={{
+  height: "100%",
+  transform: "scale(var(--zoom))",
+  transformOrigin: "50% 70%",
+  willChange: "transform",
+  backfaceVisibility: "hidden"
+}}
+
             >
               {/* Macetas */}
             <div
