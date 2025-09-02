@@ -508,6 +508,7 @@ useEffect(() => {
 
 
 
+
   const toggleAccessory = (index) => {
     setSelectedAccessoryIndices((prev) =>
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
