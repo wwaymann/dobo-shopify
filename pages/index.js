@@ -366,80 +366,77 @@ useEffect(() => {
   const potHandlers = createHandlers(pots, setSelectedPotIndex);
 
   // Drag para carruseles (planta/maceta)
-  const setupDrag = (ref, handlers) => {
-    useEffect(() => {
-      const el = ref.current;
-      if (!el) return;
-
-      let isDown = false;
-      let startX;
-
-      const handleMouseDown = (e) => {
-        isDown = true;
-        startX = e.clientX;
-      };
-      const handleMouseMove = (e) => {
-        if (!isDown) return;
-        const diff = e.clientX - startX;
-        if (Math.abs(diff) > 50) {
-          if (diff > 0) handlers.prev();
-          else handlers.next();
-          isDown = false;
-        }
-      };
-      const handleMouseUp = () => {
-        isDown = false;
-      };
-
-      el.addEventListener("mousedown", handleMouseDown);
-      el.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      return () => {
-        el.removeEventListener("mousedown", handleMouseDown);
-        el.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-      };
-    }, [ref, handlers]);
-  };
-
-  setupDrag(plantScrollRef, plantHandlers);
-  setupDrag(potScrollRef, potHandlers);
-
-  // opciones color/size derivadas de variantes con imagen
+ // reemplaza setupDrag(...) por esto:
+const setupSwipe = (ref, handlers) => {
   useEffect(() => {
-    const pot = pots[selectedPotIndex];
-    if (!pot) {
-      setColorOptions([]);
-      setSizeOptions([]);
-      return;
-    }
-    const validVariants = (pot.variants || []).filter((v) => !!v.image);
+    const el = ref.current;
+    if (!el) return;
 
-    const potColors = [
-      ...new Set(
-        validVariants.flatMap((v) =>
-          (v.selectedOptions || [])
-            .filter((o) => o.name.toLowerCase() === "color")
-            .map((o) => o.value)
-        )
-      ),
-    ];
-    const potSizes = [
-      ...new Set(
-        validVariants.flatMap((v) =>
-          (v.selectedOptions || [])
-            .filter(
-              (o) =>
-                o.name.toLowerCase() === "tamaño" ||
-                o.name.toLowerCase() === "size"
-            )
-            .map((o) => o.value)
-        )
-      ),
-    ];
+    let startX = 0, startY = 0, tracking = false;
 
-    setColorOptions(potColors);
-    setSizeOptions(potSizes);
+    const onDown = (ev) => {
+      const e = ev.touches ? ev.touches[0] : ev;
+      startX = e.clientX;
+      startY = e.clientY;
+      tracking = true;
+    };
+
+    const onMove = (ev) => {
+      if (!tracking) return;
+      const e = ev.touches ? ev.touches[0] : ev;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      // solo capturamos gesto horizontal claro
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+        ev.preventDefault(); // bloquea scroll de página
+        if (Math.abs(dx) > 50) {
+          dx > 0 ? handlers.prev() : handlers.next();
+          tracking = false;
+        }
+      }
+      // si es más vertical, dejamos que la página se desplace
+    };
+
+    const onUp = () => { tracking = false; };
+
+    // Pointer Events
+    el.addEventListener('pointerdown', onDown, { passive: false });
+    el.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp, { passive: true });
+    window.addEventListener('pointercancel', onUp, { passive: true });
+
+    // Fallback iOS (Touch)
+    el.addEventListener('touchstart', onDown, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onUp, { passive: true });
+    el.addEventListener('touchcancel', onUp, { passive: true });
+
+    // Fallback mouse
+    el.addEventListener('mousedown', onDown, { passive: false });
+    el.addEventListener('mousemove', onMove, { passive: false });
+    window.addEventListener('mouseup', onUp, { passive: true });
+
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('touchstart', onDown);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onUp);
+      el.removeEventListener('touchcancel', onUp);
+      el.removeEventListener('mousedown', onDown);
+      el.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [ref, handlers]);
+};
+
+
+setupSwipe(plantScrollRef, plantHandlers);
+setupSwipe(potScrollRef, potHandlers);
+
 
     if (!selectedSize || !potSizes.includes(selectedSize)) {
       if (potSizes.length >= 2) setSelectedSize(potSizes[1]);
@@ -854,13 +851,14 @@ const getTotalPrice = () => {
               }}
             >
               {/* Macetas */}
-              <div
-                className={styles.carouselContainer}
-                ref={potScrollRef}
-                data-capture="pot-container"
-                style={{ zIndex: 1 }}
-                aria-disabled={editing ? "true" : "false"}
-              >
+            <div
+  className={styles.carouselContainer}
+  ref={potScrollRef}
+  data-capture="pot-container"
+  style={{ zIndex: 1, touchAction: 'pan-y', userSelect: 'none' }}
+  aria-disabled={editing ? "true" : "false"}
+>
+
                 <div
                   className={styles.carouselTrack}
                   data-capture="pot-track"
@@ -882,19 +880,22 @@ const getTotalPrice = () => {
               </div>
 
               {/* Plantas */}
-              <div
-                className={styles.carouselContainer}
-                ref={plantScrollRef}
-                data-capture="plant-container"
-                style={{
-                  zIndex: 2,
-                  position: "absolute",
-                  bottom: "300px",
-                  height: "530px",
-                  left: "50%",
-                  transform: "translateX(-50%)"
-                }}
-              >
+          <div
+  className={styles.carouselContainer}
+  ref={plantScrollRef}
+  data-capture="plant-container"
+  style={{
+    zIndex: 2,
+    position: "absolute",
+    bottom: "300px",
+    height: "530px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    touchAction: 'pan-y',
+    userSelect: 'none'
+  }}
+>
+
                 <div
                   className={styles.carouselTrack}
                   data-capture="plant-track"
