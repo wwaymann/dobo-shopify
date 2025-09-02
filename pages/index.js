@@ -565,25 +565,31 @@ const getTotalPrice = () => {
 };
 
 
-  const getTotalComparePrice = () => {
-    const pot = pots[selectedPotIndex];
-    const plant = plants[selectedPlantIndex];
-    const accessoryCompareTotal = selectedAccessoryIndices.reduce((sum, i) => {
-      const acc = accessories[i];
-      return sum + parseFloat(acc?.compareAtPrice || acc?.price || 0);
-    }, 0);
-    return (
-      parseFloat(
-        selectedPotVariant?.compareAtPrice ||
-          selectedPotVariant?.price ||
-          pot?.compareAtPrice ||
-          pot?.price ||
-          0
-      ) +
-      parseFloat(plant?.compareAtPrice || plant?.price || 0) +
-      accessoryCompareTotal
-    );
-  };
+const getTotalComparePrice = () => {
+  const pot = pots[selectedPotIndex];
+  const plant = plants[selectedPlantIndex];
+
+  const potCmp =
+    selectedPotVariant?.compareAtPrice
+      ? num(selectedPotVariant.compareAtPrice)
+      : selectedPotVariant?.price
+      ? num(selectedPotVariant.price)
+      : firstVariantPrice(pot);
+
+  const plantCmp = productMin(plant);
+
+  const accCmp = selectedAccessoryIndices.reduce((s, i) => {
+    const acc = accessories[i];
+    const base =
+      acc?.variants?.[0]?.compareAtPrice ??
+      acc?.variants?.[0]?.price ??
+      acc?.minPrice;
+    return s + num(base);
+  }, 0);
+
+  return potCmp + plantCmp + accCmp;
+};
+
 
   // Convierte GID de variante a ID numérico (para /cart/add)
   const gidToNumeric = (id) => {
