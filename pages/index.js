@@ -468,34 +468,50 @@ setupSwipe(potScrollRef, potHandlers);
   }, [pots, selectedPotIndex, colorOptions, selectedSize, selectedColor]);
 
   // selectedPotVariant segun color/size, priorizando la que tenga imagen
-  useEffect(() => {
-    const pot = pots[selectedPotIndex];
-    if (!pot || !pot.variants) return;
+ // opciones color/size derivadas de variantes con imagen
+useEffect(() => {
+  const pot = pots[selectedPotIndex];
+  if (!pot) {
+    setColorOptions([]);
+    setSizeOptions([]);
+    return;
+  }
 
-    let match = (pot.variants || []).find((variant) => {
-      if (!variant?.image) return false;
-      const options = variant.selectedOptions || [];
-      const colorMatch = selectedColor
-        ? options.some(
-            (o) => o.name.toLowerCase() === "color" && o.value === selectedColor
-          )
-        : true;
-      const sizeMatch = selectedSize
-        ? options.some(
-            (o) =>
-              (o.name.toLowerCase() === "tamaño" ||
-                o.name.toLowerCase() === "size") &&
-              o.value === selectedSize
-          )
-        : true;
-      return colorMatch && sizeMatch;
-    });
+  const validVariants = (pot.variants || []).filter(v => !!v.image);
 
-    if (!match) {
-      match = (pot.variants || []).find((v) => !!v.image) || null;
-    }
-    setSelectedPotVariant(match);
-  }, [pots, selectedPotIndex, selectedColor, selectedSize]);
+  const potColors = [
+    ...new Set(
+      validVariants.flatMap(v =>
+        (v.selectedOptions || [])
+          .filter(o => (o.name || '').toLowerCase() === 'color')
+          .map(o => o.value)
+      )
+    ),
+  ];
+
+  const potSizes = [
+    ...new Set(
+      validVariants.flatMap(v =>
+        (v.selectedOptions || [])
+          .filter(o => {
+            const n = (o.name || '').toLowerCase();
+            return n === 'tamaño' || n === 'size';
+          })
+          .map(o => o.value)
+      )
+    ),
+  ];
+
+  setColorOptions(potColors);
+  setSizeOptions(potSizes);
+
+  if (!selectedSize || !potSizes.includes(selectedSize)) {
+    if (potSizes.length >= 2) setSelectedSize(potSizes[1]);
+    else if (potSizes.length === 1) setSelectedSize(potSizes[0]);
+    else setSelectedSize(null);
+  }
+}, [pots, selectedPotIndex, selectedSize]);
+
 
   const toggleAccessory = (index) => {
     setSelectedAccessoryIndices((prev) =>
