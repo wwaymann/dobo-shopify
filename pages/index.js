@@ -122,7 +122,7 @@ function makeSwipeEvents(swipeRef, handlers) {
   };
 }
 
-export default function Home() {
+function Home() {
   /* ---------- state ---------- */
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
@@ -134,8 +134,6 @@ export default function Home() {
 
   const [selectedAccessoryIndices, setSelectedAccessoryIndices] = useState([]);
   const [quantity, setQuantity] = useState(1);
-
-
 
   const [accPreview, setAccPreview] = useState({ visible: false, x: 0, y: 0, html: "" });
 
@@ -154,67 +152,47 @@ export default function Home() {
   const potScrollRef = useRef(null);
   const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
-  
+
   const [editing, setEditing] = useState(false);
-  /* ---------- editing flag ---------- */
+
+  // Escucha bandera de edición emitida por el overlay
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
 
-// Conmutar touch-action al entrar/salir de “Diseñar” (móvil)
-useEffect(() => {
-  const s = stageRef.current;
-  const c = sceneWrapRef.current;
-  if (!s || !c) return;
+  // Ref para leer el estado de edición dentro de handlers (sin re-montar listeners)
+  const editingRef = useRef(false);
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
 
-  const prevS = s.style.touchAction;
-  const prevC = c.style.touchAction;
+  // Conmutar touch-action al entrar/salir de “Diseñar” (móvil) — ÚNICO efecto
+  useEffect(() => {
+    const s = stageRef.current;
+    const c = sceneWrapRef.current;
+    if (!s || !c) return;
 
-  if (editing) {
-    // En modo diseño: que Fabric reciba los gestos (drag/pinch)
-    s.style.touchAction = 'none';
-    c.style.touchAction = 'none';
-  } else {
-    // Fuera de diseño: permitir scroll vertical normal
-    s.style.touchAction = 'pan-y';
-    c.style.touchAction = 'pan-y';
-  }
+    const prevS = s.style.touchAction;
+    const prevC = c.style.touchAction;
 
-  return () => {
-    s.style.touchAction = prevS;
-    c.style.touchAction = prevC;
-  };
-}, [editing]);
+    if (editing) {
+      // En modo diseño: que Fabric reciba los gestos (drag/pinch)
+      s.style.touchAction = "none";
+      c.style.touchAction = "none";
+    } else {
+      // Fuera de diseño: permitir scroll vertical normal y pinch para el contenedor
+      s.style.touchAction = "pan-y";
+      c.style.touchAction = "pan-y";
+    }
 
-  
-  // Conmutar touch-action al entrar/salir de “Diseñar” (móvil)
-useEffect(() => {
-  const s = stageRef.current;
-  const c = sceneWrapRef.current;
-  if (!s || !c) return;
+    return () => {
+      s.style.touchAction = prevS;
+      c.style.touchAction = prevC;
+    };
+  }, [editing]);
 
-  const prevS = s.style.touchAction;
-  const prevC = c.style.touchAction;
-
-  if (editing) {
-    // En modo diseño: que Fabric reciba los gestos (drag/pinch)
-    s.style.touchAction = 'none';
-    c.style.touchAction = 'none';
-  } else {
-    // Fuera de diseño: permitir scroll vertical normal
-    s.style.touchAction = 'pan-y';
-    c.style.touchAction = 'pan-y';
-  }
-
-  return () => {
-    s.style.touchAction = prevS;
-    c.style.touchAction = prevC;
-  };
-}, [editing]);
-
-  
   /* ---------- cart persist ---------- */
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -306,7 +284,7 @@ useEffect(() => {
     fetchProducts();
   }, []);
 
-  /* ---------- handlers & swipe events (AFTER they're defined) ---------- */
+  /* ---------- handlers & swipe events ---------- */
   const createHandlers = (items, setIndex) => ({
     prev: () => setIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1)),
     next: () => setIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0)),
@@ -414,7 +392,9 @@ useEffect(() => {
       });
     };
 
+    // WHEEL: desactivado durante edición
     const onWheel = (e) => {
+      if (editingRef.current) return;
       if (!stage.contains(e.target)) return;
       e.preventDefault();
       const step = e.deltaY > 0 ? -0.08 : 0.08;
@@ -424,7 +404,7 @@ useEffect(() => {
     };
     container.addEventListener("wheel", onWheel, { passive: false });
 
-    // pinch
+    // PINCH: no capturar dedos si se está editando
     const pts = new Map();
     let startDist = 0,
       startScale = zoomRef.current;
@@ -432,6 +412,7 @@ useEffect(() => {
 
     const onPD = (e) => {
       if (e.pointerType !== "touch") return;
+      if (editingRef.current) return; // no pinch-zoom en modo diseño
       container.setPointerCapture?.(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) {
@@ -442,6 +423,7 @@ useEffect(() => {
     };
     const onPM = (e) => {
       if (e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
+      if (editingRef.current) return; // salir si se edita
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2 && startDist > 0) {
         const [p1, p2] = [...pts.values()];
@@ -454,6 +436,7 @@ useEffect(() => {
     };
     const onPU = (e) => {
       if (e.pointerType !== "touch") return;
+      if (editingRef.current) return; // salir si se edita
       pts.delete(e.pointerId);
       if (pts.size < 2) {
         startDist = 0;
@@ -637,7 +620,7 @@ useEffect(() => {
       pruneToSelected('[data-capture="pot-track"]', selectedPotIndex);
       pruneToSelected('[data-capture="plant-track"]', selectedPlantIndex);
 
-      ["[data-capture=\"pot-container\"]", "[data-capture=\"plant-container\"]"].forEach((sel) => {
+      ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach((sel) => {
         const c = doc.querySelector(sel);
         if (c) {
           c.style.overflow = "visible";
@@ -675,7 +658,7 @@ useEffect(() => {
     }
 
     const pot = pots[selectedPotIndex];
-    const plant = plants[selectedPlantIndex];
+       const plant = plants[selectedPlantIndex];
     return [
       { key: "_DesignPreview", value: previewUrl },
       { key: "_DesignId", value: String(Date.now()) },
@@ -1164,3 +1147,9 @@ useEffect(() => {
     </div>
   );
 }
+
+export async function getServerSideProps() {
+  // Evita problemas de prerender en build; renderizamos en cliente
+  return { props: {} };
+}
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
