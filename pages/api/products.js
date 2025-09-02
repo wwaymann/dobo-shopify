@@ -7,9 +7,14 @@ export default async function handler(req, res) {
     process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
     process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN;
 
-  let items = [];
+  const diag = String(req.query.diag || '') === '1'; // /api/products?diag=1
+  let info = { ok: false, envs: { store: !!STORE_DOMAIN, token: !!TOKEN, api: API_VERSION }, shopifyStatus: null, count: 0 };
+
   try {
-    if (!STORE_DOMAIN || !TOKEN) return res.status(200).json(items);
+    if (!STORE_DOMAIN || !TOKEN) {
+      if (diag) return res.status(200).json({ ...info, reason: 'missing_envs' });
+      return res.status(200).json([]);
+    }
 
     const r = await fetch(`https://${STORE_DOMAIN}/api/${API_VERSION}/graphql.json`, {
       method: 'POST',
@@ -27,9 +32,7 @@ export default async function handler(req, res) {
                   title
                   handle
                   tags
-                  priceRange {
-                    minVariantPrice { amount currencyCode }
-                  }
+                  priceRange { minVariantPrice { amount currencyCode } }
                   images(first: 4) { edges { node { url } } }
                   variants(first: 25) {
                     edges {
@@ -51,14 +54,17 @@ export default async function handler(req, res) {
       }),
     });
 
+    info.shopifyStatus = r.status;
     if (!r.ok) {
-      console.error('Shopify error', await r.text());
-      return res.status(200).json(items);
+      const detail = (await r.text()).slice(0, 400);
+      if (diag) return res.status(200).json({ ...info, reason: 'shopify_error', detail });
+      return res.status(200).json([]);
     }
 
     const json = await r.json();
     const edges = json?.data?.products?.edges || [];
-    items = edges.map(({ node }) => ({
+
+    const items = edges.map(({ node }) => ({
       id: node.id,
       title: node.title,
       handle: node.handle,
@@ -69,22 +75,28 @@ export default async function handler(req, res) {
         amount: Number(node.priceRange?.minVariantPrice?.amount || 0),
         currencyCode: node.priceRange?.minVariantPrice?.currencyCode || 'CLP',
       },
-      variants: (node.variants?.edges || []).map(e => ({
-        id: e?.node?.id,
-        title: e?.node?.title,
-        availableForSale: !!e?.node?.availableForSale,
-        image: e?.node?.image?.url || '',
-        price: {
-          amount: Number(e?.node?.price?.amount || 0),
-          currencyCode: e?.node?.price?.currencyCode || 'CLP',
-        },
-        options: (e?.node?.selectedOptions || []).map(o => ({ name: o.name, value: o.value })),
-      })),
+      variants: (node.variants?.edges || []).map(e => {
+        const v = e?.node || {};
+        return {
+          id: v.id,
+          title: v.title,
+          availableForSale: !!v.availableForSale,
+          image: v.image?.url || '',
+          price: {
+            amount: Number(v.price?.amount || 0),
+            currencyCode: v.price?.currencyCode || 'CLP',
+          },
+          // ⬇️ clave correcta que espera tu UI
+          selectedOptions: (v.selectedOptions || []).map(o => ({ name: o.name, value: o.value })),
+        };
+      }),
     }));
 
+    info.ok = true; info.count = items.length; info.sample = items[0] || null;
+    if (diag) return res.status(200).json(info);
     return res.status(200).json(items);
   } catch (e) {
-    console.error('Error /api/products', e);
-    return res.status(200).json(items);
+    if (diag) return res.status(200).json({ ...info, reason: 'exception', detail: String(e).slice(0, 300) });
+    return res.status(200).json([]);
   }
 }
