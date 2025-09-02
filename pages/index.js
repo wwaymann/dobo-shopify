@@ -337,60 +337,9 @@ useEffect(() => {
           macetas[0].variants?.[0] ||
           null;
         setSelectedPotVariant(fv || null);
-      
+      } 
     } catch (err) {
       console.error('Error fetching products:', err);
-      setPlants([]);
-      setPots([]);
-      setAccessories([]);
-    }
-  }
-  fetchProducts();
-}, []);
-
-
-
-
-      // Normaliza campos usados más abajo
-      const safe = arr.map((p) => ({
-        ...p,
-        tags: Array.isArray(p?.tags) ? p.tags : [],
-        variants: Array.isArray(p?.variants) ? p.variants : [],
-        image:
-          p?.image?.src ||
-          p?.image ||
-          (Array.isArray(p?.images) && p.images[0]?.src) ||
-          "",
-      }));
-
-      const byTag = (t) =>
-  safe.filter((p) => p.tags.some((tag) => String(tag).toLowerCase().includes(t)));
-
-let plantas = byTag("plantas");
-let macetas = byTag("macetas");
-let accesorios = byTag("accesorios");
-
-// Fallback: si no hay tags, usa todo como "macetas"
-if ((plantas.length + macetas.length + accesorios.length) === 0 && safe.length > 0) {
-  macetas = safe;
-  plantas = [];
-  accesorios = [];
-}
-
-setPlants(plantas);
-setPots(macetas);
-setAccessories(accesorios);
-
-if (macetas.length > 0) {
-  const firstVariant =
-    (macetas[0].variants || []).find((v) => v?.image) ||
-    macetas[0].variants?.[0] ||
-    null;
-  setSelectedPotVariant(firstVariant);
-
-
-    } catch (err) {
-      console.error("Error fetching products:", err);
       setPlants([]);
       setPots([]);
       setAccessories([]);
