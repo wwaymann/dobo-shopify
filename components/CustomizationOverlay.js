@@ -3,6 +3,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
 import { createPortal } from "react-dom";
 
+/** ===== Constantes ===== */
 const MAX_TEXTURE_DIM = 1600;
 const VECTOR_SAMPLE_DIM = 500;
 const Z_CANVAS = 4000;
@@ -20,14 +21,15 @@ const FONT_OPTIONS = [
   { name: "Poppins", css: "Poppins, Arial, sans-serif" },
 ];
 
+/** ===== Componente ===== */
 export default function CustomizationOverlay({
-  stageRef,          // nodo escalado (donde está la maceta)
-  anchorRef,         // carrusel de macetas (área a cubrir)
+  stageRef,   // contenedor escalado (donde está la maceta)
+  anchorRef,  // carrusel de macetas (área a cubrir)
   visible = true,
-  zoom,              // opcional: si lo pasas lo uso para medir y para el display
-  setZoom,           // opcional: si lo pasas lo uso para cambiar el zoom
+  zoom,       // opcional: si se provee, se usa para medir
+  setZoom,    // opcional: si se provee, se usa para cambiar zoom
 }) {
-  // ===== Refs / estado =====
+  /** ----- Refs/estado ----- */
   const overlayRef = useRef(null);
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
@@ -39,7 +41,7 @@ export default function CustomizationOverlay({
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState("none");
 
-  // caja del overlay en el sistema de coordenadas del stage (antes del scale)
+  // caja del overlay en coords del stage (antes del scale)
   const [box, setBox] = useState({ left: 0, top: 0, width: 1, height: 1 });
 
   // tipografía
@@ -56,30 +58,27 @@ export default function CustomizationOverlay({
   const [vecInvert, setVecInvert] = useState(false);
   const [vecBias, setVecBias] = useState(0);
 
-  // zoom local (fallback si no pasas props)
+  // zoom local (si no te pasan por props)
   const [localZoom, setLocalZoom] = useState(1);
   const getZoom = () => (typeof zoom === "number" ? zoom : localZoom);
   const setZoomValue = (z) => {
     const val = clamp(z, 0.8, 2.5);
-    if (typeof setZoom === "function") {
-      setZoom(val);
-    } else {
+    if (typeof setZoom === "function") setZoom(val);
+    else {
       const s = stageRef?.current;
       if (s) s.style.setProperty("--zoom", String(val));
       setLocalZoom(val);
     }
   };
 
-  // ===== Medición: ubicar overlay respecto al stage (corrigiendo por scale) =====
+  /** ===== Medición overlay (corrige por zoom) ===== */
   const measureOverlay = () => {
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
     if (!stage || !anchor) return;
-
     const sr = stage.getBoundingClientRect();
     const ar = anchor.getBoundingClientRect();
     const s = getZoom() || 1;
-
     setBox({
       left: (ar.left - sr.left) / s,
       top: (ar.top - sr.top) / s,
@@ -93,15 +92,12 @@ export default function CustomizationOverlay({
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
     if (!stage || !anchor) return;
-
     const roS = new ResizeObserver(measureOverlay);
     const roA = new ResizeObserver(measureOverlay);
     try { roS.observe(stage); roA.observe(anchor); } catch {}
-
     const onWin = () => measureOverlay();
     window.addEventListener("resize", onWin);
     window.addEventListener("scroll", onWin, { passive: true });
-
     return () => {
       try { roS.disconnect(); roA.disconnect(); } catch {}
       window.removeEventListener("resize", onWin);
@@ -110,266 +106,9 @@ export default function CustomizationOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stageRef, anchorRef]);
 
-  // Recalcular cuando cambie el zoom
   useEffect(() => { measureOverlay(); }, [zoom, localZoom]); // eslint-disable-line
 
-  // ===== Fabric init =====
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
-
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8,
-    });
-    fabricCanvasRef.current = c;
-
-    const upper = c.upperCanvasEl;
-    if (upper) {
-      upper.style.touchAction = "none";
-      upper.style.pointerEvents = "auto";
-      upper.style.webkitUserSelect = "none";
-      upper.style.userSelect = "none";
-    }
-
-    // Doble clic: editar texto
-    c.on("mouse:dblclick", (e) => {
-      const t = e.target;
-      if (t && (t.type === "i-text" || t.type === "textbox" || t.type === "text") && typeof t.enterEditing === "function") {
-        t.enterEditing();
-        c.requestRenderAll();
-      }
-    });
-
-    // Helpers de tipo
-    const isText = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-    const isImage = (o) => o && o.type === "image";
-    const classify = (a) => {
-      if (!a) return "none";
-      if (a.type === "activeSelection" && a._objects?.length) {
-        const arr = a._objects;
-        if (arr.every(isText)) return "text";
-        if (arr.some(isImage)) return "image";
-        return "none";
-      }
-      if (isText(a)) return "text";
-      if (isImage(a)) return "image";
-      return "none";
-    };
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      const first = a?.type === "activeSelection" ? a._objects?.find(isText) : (isText(a) ? a : null);
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic"));
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || "center");
-      }
-    };
-
-    const ensureTextDeboss = (t) => {
-      if (!t) return;
-      const c = t.canvas;
-      const sh = t._debossers?.shadow;
-      const hi = t._debossers?.highlight;
-      if (!sh || !hi) return;
-
-      // re-sincroniza listeners (evita duplicados)
-      try { if (t._debossSync) t.off("changed", t._debossSync); } catch {}
-      try { if (t._debossSync) t.off("modified", t._debossSync); } catch {}
-      try { if (t._debossSync) t.off("moving", t._debossSync); } catch {}
-      try { if (t._debossSync) t.off("scaling", t._debossSync); } catch {}
-      try { if (t._debossSync) t.off("rotating", t._debossSync); } catch {}
-      try { if (t._debossSync) t.off("resizing", t._debossSync); } catch {}
-
-      const sync = () => {
-        const props = ["left","top","scaleX","scaleY","angle","width","fontSize","fontFamily","fontWeight","fontStyle","charSpacing","textAlign","underline","text","originX","originY"];
-        [sh, hi].forEach((o) => { props.forEach((p) => o.set(p, t[p])); });
-        sh.set({ left: t.left - 1, top: t.top - 1 });
-        hi.set({ left: t.left + 1, top: t.top + 1 });
-        c?.requestRenderAll();
-      };
-      t._debossSync = sync;
-      t.on("changed",  sync);
-      t.on("modified", sync);
-      t.on("moving",   sync);
-      t.on("scaling",  sync);
-      t.on("rotating", sync);
-      t.on("resizing", sync);
-      sync();
-    };
-
-    const ensureImageDeboss = (o) => {
-      if (!o || !o._deboss) return;
-      const sync = o._debossSync;
-      if (sync) {
-        // re-engancha listeners por si Fabric los limpió internamente
-        ["modified","moving","scaling","rotating","skewing"].forEach((ev) => {
-          try { o.off(ev, sync); } catch {}
-          try { o.on(ev, sync); } catch {}
-        });
-        sync();
-      }
-    };
-
-    const ensureAllDeboss = () => {
-      (c.getObjects?.() || []).forEach((o) => {
-        if (o.type === "i-text" || o.type === "textbox" || o.type === "text") ensureTextDeboss(o);
-        else ensureImageDeboss(o);
-      });
-      c.requestRenderAll?.();
-    };
-
-    const onSel = () => {
-      setSelType(classify(c.getActiveObject()));
-      reflectTypo();
-      ensureAllDeboss(); // <- evita “separación” al re-seleccionar tras salir/entrar
-    };
-
-    c.on("selection:created", onSel);
-    c.on("selection:updated", onSel);
-    c.on("selection:cleared", () => setSelType("none"));
-
-    setReady(true);
-
-    return () => {
-      c.off("mouse:dblclick");
-      c.off("selection:created", onSel);
-      c.off("selection:updated", onSel);
-      c.off("selection:cleared");
-      try { c.dispose(); } catch {}
-      fabricCanvasRef.current = null;
-    };
-  }, [visible, stageRef]);
-
-  // Ajuste de tamaño del lienzo al box
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(Math.max(1, Math.round(box.width)));
-    c.setHeight(Math.max(1, Math.round(box.height)));
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [box.width, box.height]);
-
-  // ===== Alternar modo edición & notificar a la página =====
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-
-    const on = !!editing;
-    c.skipTargetFind = !on;
-    c.selection = on;
-    c.defaultCursor = on ? "move" : "default";
-
-    (c.getObjects?.() || []).forEach((o) => {
-      o.selectable = on;
-      o.evented = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      if (o.type === "i-text" || typeof o.enterEditing === "function") o.editable = on;
-    });
-
-    const upper = c.upperCanvasEl;
-    if (upper) {
-      upper.style.pointerEvents = on ? "auto" : "none";
-      upper.style.touchAction = on ? "none" : "auto";
-      upper.tabIndex = on ? 0 : -1;
-    }
-
-    // re-sincroniza capas de relieve al entrar en modo edición
-    if (on) {
-      const objs = c.getObjects?.() || [];
-      objs.forEach((o) => {
-        if (o.type === "i-text" || o.type === "textbox" || o.type === "text") {
-          // fuerza propiedades para nuestro relieve
-          o.globalCompositeOperation = "multiply";
-          if (o._debossSync) o._debossSync();
-        } else if (o._debossSync) {
-          o._debossSync();
-        }
-      });
-      c.requestRenderAll?.();
-    }
-
-    window.dispatchEvent(new CustomEvent("dobo-editing", { detail: { editing: on } }));
-  }, [editing]);
-
-  // ===== Zoom en modo diseñar (rueda & pinch), sin romper Fabric ni los clicks =====
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    const upper = c?.upperCanvasEl;
-    if (!upper) return;
-
-    // Rueda: capturamos ANTES que Fabric y actualizamos zoom
-    const onWheel = (e) => {
-      if (!editing) return;              // fuera de diseñar, deja que lo maneje tu contenedor
-      e.preventDefault();                // evita que Fabric bloquee el evento
-      const step = e.deltaY > 0 ? -0.08 : 0.08;
-      setZoomValue((getZoom() || 1) + step);
-      // al cambiar zoom, la caja del overlay debe recalcularse
-      measureOverlay();
-    };
-
-    // Pinch: sólo cuando hay 2 toques; con 1 toque dejamos a Fabric mover/seleccionar
-    const pts = new Map();
-    let startDist = 0;
-    let startScale = getZoom() || 1;
-    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
-    const onPD = (e) => {
-      if (!editing || e.pointerType !== "touch") return;
-      upper.setPointerCapture?.(e.pointerId);
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pts.size === 2) {
-        const [p1, p2] = [...pts.values()];
-        startDist = dist(p1, p2);
-        startScale = getZoom() || 1;
-      }
-    };
-    const onPM = (e) => {
-      if (!editing || e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
-      if (pts.size < 2) return; // deja a Fabric arrastrar con 1 dedo
-      e.preventDefault(); // evita que Fabric “consuma” el gesto
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (startDist > 0) {
-        const [p1, p2] = [...pts.values()];
-        const factor = dist(p1, p2) / startDist;
-        setZoomValue(clamp(startScale * Math.pow(factor, 0.9), 0.8, 2.5));
-        measureOverlay();
-      }
-    };
-    const onPU = (e) => {
-      if (e.pointerType !== "touch") return;
-      pts.delete(e.pointerId);
-      if (pts.size < 2) {
-        startDist = 0;
-        startScale = getZoom() || 1;
-      }
-    };
-
-    upper.addEventListener("wheel", onWheel, { capture: true, passive: false });
-    upper.addEventListener("pointerdown", onPD, { passive: false });
-    upper.addEventListener("pointermove", onPM, { passive: false });
-    window.addEventListener("pointerup", onPU, { passive: true });
-    window.addEventListener("pointercancel", onPU, { passive: true });
-
-    return () => {
-      upper.removeEventListener("wheel", onWheel, { capture: true });
-      upper.removeEventListener("pointerdown", onPD);
-      upper.removeEventListener("pointermove", onPM);
-      window.removeEventListener("pointerup", onPU);
-      window.removeEventListener("pointercancel", onPU);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, stageRef, zoom, localZoom]);
-
-  // ===== Utils imagen / vectorización / relieve =====
+  /** ===== Helpers Imagen ===== */
   const downscale = (imgEl) => {
     const w = imgEl.naturalWidth || imgEl.width;
     const h = imgEl.naturalHeight || imgEl.height;
@@ -404,11 +143,9 @@ export default function CustomizationOverlay({
   const vectorizeElementToBitmap = (element, { maxDim = VECTOR_SAMPLE_DIM, makeDark = true, drawColor = [51, 51, 51], thrBias = 0 } = {}) => {
     const iw = element?.width, ih = element?.height;
     if (!iw || !ih) return null;
-
     const scale = (iw > ih) ? maxDim / iw : maxDim / ih;
     const w = Math.max(1, Math.round(iw * scale));
     const h = Math.max(1, Math.round(ih * scale));
-
     const cv = document.createElement("canvas");
     cv.width = w; cv.height = h;
     const ctx = cv.getContext("2d", { willReadFrequently: true });
@@ -430,117 +167,305 @@ export default function CustomizationOverlay({
       else { data[i + 3] = 0; }
     }
     ctx.putImageData(img, 0, 0);
+    return new fabric.Image(cv, { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, selectable: true, evented: true });
+  };
 
-    const bm = new fabric.Image(cv, {
-      left: 0, top: 0, originX: "left", originY: "top",
-      selectable: true, evented: true, objectCaching: false, noScaleCache: true,
+  /** ===== Grupos de relieve (evita separación de capas) ===== */
+  // Imagen: Group(base, shadow, highlight)
+  const makeImageDebossGroup = (element, { left, top, originX="center", originY="center", scale=1, angle=0 } = {}) => {
+    const base = vectorizeElementToBitmap(element, { makeDark: !vecInvert, thrBias: vecBias });
+    if (!base) return null;
+    const shadow = new fabric.Image(base.getElement(), { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, globalCompositeOperation: "multiply" });
+    const highlight = new fabric.Image(base.getElement(), { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, globalCompositeOperation: "screen", opacity: 1 });
+
+    // offsets relativos
+    shadow.left = -vecOffset; shadow.top = -vecOffset;
+    highlight.left = +vecOffset; highlight.top = +vecOffset;
+    base.left = 0; base.top = 0;
+
+    const group = new fabric.Group([shadow, highlight, base], {
+      originX, originY, left, top, angle, scaleX: scale, scaleY: scale,
+      objectCaching: false, selectable: true, evented: true,
     });
-    bm._vecSourceEl = element;
-    bm._vecMeta = { w, h };
-    return bm;
+    group._kind = "imgDeboss";
+    group._vecSourceEl = element;
+    group._debossChildren = { shadow, highlight, base };
+    return group;
   };
 
-  const attachDebossToBase = (c, baseObj, { offset = 1 } = {}) => {
-    const cloneFrom = () => {
-      const el = typeof baseObj.getElement === "function" ? baseObj.getElement() : baseObj._element;
-      return new fabric.Image(el, {
-        originX: baseObj.originX, originY: baseObj.originY,
-        left: baseObj.left, top: baseObj.top,
-        scaleX: baseObj.scaleX, scaleY: baseObj.scaleY,
-        angle: baseObj.angle || 0,
-        selectable: false, evented: false,
-        objectCaching: false, noScaleCache: true,
-      });
-    };
-    baseObj.set({ objectCaching: false, noScaleCache: true });
-    const shadow = cloneFrom(), highlight = cloneFrom();
+  const revectorizeImageGroup = (group) => {
+    if (!group || group._kind !== "imgDeboss" || !group._vecSourceEl) return;
+    const { left, top, originX, originY, angle, scaleX, scaleY } = group;
+    const element = group._vecSourceEl;
+    const newBase = vectorizeElementToBitmap(element, { makeDark: !vecInvert, thrBias: vecBias });
+    if (!newBase) return;
+
+    const newShadow = new fabric.Image(newBase.getElement(), { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, globalCompositeOperation: "multiply" });
+    const newHighlight = new fabric.Image(newBase.getElement(), { originX: "left", originY: "top", objectCaching: false, noScaleCache: true, globalCompositeOperation: "screen", opacity: 1 });
+    newShadow.left = -vecOffset; newShadow.top = -vecOffset;
+    newHighlight.left = +vecOffset; newHighlight.top = +vecOffset;
+    newBase.left = 0; newBase.top = 0;
+
+    const c = group.canvas;
+    if (!c) return;
+    c.remove(group);
+    const fresh = new fabric.Group([newShadow, newHighlight, newBase], {
+      originX, originY, left, top, angle, scaleX, scaleY,
+      objectCaching: false, selectable: true, evented: true,
+    });
+    fresh._kind = "imgDeboss";
+    fresh._vecSourceEl = element;
+    fresh._debossChildren = { shadow: newShadow, highlight: newHighlight, base: newBase };
+    c.add(fresh);
+    c.setActiveObject(fresh);
+    c.requestRenderAll();
+  };
+
+  const updateImageOffset = (group) => {
+    if (!group || group._kind !== "imgDeboss") return;
+    const { shadow, highlight } = group._debossChildren || {};
     if (!shadow || !highlight) return;
-    c.add(baseObj); c.add(shadow); c.add(highlight);
-    shadow.set({ globalCompositeOperation: "multiply", opacity: 1.0 });
-    highlight.set({ globalCompositeOperation: "screen", opacity: 1.0 });
-    const sync = () => {
-      const props = ["left","top","scaleX","scaleY","angle","originX","originY"];
-      [shadow, highlight].forEach((g, i) => {
-        props.forEach((p) => g.set(p, baseObj[p]));
-        const d = i === 0 ? -offset : +offset;
-        g.set({ left: baseObj.left + d, top: baseObj.top + d });
-        g.setCoords();
-      });
-      c.requestRenderAll();
-    };
-    baseObj._deboss = { shadow, highlight };
-    baseObj._debossParams = { offset };
-    baseObj._debossSync = sync;
-    ["modified","moving","scaling","rotating","skewing"].forEach((ev) => baseObj.on(ev, sync));
-    sync();
+    shadow.set({ left: -vecOffset, top: -vecOffset });
+    highlight.set({ left: +vecOffset, top: +vecOffset });
+    group.canvas?.requestRenderAll();
   };
 
-  const updateDebossVisual = (baseObj, { offset }) => {
-    if (!baseObj || !baseObj._deboss) return;
-    baseObj._debossParams = { ...(baseObj._debossParams || {}), offset };
-    if (baseObj._debossSync) baseObj._debossSync();
-  };
-
-  const clearDeboss = (obj) => {
-    const c = fabricCanvasRef.current || obj?.canvas; if (!c || !obj || !obj._deboss) return;
-    const { shadow, highlight } = obj._deboss;
-    try { c.remove(shadow); } catch {}
-    try { c.remove(highlight); } catch {}
-    if (obj._debossSync) ["modified","moving","scaling","rotating","skewing"].forEach((ev) => { try { obj.off(ev, obj._debossSync); } catch {} });
-    delete obj._deboss; delete obj._debossSync; delete obj._debossParams;
-  };
-
-  const applyDebossToText = (t) => {
-    const c = fabricCanvasRef.current; if (!c || !t) return;
-    const ownerId = `txt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    t._debossOwnerId = ownerId; t.__ownerId = ownerId;
-    t.set({ fill: "#2525257b", shadow: null, stroke: null, globalCompositeOperation: "multiply", objectCaching: false });
+  // Texto: Group(shadowText, highlightText, baseText)
+  const makeTextDebossGroup = (text, opts) => {
+    const base = new fabric.Textbox(text, {
+      ...opts,
+      fill: "rgba(35,35,35,1)",
+      shadow: null, stroke: null, globalCompositeOperation: "multiply",
+      selectable: false, evented: false, objectCaching: false,
+    });
     const baseOpts = {
-      fontFamily: t.fontFamily, fontSize: t.fontSize, fontWeight: t.fontWeight,
-      fontStyle: t.fontStyle, underline: t.underline, textAlign: t.textAlign,
-      charSpacing: t.charSpacing, originX: t.originX, originY: t.originY, angle: t.angle, width: t.width,
-      selectable: false, evented: false, opacity: 0.9, objectCaching: false,
+      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
+      fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
+      charSpacing: base.charSpacing, width: base.width,
+      selectable: false, evented: false, objectCaching: false,
     };
-    const makeClone = (dx, dy, stroke, strokeWidth, gco) => {
-      const clone = new t.constructor(t.text, { ...baseOpts, left: t.left + dx, top: t.top + dy, fill: "", stroke, strokeWidth, globalCompositeOperation: gco });
-      clone.__isDebossClone = true; clone.__ownerId = ownerId; clone.__cloneOf = t; clone.excludeFromExport = true;
-      return clone;
-    };
-    const shadow = makeClone(-1, -1, "rgba(0,0,0,0.48)", 1, "multiply");
-    const highlight = makeClone(1, 1, "rgba(255,255,255,0.65)", 0.6, "screen");
-    t._debossers = { shadow, highlight };
-    const sync = () => {
-      const props = ["left","top","scaleX","scaleY","angle","width","fontSize","fontFamily","fontWeight","fontStyle","charSpacing","textAlign","underline","text","originX","originY"];
-      [shadow, highlight].forEach((o) => { props.forEach((p) => o.set(p, t[p])); });
-      shadow.set({ left: t.left - 1, top: t.top - 1 });
-      highlight.set({ left: t.left + 1, top: t.top + 1 });
-      c.requestRenderAll();
-    };
-    t._debossSync = sync;
-    t.on("changed",  sync);
-    t.on("modified", sync);
-    t.on("moving",   sync);
-    t.on("scaling",  sync);
-    t.on("rotating", sync);
-    t.on("resizing", sync);
+    const shadow = new fabric.Textbox(text, { ...baseOpts, left: -1, top: -1, fill: "", stroke: "rgba(0,0,0,0.48)", strokeWidth: 1, globalCompositeOperation: "multiply" });
+    const highlight = new fabric.Textbox(text, { ...baseOpts, left: +1, top: +1, fill: "", stroke: "rgba(255,255,255,0.65)", strokeWidth: 0.6, globalCompositeOperation: "screen" });
+    base.left = 0; base.top = 0;
 
-    c.add(t); c.add(shadow); c.add(highlight); c.setActiveObject(t);
-    sync();
+    const group = new fabric.Group([shadow, highlight, base], {
+      left: opts.left, top: opts.top, originX: opts.originX, originY: opts.originY, angle: opts.angle || 0,
+      scaleX: 1, scaleY: 1, objectCaching: false, selectable: true, evented: true,
+    });
+    group._kind = "textDeboss";
+    group._textChildren = { shadow, highlight, base };
+    return group;
   };
 
-  // ===== Acciones =====
+  const mutateTextGroup = (group, mutator) => {
+    if (!group || group._kind !== "textDeboss") return;
+    const { shadow, highlight, base } = group._textChildren || {};
+    [shadow, highlight, base].forEach((o) => mutator(o));
+    // mantener offsets de relieve
+    shadow.set({ left: -1, top: -1 });
+    highlight.set({ left: +1, top: +1 });
+    base.set({ left: 0, top: 0 });
+    group.dirty = true;
+    group.canvas?.requestRenderAll();
+  };
+
+  /** ===== Fabric init ===== */
+  useEffect(() => {
+    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+    const c = new fabric.Canvas(canvasRef.current, {
+      width: 1, height: 1,
+      preserveObjectStacking: true,
+      selection: true,
+      perPixelTargetFind: true,
+      targetFindTolerance: 8,
+    });
+    fabricCanvasRef.current = c;
+
+    const upper = c.upperCanvasEl;
+    if (upper) {
+      upper.style.touchAction = "none";
+      upper.style.pointerEvents = "auto";
+      upper.style.webkitUserSelect = "none";
+      upper.style.userSelect = "none";
+    }
+
+    // Doble click -> editar texto: abrimos edición sobre el grupo (no sobre hijo)
+    c.on("mouse:dblclick", (e) => {
+      const g = e.target;
+      if (!g || g._kind !== "textDeboss") return;
+      // abre edición sobre el hijo base y refleja al resto al acabar
+      const { base } = g._textChildren || {};
+      if (base && typeof base.enterEditing === "function") {
+        base.enterEditing();
+        base.selectAll();
+        c.requestRenderAll();
+      }
+    });
+
+    // Clasificar selección
+    const classify = (target) => {
+      if (!target) return "none";
+      if (target._kind === "textDeboss") return "text";
+      if (target._kind === "imgDeboss") return "image";
+      if (target.type === "group") return "none";
+      return "none";
+    };
+
+    const reflectTypo = () => {
+      const a = c.getActiveObject();
+      if (!a || a._kind !== "textDeboss") return;
+      const { base } = a._textChildren || {};
+      if (!base) return;
+      setFontFamily(base.fontFamily || FONT_OPTIONS[0].css);
+      setFontSize(base.fontSize || 60);
+      setIsBold((base.fontWeight + "" === "700") || base.fontWeight === "bold");
+      setIsItalic((base.fontStyle + "" === "italic"));
+      setIsUnderline(!!base.underline);
+      setTextAlign(base.textAlign || "center");
+    };
+
+    const onSel = () => {
+      setSelType(classify(c.getActiveObject()));
+      reflectTypo();
+      c.requestRenderAll();
+    };
+    c.on("selection:created", onSel);
+    c.on("selection:updated", onSel);
+    c.on("selection:cleared", () => setSelType("none"));
+
+    setReady(true);
+
+    // API mínima debug
+    if (typeof window !== "undefined") {
+      window.doboDesignAPI = {
+        getCanvas: () => c,
+        toPNG: (mult = 3) => c.toDataURL({ format: "png", multiplier: mult, backgroundColor: "transparent" }),
+        toSVG: () => c.toSVG({ suppressPreamble: true }),
+      };
+    }
+
+    return () => {
+      c.off("selection:created", onSel);
+      c.off("selection:updated", onSel);
+      c.off("selection:cleared");
+      c.off("mouse:dblclick");
+      try { c.dispose(); } catch {}
+      fabricCanvasRef.current = null;
+    };
+  }, [visible]);
+
+  // Ajustar lienzo a la caja
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+    c.setWidth(Math.max(1, Math.round(box.width)));
+    c.setHeight(Math.max(1, Math.round(box.height)));
+    c.calcOffset?.();
+    c.requestRenderAll?.();
+  }, [box.width, box.height]);
+
+  /** ===== Alternar modo edición ===== */
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+
+    const on = !!editing;
+    c.skipTargetFind = !on;
+    c.selection = on;
+    c.defaultCursor = on ? "move" : "default";
+
+    (c.getObjects?.() || []).forEach((o) => {
+      o.selectable = on;
+      o.evented = on;
+      o.lockMovementX = !on;
+      o.lockMovementY = !on;
+    });
+
+    const upper = c.upperCanvasEl;
+    if (upper) {
+      upper.style.pointerEvents = on ? "auto" : "none";
+      upper.style.touchAction = on ? "none" : "auto";
+      upper.tabIndex = on ? 0 : -1;
+    }
+
+    window.dispatchEvent(new CustomEvent("dobo-editing", { detail: { editing: on } }));
+  }, [editing]);
+
+  /** ===== Zoom (rueda/pinch) sólo en “Diseñar” ===== */
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    const upper = c?.upperCanvasEl;
+    if (!upper) return;
+
+    const onWheel = (e) => {
+      if (!editing) return;
+      e.preventDefault();
+      const step = e.deltaY > 0 ? -0.08 : 0.08;
+      setZoomValue((getZoom() || 1) + step);
+      measureOverlay();
+    };
+
+    // pinch 2 dedos (1 dedo: arrastre normal de Fabric)
+    const pts = new Map();
+    let startDist = 0, startScale = getZoom() || 1;
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    const onPD = (e) => {
+      if (!editing || e.pointerType !== "touch") return;
+      upper.setPointerCapture?.(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        const [p1, p2] = [...pts.values()];
+        startDist = dist(p1, p2);
+        startScale = getZoom() || 1;
+      }
+    };
+    const onPM = (e) => {
+      if (!editing || e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
+      if (pts.size < 2) return;
+      e.preventDefault();
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const [p1, p2] = [...pts.values()];
+      if (!p1 || !p2 || !startDist) return;
+      const factor = dist(p1, p2) / startDist;
+      setZoomValue(clamp(startScale * Math.pow(factor, 0.9), 0.8, 2.5));
+      measureOverlay();
+    };
+    const onPU = (e) => {
+      if (e.pointerType !== "touch") return;
+      pts.delete(e.pointerId);
+      if (pts.size < 2) { startDist = 0; startScale = getZoom() || 1; }
+    };
+
+    upper.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    upper.addEventListener("pointerdown", onPD, { passive: false });
+    upper.addEventListener("pointermove", onPM, { passive: false });
+    window.addEventListener("pointerup", onPU, { passive: true });
+    window.addEventListener("pointercancel", onPU, { passive: true });
+
+    return () => {
+      upper.removeEventListener("wheel", onWheel, { capture: true });
+      upper.removeEventListener("pointerdown", onPD);
+      upper.removeEventListener("pointermove", onPM);
+      window.removeEventListener("pointerup", onPU);
+      window.removeEventListener("pointercancel", onPU);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, zoom, localZoom]);
+
+  /** ===== Acciones ===== */
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
-    const t = new fabric.Textbox("Nuevo párrafo", {
+    const group = makeTextDebossGroup("Nuevo párrafo", {
       left: c.getWidth() / 2, top: c.getHeight() / 2,
       originX: "center", originY: "center",
       width: Math.min(c.getWidth() * 0.9, 240),
       fontSize, fontFamily, fontWeight: isBold ? "700" : "normal",
       fontStyle: isItalic ? "italic" : "normal",
-      underline: isUnderline, textAlign, fill: "rgba(35,35,35,1)",
-      selectable: true, editable: true, objectCaching: false,
+      underline: isUnderline, textAlign,
     });
-    c.add(t); applyDebossToText(t); c.requestRenderAll(); setEditing(true);
+    if (!group) return;
+    c.add(group); c.setActiveObject(group); c.requestRenderAll(); setEditing(true);
   };
 
   const addImageFromFile = (file) => {
@@ -549,16 +474,15 @@ export default function CustomizationOverlay({
     const imgEl = new Image(); imgEl.crossOrigin = "anonymous";
     imgEl.onload = () => {
       const src = downscale(imgEl);
-      const baseImg = vectorizeElementToBitmap(src, { makeDark: !vecInvert, thrBias: vecBias });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
       const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
-      const s = Math.min(maxW / baseImg._vecMeta.w, maxH / baseImg._vecMeta.h, 1);
-      baseImg.set({ originX: "center", originY: "center", left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: true, evented: true, objectCaching: false });
-      attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.setActiveObject(baseImg);
-      setSelType("image");
-      c.requestRenderAll();
-      setEditing(true);
+      const sample = vectorizeElementToBitmap(src) || new fabric.Image(src);
+      const s = Math.min(maxW / (sample.width || 1), maxH / (sample.height || 1), 1);
+      const group = makeImageDebossGroup(src, {
+        left: c.getWidth() / 2, top: c.getHeight() / 2, originX: "center", originY: "center", scale: s, angle: 0,
+      });
+      if (group) {
+        c.add(group); c.setActiveObject(group); c.requestRenderAll(); setEditing(true);
+      }
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -567,78 +491,30 @@ export default function CustomizationOverlay({
 
   const replaceActiveFromFile = (file) => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
-    const active = c.getActiveObject(); if (!active) return;
+    const t = c.getActiveObject();
+    if (!t || t._kind !== "imgDeboss") return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = "anonymous";
     imgEl.onload = () => {
       const src = downscale(imgEl);
-      const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
-      if (active._deboss) clearDeboss(active);
-      try { c.remove(active); } catch {}
-      const baseImg = vectorizeElementToBitmap(src, { makeDark: !vecInvert, thrBias: vecBias });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
-      baseImg.set({ ...pose, selectable: true, evented: true, objectCaching: false });
-      attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.setActiveObject(baseImg);
-      setSelType("image");
-      c.requestRenderAll();
-      setEditing(true);
+      t._vecSourceEl = src;
+      revectorizeImageGroup(t);
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
 
-  // ===== Borrado =====
-  const detachDebossEvents = (o) => { try { if (o && o._debossSync) ["changed","modified","moving","scaling","rotating","resizing"].forEach((ev) => o.off(ev, o._debossSync)); } catch {} };
-  const looksLikeDebossClone = (o, base) => {
-    if (!o) return false;
-    if (o.__isDebossClone) return true;
-    const isTx = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-    if (!isTx) return false;
-    const s = (o.stroke || "").toString();
-    const reliefStroke = s.includes("rgba(0,0,0,0.48)") || s.includes("rgba(255,255,255,0.65)");
-    const near = Math.abs(o.left - base.left) <= 2 && Math.abs(o.top - base.top) <= 2;
-    return reliefStroke && near && o.text === base.text;
-  };
-  const collectTextFamily = (c, base) => {
-    const set = new Set(); const all = c.getObjects(); const fam = base._debossOwnerId || base.__ownerId;
-    set.add(base);
-    if (base._debossers) { const { shadow, highlight } = base._debossers; if (shadow) set.add(shadow); if (highlight) set.add(highlight); }
-    if (fam) all.forEach((o) => { if (o && (o._debossOwnerId === fam || o.__ownerId === fam)) set.add(o); });
-    all.forEach((o) => { if (o !== base && looksLikeDebossClone(o, base)) set.add(o); });
-    return set;
-  };
-  const sweepDebossGhosts = (c) => {
-    const leftovers = c.getObjects().filter((o) =>
-      o?.__isDebossClone ||
-      ((o?.type === "i-text" || o?.type === "textbox" || o?.type === "text") &&
-        (o.globalCompositeOperation === "multiply" || o.globalCompositeOperation === "screen"))
-    );
-    leftovers.forEach((o) => { try { c.remove(o); } catch {} });
-  };
-  const removeWithDeboss = (c, obj) => {
-    if (!obj) return;
-    if (obj.type === "i-text" || obj.type === "textbox" || obj.type === "text") {
-      const fam = collectTextFamily(c, obj);
-      fam.forEach(detachDebossEvents);
-      fam.forEach((o) => { try { c.remove(o); } catch {} });
-    } else {
-      if (obj._deboss) clearDeboss(obj);
-      try { c.remove(obj); } catch {}
-    }
-  };
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
     if (a.type === "activeSelection" && a._objects?.length) {
       const arr = a._objects.slice();
       a.discard();
-      arr.forEach((o) => removeWithDeboss(c, o));
+      arr.forEach((o) => { try { c.remove(o); } catch {} });
     } else {
-      removeWithDeboss(c, a);
+      try { c.remove(a); } catch {}
     }
-    sweepDebossGhosts(c);
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType("none");
@@ -646,8 +522,6 @@ export default function CustomizationOverlay({
 
   const clearSelectionHard = () => {
     const c = fabricCanvasRef.current; if (!c) return;
-    try { c.getObjects().forEach((o) => { if (o?.isEditing && typeof o.exitEditing === "function") o.exitEditing(); }); } catch {}
-    try { const a = c.getActiveObject(); if (a?.type === "activeSelection") a.discard(); } catch {}
     try { c.discardActiveObject(); } catch {}
     try { c.setActiveObject(null); } catch {}
     try { c._activeObject = null; } catch {}
@@ -657,56 +531,35 @@ export default function CustomizationOverlay({
   const enterDesignMode = () => { clearSelectionHard(); setEditing(true); };
   const exitDesignMode = () => { clearSelectionHard(); setEditing(false); };
 
-  // ===== Aplicar a selección (texto) =====
+  // Aplicar a selección (texto en grupo)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
-    const isText = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-    const apply = (obj) => { if (isText(obj)) { mutator(obj); obj._debossSync && obj._debossSync(); obj.setCoords(); } };
-    if (a.type === "activeSelection" && Array.isArray(a._objects)) a._objects.forEach(apply); else apply(a);
+    if (a._kind === "textDeboss") {
+      mutateTextGroup(a, mutator);
+    }
     c.requestRenderAll();
   };
 
-  // ===== Revectorizar al cambiar bias/invert =====
+  // Revectorizar imagen al cambiar bias/invert
   useEffect(() => {
     if (!editing || selType !== "image") return;
     const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const rebuild = (obj) => {
-      let element = null;
-      const pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
-      if (obj._deboss) clearDeboss(obj);
-      if (obj._vecSourceEl) { element = obj._vecSourceEl; try { c.remove(obj); } catch {} }
-      else if (obj.type === "image") { element = (typeof obj.getElement === "function" ? obj.getElement() : (obj._originalElement || obj._element)); try { c.remove(obj); } catch {} }
-      else { return; }
-
-      const baseImg = vectorizeElementToBitmap(element, { makeDark: !vecInvert, thrBias: vecBias });
-      if (!baseImg) return;
-      baseImg.set({ ...pose, selectable: true, evented: true, objectCaching: false });
-      attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.setActiveObject(baseImg);
-    };
-
-    if (a.type === "activeSelection" && a._objects?.length) {
-      const arr = a._objects.slice(); a.discard(); arr.forEach(rebuild);
-    } else { rebuild(a); }
-
-    c.requestRenderAll();
+    const a = c.getActiveObject();
+    if (a && a._kind === "imgDeboss") revectorizeImageGroup(a);
   }, [vecBias, vecInvert]); // eslint-disable-line
 
-  // Profundidad en caliente
+  // Actualizar offset en imagen
   useEffect(() => {
     if (!editing || selType !== "image") return;
     const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-    const upd = (obj) => { if (obj._deboss) updateDebossVisual(obj, { offset: vecOffset }); };
-    if (a.type === "activeSelection" && a._objects?.length) a._objects.forEach(upd); else upd(a);
+    const a = c.getActiveObject();
+    if (a && a._kind === "imgDeboss") updateImageOffset(a);
   }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
 
-  // ===== Overlay (hijo del STAGE, escala con la maceta) =====
+  /** ===== Overlay dentro del stage (escala con maceta) ===== */
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -730,26 +583,16 @@ export default function CustomizationOverlay({
     </div>
   );
 
-  // ===== Menú =====
+  /** ===== Menú ===== */
   function Menu() {
     const zVal = Math.round((getZoom() || 1) * 100);
     return (
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          background: "rgba(253,253,253,0.34)",
-          backdropFilter: "blur(4px)",
-          WebkitBackdropFilter: "blur(4px)",
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: "10px 12px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          width: "auto",
-          maxWidth: "94vw",
-          fontSize: 12,
-          userSelect: "none",
+          display: "flex", flexDirection: "column", gap: 8,
+          background: "rgba(253,253,253,0.34)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+          border: "1px solid #ddd", borderRadius: 12, padding: "10px 12px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.1)", width: "auto", maxWidth: "94vw", fontSize: 12, userSelect: "none",
         }}
       >
         <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -759,10 +602,22 @@ export default function CustomizationOverlay({
             <input type="text" readOnly className="form-control form-control-sm text-center" value={`${zVal}%`} />
             <button type="button" className="btn btn-outline-secondary" onClick={() => setZoomValue((getZoom() || 1) + 0.1)}>+</button>
           </div>
-          <button type="button" className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={() => { clearSelectionHard(); setEditing(false); }} style={{ minWidth: "16ch" }}>
+          <button
+            type="button"
+            className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={exitDesignMode}
+            style={{ minWidth: "16ch" }}
+          >
             Seleccionar Maceta
           </button>
-          <button type="button" className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={() => { clearSelectionHard(); setEditing(true); }} style={{ minWidth: "12ch" }}>
+          <button
+            type="button"
+            className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={enterDesignMode}
+            style={{ minWidth: "12ch" }}
+          >
             Diseñar
           </button>
         </div>
@@ -783,19 +638,16 @@ export default function CustomizationOverlay({
                 {FONT_OPTIONS.map((f) => <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>)}
               </select>
             </div>
-
             <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-              <button type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}    onClick={() => { const nv = !isBold; setIsBold(nv);       applyToSelection((o) => o.set({ fontWeight: nv ? "700" : "normal" })); }}>B</button>
-              <button type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}  onClick={() => { const nv = !isItalic; setIsItalic(nv);   applyToSelection((o) => o.set({ fontStyle: nv ? "italic" : "normal" })); }}>I</button>
+              <button type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}     onClick={() => { const nv = !isBold; setIsBold(nv);     applyToSelection((o) => o.set({ fontWeight: nv ? "700" : "normal" })); }}>B</button>
+              <button type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}   onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection((o) => o.set({ fontStyle: nv ? "italic" : "normal" })); }}>I</button>
               <button type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection((o) => o.set({ underline: nv })); }}>U</button>
             </div>
-
             <div className="input-group input-group-sm" style={{ width: 160 }}>
               <span className="input-group-text">Tamaño</span>
               <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
                      onChange={(e) => { const v = clamp(parseInt(e.target.value || "0", 10), 8, 200); setFontSize(v); applyToSelection((o) => o.set({ fontSize: v })); }} />
             </div>
-
             <div className="btn-group dropup">
               <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setShowAlignMenu((v) => !v)}>
                 {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
@@ -823,17 +675,15 @@ export default function CustomizationOverlay({
               <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
               <button type="button" className="btn btn-outline-secondary" onClick={() => setVecBias((v) => clamp(v + 5, -60, 60))}>+</button>
             </div>
-
             <div className="input-group input-group-sm" style={{ width: 190 }}>
               <span className="input-group-text">Profundidad</span>
               <button type="button" className="btn btn-outline-secondary" onClick={() => setVecOffset((v) => clamp(v - 1, 0, 5))}>−</button>
               <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
               <button type="button" className="btn btn-outline-secondary" onClick={() => setVecOffset((v) => clamp(v + 1, 0, 5))}>+</button>
             </div>
-
             <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
               <button type="button" className={`btn ${!vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setVecInvert(false)}>Oscuro</button>
-              <button type="button" className={`btn ${vecInvert ? "btn-dark" : "btn-outline-secondary"}`}  onClick={() => setVecInvert(true)}>Claro</button>
+              <button type="button" className={`btn ${vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setVecInvert(true)}>Claro</button>
             </div>
           </div>
         )}
@@ -845,7 +695,7 @@ export default function CustomizationOverlay({
     );
   }
 
-  // ===== Render =====
+  /** ===== Render ===== */
   return (
     <>
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
