@@ -919,7 +919,7 @@ const getTotalComparePrice = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
-                touchAction: 'none',  
+                touchAction: 'pan-y',  
    }} 
  >
 
@@ -934,7 +934,9 @@ const getTotalComparePrice = () => {
   transform: "scale(var(--zoom))",
   transformOrigin: "50% 70%",
   willChange: "transform",
-  backfaceVisibility: "hidden"
+  backfaceVisibility: "hidden",
+               touchAction: 'pan-y',
+
 }}
 
             >
