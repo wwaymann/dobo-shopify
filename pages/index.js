@@ -13,6 +13,14 @@ const money = (amount, currency = 'CLP') =>
     maximumFractionDigits: 0,
   }).format(Number(amount || 0));
 
+// --- helpers numéricos ---
+const num = (v) => Number(typeof v === 'object' ? v?.amount : v || 0);
+const firstVariantPrice = (p) => {
+  const v = p?.variants?.[0]?.price;
+  return v ? num(v) : num(p?.minPrice);
+};
+const productMin = (p) => num(p?.minPrice);
+
 
 // --- [Hover Zoom IFRAME helpers] ---
 const escapeHtml = (s) =>
