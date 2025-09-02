@@ -928,33 +928,25 @@ const getTotalPrice = () => {
         <div className="col-lg-5 col-md-8 col-12">
           {pots.length > 0 && plants.length > 0 && (
             <div className="text-center">
+            
               {/* Precio combinado */}
-              <div
-                className="d-flex justify-content-center align-items-baseline gap-3 mb-4"
-                style={{ marginTop: "20px" }}
-              >
-                
-                  >
-                    ${(getTotalComparePrice() * quantity).toFixed(0)}
-                  </span>
-                )}
-               {selectedPotVariant?.price && (
-  <p style={{ marginTop: 8 }}>
-    Precio maceta: {money(
-      // usa amount si existe, si no usa price numérico plano
-      (selectedPotVariant.price.amount ?? selectedPotVariant.price),
-      selectedPotVariant.price.currencyCode || 'CLP'
-    )}
-  </p>
-)}
+             <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: "20px" }}>
+  {(pots[selectedPotIndex] || selectedPotVariant) && (
+    <p style={{ marginTop: 8 }}>
+      Precio maceta: {money(
+        selectedPotVariant?.price
+          ? num(selectedPotVariant.price)
+          : firstVariantPrice(pots[selectedPotIndex]),
+        selectedPotVariant?.price?.currencyCode || 'CLP'
+      )}
+    </p>
+  )}
 
+  <span style={{ fontWeight: "bold", fontSize: "3rem" }}>
+    {money(getTotalPrice() * quantity, selectedPotVariant?.price?.currencyCode || 'CLP')}
+  </span>
+</div>
 
-
-                  <span style={{ fontWeight: "bold", fontSize: "3rem" }}>
-  {money(getTotalPrice() * quantity, selectedPotVariant?.price?.currencyCode || 'CLP')}
-</span>
-
-              </div>
 
               {/* Color */}
               {colorOptions.length > 0 && (
