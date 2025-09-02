@@ -3,7 +3,6 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
-import 'bootstrap/dist/css/bootstrap.min.css';
 
 // --- helpers: formato de precio ---
 const money = (amount, currency = 'CLP') =>
@@ -1360,3 +1359,9 @@ userSelect: 'none'
     </div>
   );
 }
+
+export async function getServerSideProps() {
+  // Evita el prerender en build (causa del "Cannot access 'ak' before initialization")
+  return { props: {} };
+}
+
