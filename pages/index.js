@@ -438,12 +438,6 @@ setupSwipe(plantScrollRef, plantHandlers);
 setupSwipe(potScrollRef, potHandlers);
 
 
-    if (!selectedSize || !potSizes.includes(selectedSize)) {
-      if (potSizes.length >= 2) setSelectedSize(potSizes[1]);
-      else if (potSizes.length === 1) setSelectedSize(potSizes[0]);
-      else setSelectedSize(null);
-    }
-  }, [pots, selectedPotIndex]);
 
 
 
