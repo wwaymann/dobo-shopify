@@ -498,19 +498,25 @@ useEffect(() => {
     );
   };
 
-  const getTotalPrice = () => {
-    const pot = pots[selectedPotIndex];
-    const plant = plants[selectedPlantIndex];
-    const accessoryTotal = selectedAccessoryIndices.reduce((sum, i) => {
-      const acc = accessories[i];
-      return sum + parseFloat(acc?.price || 0);
-    }, 0);
-    return (
-      parseFloat(selectedPotVariant?.price || pot?.price || 0) +
-      parseFloat(plant?.price || 0) +
-      accessoryTotal
-    );
-  };
+const getTotalPrice = () => {
+  const pot = pots[selectedPotIndex];
+  const plant = plants[selectedPlantIndex];
+
+  const potPrice = selectedPotVariant?.price
+    ? num(selectedPotVariant.price)
+    : firstVariantPrice(pot);
+
+  const plantPrice = productMin(plant);
+
+  const accTotal = selectedAccessoryIndices.reduce((s, i) => {
+    const acc = accessories[i];
+    const v = acc?.variants?.[0]?.price;
+    return s + (v ? num(v) : productMin(acc));
+  }, 0);
+
+  return potPrice + plantPrice + accTotal;
+};
+
 
   const getTotalComparePrice = () => {
     const pot = pots[selectedPotIndex];
