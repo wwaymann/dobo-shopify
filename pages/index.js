@@ -300,7 +300,7 @@ useEffect(() => {
     Beige: "#EAD8AB",
   };
 
- // cargar productos
+// cargar productos
 useEffect(() => {
   async function fetchProducts() {
     try {
@@ -350,6 +350,7 @@ useEffect(() => {
 }, []);
 
 
+
       // Normaliza campos usados más abajo
       const safe = arr.map((p) => ({
         ...p,
@@ -386,7 +387,7 @@ if (macetas.length > 0) {
     macetas[0].variants?.[0] ||
     null;
   setSelectedPotVariant(firstVariant);
-}
+
 
     } catch (err) {
       console.error("Error fetching products:", err);
