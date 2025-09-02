@@ -467,46 +467,75 @@ setupSwipe(potScrollRef, potHandlers);
     }
   }, [pots, selectedPotIndex, colorOptions, selectedSize, selectedColor]);
 
-// opciones color/size derivadas de variantes con imagen
+// === Variantes: opciones, color/size por defecto y variante seleccionada ===
 useEffect(() => {
   const pot = pots[selectedPotIndex];
 
   if (!pot) {
     setColorOptions([]);
     setSizeOptions([]);
+    setSelectedPotVariant(null);
     return;
   }
 
-  const validVariants = (pot.variants || []).filter(v => !!v.image);
+  const valid = (pot.variants || []).filter(v => !!v.image);
+  const lower = (s) => (s ?? '').toString().trim().toLowerCase();
 
-  const potColors = Array.from(new Set(
-    validVariants.flatMap(v =>
-      (v.selectedOptions || [])
-        .filter(o => (o.name || '').toLowerCase() === 'color')
-        .map(o => o.value)
-    )
-  ));
+  // opciones únicas
+  const colors = [
+    ...new Set(
+      valid.flatMap(v =>
+        (v.selectedOptions || [])
+          .filter(o => lower(o.name) === 'color')
+          .map(o => o.value)
+      )
+    ),
+  ];
 
-  const potSizes = Array.from(new Set(
-    validVariants.flatMap(v =>
-      (v.selectedOptions || [])
-        .filter(o => {
-          const n = (o.name || '').toLowerCase();
-          return n === 'tamaño' || n === 'size';
-        })
-        .map(o => o.value)
-    )
-  ));
+  const sizes = [
+    ...new Set(
+      valid.flatMap(v =>
+        (v.selectedOptions || [])
+          .filter(o => {
+            const n = lower(o.name);
+            return n === 'tamaño' || n === 'size';
+          })
+          .map(o => o.value)
+      )
+    ),
+  ];
 
-  setColorOptions(potColors);
-  setSizeOptions(potSizes);
+  setColorOptions(colors);
+  setSizeOptions(sizes);
 
-  if (!selectedSize || !potSizes.includes(selectedSize)) {
-    if (potSizes.length >= 2) setSelectedSize(potSizes[1]);
-    else if (potSizes.length === 1) setSelectedSize(potSizes[0]);
+  // tamaño por defecto
+  if (!selectedSize || !sizes.includes(selectedSize)) {
+    if (sizes.length >= 2) setSelectedSize(sizes[1]);
+    else if (sizes.length === 1) setSelectedSize(sizes[0]);
     else setSelectedSize(null);
   }
-}, [pots, selectedPotIndex, selectedSize]);
+
+  // si el color actual no calza, elige uno válido
+  const variantMatches = (v, color, size) => {
+    const opts = v.selectedOptions || [];
+    const colorOK = color ? opts.some(o => lower(o.name) === 'color' && lower(o.value) === lower(color)) : true;
+    const sizeOK  = size  ? opts.some(o => {
+      const n = lower(o.name);
+      return (n === 'tamaño' || n === 'size') && lower(o.value) === lower(size);
+    }) : true;
+    return colorOK && sizeOK;
+  };
+
+  if (!(selectedColor && valid.some(v => variantMatches(v, selectedColor, selectedSize)))) {
+    const firstColor = colors.find(c => valid.some(v => variantMatches(v, c, selectedSize)));
+    if (firstColor) setSelectedColor(firstColor);
+  }
+
+  // variante seleccionada
+  const chosen = valid.find(v => variantMatches(v, selectedColor, selectedSize)) || valid[0] || null;
+  setSelectedPotVariant(chosen || null);
+}, [pots, selectedPotIndex, selectedColor, selectedSize]);
+
 
 
 
