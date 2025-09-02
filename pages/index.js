@@ -163,6 +163,32 @@ export default function Home() {
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
 
+// Conmutar touch-action al entrar/salir de “Diseñar” (móvil)
+useEffect(() => {
+  const s = stageRef.current;
+  const c = sceneWrapRef.current;
+  if (!s || !c) return;
+
+  const prevS = s.style.touchAction;
+  const prevC = c.style.touchAction;
+
+  if (editing) {
+    // En modo diseño: que Fabric reciba los gestos (drag/pinch)
+    s.style.touchAction = 'none';
+    c.style.touchAction = 'none';
+  } else {
+    // Fuera de diseño: permitir scroll vertical normal
+    s.style.touchAction = 'pan-y';
+    c.style.touchAction = 'pan-y';
+  }
+
+  return () => {
+    s.style.touchAction = prevS;
+    c.style.touchAction = prevC;
+  };
+}, [editing]);
+
+  
   // Conmutar touch-action al entrar/salir de “Diseñar” (móvil)
 useEffect(() => {
   const s = stageRef.current;
