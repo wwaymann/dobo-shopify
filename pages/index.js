@@ -976,9 +976,24 @@ if (macetas.length > 0) {
                     ${(getTotalComparePrice() * quantity).toFixed(0)}
                   </span>
                 )}
-                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>
+               {selectedPotVariant?.price && (
+  <p style={{ marginTop: 8 }}>
+    Precio maceta: {money(
+      // usa amount si existe, si no usa price numérico plano
+      (selectedPotVariant.price.amount ?? selectedPotVariant.price),
+      selectedPotVariant.price.currencyCode || 'CLP'
+    )}
+  </p>
+)}
+
+
+<span style={{ fontWeight: "bold", fontSize: "3rem" }}>
                   ${(getTotalPrice() * quantity).toFixed(0)}
                 </span>
+                  <span style={{ fontWeight: "bold", fontSize: "3rem" }}>
+  {money(getTotalPrice() * quantity, selectedPotVariant?.price?.currencyCode || 'CLP')}
+</span>
+
               </div>
 
               {/* Color */}
