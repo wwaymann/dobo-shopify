@@ -5,6 +5,15 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import 'bootstrap/dist/css/bootstrap.min.css';
 
+// --- helpers: formato de precio ---
+const money = (amount, currency = 'CLP') =>
+  new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(Number(amount || 0));
+
+
 // --- [Hover Zoom IFRAME helpers] ---
 const escapeHtml = (s) =>
   s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])) || "";
@@ -98,6 +107,14 @@ export default function Home() {
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
 
+// total a mostrar
+const [total, setTotal] = useState(0);
+
+// si NO existen ya en tu archivo, añade estos:
+const [selectedPlantVariant, setSelectedPlantVariant] = useState(null);
+const [selectedAccessories, setSelectedAccessories] = useState([]); // array de accesorios elegidos
+
+  
   // Congela por completo el carrusel de macetas al editar
   useEffect(() => {
     const el = potScrollRef.current;
@@ -259,6 +276,15 @@ export default function Home() {
       return matchColor && matchSize;
     });
   };
+useEffect(() => {
+  const pot  = Number(selectedPotVariant?.price?.amount || 0);
+  const plant = Number(selectedPlantVariant?.price?.amount || 0);
+  const acc   = Array.isArray(selectedAccessories)
+    ? selectedAccessories.reduce((s, a) => s + Number(a?.price?.amount || 0), 0)
+    : 0;
+
+  setTotal(pot + plant + acc);
+}, [selectedPotVariant, selectedPlantVariant, selectedAccessories]);
 
   // mapa de colores
   const colorMap = {
@@ -278,16 +304,47 @@ export default function Home() {
 useEffect(() => {
   async function fetchProducts() {
     try {
-      const res = await fetch("/api/products", { cache: "no-store" });
+      const res = await fetch('/api/products', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
-      // Acepta distintos "shapes" y fuerza array
-      const arr = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.products)
-        ? data.products
-        : [];
+      const arr = Array.isArray(data) ? data : [];
+      const safe = arr.map(p => ({
+        ...p,
+        tags: Array.isArray(p?.tags) ? p.tags : [],
+        variants: Array.isArray(p?.variants) ? p.variants : [],
+        image: p?.image || '',
+        minPrice: p?.minPrice || { amount: 0, currencyCode: 'CLP' },
+      }));
+
+      const byTag = (t) =>
+        safe.filter(p => p.tags.some(tag => String(tag).toLowerCase().includes(t)));
+
+      let plantas = byTag('plantas');
+      let macetas = byTag('macetas');
+      let accesorios = byTag('accesorios');
+
+      if ((plantas.length + macetas.length + accesorios.length) === 0 && safe.length > 0) {
+        macetas = safe; plantas = []; accesorios = [];
+      }
+
+      setPlants(plantas);
+      setPots(macetas);
+      setAccessories(accesorios);
+
+      // Selecciona una variante inicial de maceta con precio
+      if (macetas.length > 0) {
+        const fv = (macetas[0].variants || []).find(v => v?.availableForSale) || macetas[0].variants?.[0] || null;
+        setSelectedPotVariant(fv || null);
+      }
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      setPlants([]); setPots([]); setAccessories([]);
+    }
+  }
+  fetchProducts();
+}, []);
+
 
       // Normaliza campos usados más abajo
       const safe = arr.map((p) => ({
