@@ -332,14 +332,18 @@ useEffect(() => {
       setPots(macetas);
       setAccessories(accesorios);
 
-      // Selecciona una variante inicial de maceta con precio
       if (macetas.length > 0) {
-        const fv = (macetas[0].variants || []).find(v => v?.availableForSale) || macetas[0].variants?.[0] || null;
+        const fv =
+          (macetas[0].variants || []).find(v => v?.availableForSale) ||
+          macetas[0].variants?.[0] ||
+          null;
         setSelectedPotVariant(fv || null);
       }
     } catch (err) {
       console.error('Error fetching products:', err);
-      setPlants([]); setPots([]); setAccessories([]);
+      setPlants([]);
+      setPots([]);
+      setAccessories([]);
     }
   }
   fetchProducts();
