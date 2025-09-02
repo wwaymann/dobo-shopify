@@ -389,6 +389,8 @@ function Home() {
       raf = requestAnimationFrame(() => {
         raf = 0;
         stage.style.setProperty("--zoom", String(target));
+        container.style.setProperty("--zoom", String(target));
+
       });
     };
 
