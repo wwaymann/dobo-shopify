@@ -84,7 +84,7 @@ const CustomizationOverlay = dynamic(
 // Dominio de tu tienda para enviar al carrito del Online Store
 const SHOP_DOMAIN = "um7xus-0u.myshopify.com";
 
-export default function Home() {
+function Home() {
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
@@ -1364,4 +1364,5 @@ export async function getServerSideProps() {
   // Evita el prerender en build (causa del "Cannot access 'ak' before initialization")
   return { props: {} };
 }
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
 
