@@ -440,8 +440,7 @@ const safe = arr.map(p => ({
   const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
   const potHandlers = createHandlers(pots, setSelectedPotIndex);
 
-  // Drag para carruseles (planta/maceta)
- // reemplaza setupDrag(...) por esto:
+// Drag/Swipe horizontal con scroll vertical habilitado
 const setupSwipe = (ref, handlers) => {
   useEffect(() => {
     const el = ref.current;
@@ -462,15 +461,15 @@ const setupSwipe = (ref, handlers) => {
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
 
-      // solo capturamos gesto horizontal claro
+      // solo gesto horizontal claro
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
-        ev.preventDefault(); // bloquea scroll de página
-        if (Math.abs(dx) > 50) {
+        // bloquea scroll solo en swipe horizontal
+        ev.preventDefault();
+        if (Math.abs(dx) > 48) {
           dx > 0 ? handlers.prev() : handlers.next();
           tracking = false;
         }
       }
-      // si es más vertical, dejamos que la página se desplace
     };
 
     const onUp = () => { tracking = false; };
@@ -481,13 +480,13 @@ const setupSwipe = (ref, handlers) => {
     window.addEventListener('pointerup', onUp, { passive: true });
     window.addEventListener('pointercancel', onUp, { passive: true });
 
-    // Fallback iOS (Touch)
+    // Fallback Touch (iOS)
     el.addEventListener('touchstart', onDown, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: false });
     el.addEventListener('touchend', onUp, { passive: true });
     el.addEventListener('touchcancel', onUp, { passive: true });
 
-    // Fallback mouse
+    // Fallback Mouse
     el.addEventListener('mousedown', onDown, { passive: false });
     el.addEventListener('mousemove', onMove, { passive: false });
     window.addEventListener('mouseup', onUp, { passive: true });
@@ -507,6 +506,7 @@ const setupSwipe = (ref, handlers) => {
     };
   }, [ref, handlers]);
 };
+
 
 
 setupSwipe(plantScrollRef, plantHandlers);
@@ -921,7 +921,8 @@ const getTotalComparePrice = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
-                touchAction: 'pan-y',  
+                touchAction: 'pan-y', 
+     userSelect: 'none'
    }} 
  >
 
@@ -938,7 +939,7 @@ const getTotalComparePrice = () => {
   willChange: "transform",
   backfaceVisibility: "hidden",
                touchAction: 'pan-y',
-
+userSelect: 'none'
 }}
 
             >
