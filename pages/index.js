@@ -923,7 +923,7 @@ const getTotalComparePrice = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                overflow: 'hidden'
+                overflow: 'hidden',
                 touchAction: 'none',  
    }} 
  >
