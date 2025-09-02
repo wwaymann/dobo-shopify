@@ -337,7 +337,7 @@ useEffect(() => {
           macetas[0].variants?.[0] ||
           null;
         setSelectedPotVariant(fv || null);
-      }
+      
     } catch (err) {
       console.error('Error fetching products:', err);
       setPlants([]);
