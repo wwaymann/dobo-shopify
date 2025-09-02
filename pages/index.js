@@ -105,6 +105,52 @@ export default function Home() {
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
   const potScrollRef = useRef(null);
+const plantSwipeRef = useRef({ active:false, id:null, x:0, y:0 });
+const potSwipeRef   = useRef({ active:false, id:null, x:0, y:0 });
+
+const makeSwipeEvents = (swipeRef, handlers) => {
+  const begin = (x, y, id, el) => {
+    swipeRef.current = { active:true, id, x, y };
+    if (id != null && el?.setPointerCapture) el.setPointerCapture(id);
+  };
+  const move = (x, y, ev, el) => {
+    const s = swipeRef.current;
+    if (!s.active) return;
+    const dx = x - s.x, dy = y - s.y;
+    // solo gesto horizontal claro
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+      ev.preventDefault();
+      if (Math.abs(dx) > 48) {
+        dx > 0 ? handlers.prev() : handlers.next();
+        end(ev, el);
+      }
+    }
+  };
+  const end = (ev, el) => {
+    const id = swipeRef.current.id;
+    if (id != null && el?.releasePointerCapture) el.releasePointerCapture(id);
+    swipeRef.current.active = false;
+  };
+
+  return {
+    onPointerDown: (e) => begin(e.clientX, e.clientY, e.pointerId ?? null, e.currentTarget),
+    onPointerMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onPointerUp:   (e) => end(e, e.currentTarget),
+    onPointerCancel:(e)=> end(e, e.currentTarget),
+    // Fallback iOS antiguos
+    onTouchStart: (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, null, e.currentTarget); },
+    onTouchMove:  (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e, e.currentTarget); },
+    onTouchEnd:   (e) => end(e, e.currentTarget),
+    onTouchCancel:(e) => end(e, e.currentTarget),
+    // Fallback mouse
+    onMouseDown:  (e) => begin(e.clientX, e.clientY, null, e.currentTarget),
+    onMouseMove:  (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onMouseUp:    (e) => end(e, e.currentTarget),
+  };
+};
+
+const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
+const potSwipeEvents   = makeSwipeEvents(potSwipeRef,   potHandlers);
 
   
   // Estado de edición emitido por CustomizationOverlay
@@ -514,14 +560,6 @@ const setupSwipe = (ref, handlers) => {
     return cleanup;
   }, [ref, handlers]);
 };
-
-
-
-
-setupSwipe(plantScrollRef, plantHandlers);
-setupSwipe(potScrollRef, potHandlers);
-
-
 
 
 
@@ -953,13 +991,15 @@ userSelect: 'none'
 
             >
               {/* Macetas */}
-            <div
+           <div
   className={styles.carouselContainer}
   ref={potScrollRef}
   data-capture="pot-container"
   style={{ zIndex: 1, touchAction: 'pan-y', userSelect: 'none' }}
   aria-disabled={editing ? "true" : "false"}
+  {...potSwipeEvents}
 >
+
 
                 <div
                   className={styles.carouselTrack}
@@ -982,7 +1022,7 @@ userSelect: 'none'
               </div>
 
               {/* Plantas */}
-          <div
+         <div
   className={styles.carouselContainer}
   ref={plantScrollRef}
   data-capture="plant-container"
@@ -996,7 +1036,9 @@ userSelect: 'none'
     touchAction: 'pan-y',
     userSelect: 'none'
   }}
+  {...plantSwipeEvents}
 >
+
 
                 <div
                   className={styles.carouselTrack}
