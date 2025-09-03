@@ -3,7 +3,6 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
 import { createPortal } from "react-dom";
 
-/* ==== Constantes ==== */
 const MAX_TEXTURE_DIM = 1600;
 const VECTOR_SAMPLE_DIM = 500;
 const Z_CANVAS = 4000;
@@ -21,13 +20,12 @@ const FONT_OPTIONS = [
 ];
 
 export default function CustomizationOverlay({
-  stageRef,        // contenedor que escala (opcional)
-  anchorRef,       // carrusel / área a cubrir
+  stageRef,
+  anchorRef,     // carrusel de macetas (donde se monta el overlay)
   visible = true,
-  zoom,            // opcional
-  setZoom,         // opcional
+  zoom,
+  setZoom,
 }) {
-  /* ==== Refs / estado ==== */
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const fabricRef = useRef(null);
@@ -37,8 +35,7 @@ export default function CustomizationOverlay({
 
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
-  const [selType, setSelType] = useState("none"); // 'none' | 'text' | 'image'
-
+  const [selType, setSelType] = useState("none");
   const [size, setSize] = useState({ w: 1, h: 1 });
 
   // Tipografía
@@ -55,7 +52,7 @@ export default function CustomizationOverlay({
   const [vecInvert, setVecInvert] = useState(false);
   const [vecBias, setVecBias] = useState(0);
 
-  // Zoom local (si no te lo pasan)
+  // Zoom local si no viene por props
   const [localZoom, setLocalZoom] = useState(1);
   const getZoom = () => (typeof zoom === "number" ? zoom : localZoom);
   const setZoomValue = (z) => {
@@ -67,7 +64,7 @@ export default function CustomizationOverlay({
     }
   };
 
-  /* ==== Medición del contenedor (rect real en px) ==== */
+  /* ===== Medición del overlay (ajustado al anchor) ===== */
   const measureWrap = () => {
     const el = wrapRef.current;
     if (!el) return;
@@ -100,9 +97,9 @@ export default function CustomizationOverlay({
     };
   }, [anchorRef]);
 
-  useEffect(() => { measureWrap(); }, [zoom, localZoom]); // re-medir cuando cambia el zoom externo
+  useEffect(() => { measureWrap(); }, [zoom, localZoom]); // re-medir con zoom
 
-  /* ==== Utils imagen ==== */
+  /* ===== Utils imagen / vectorizado ===== */
   const downscale = (imgEl) => {
     const w = imgEl.naturalWidth || imgEl.width;
     const h = imgEl.naturalHeight || imgEl.height;
@@ -167,7 +164,7 @@ export default function CustomizationOverlay({
     });
   };
 
-  /* ==== Centro en canvas ==== */
+  /* ===== Helpers ===== */
   const centerOnCanvas = (obj, c) => {
     const cx = c.getWidth() / 2;
     const cy = c.getHeight() / 2;
@@ -176,7 +173,6 @@ export default function CustomizationOverlay({
     obj.setCoords?.();
   };
 
-  /* ==== Grupos con offsets normalizados (no se separan) ==== */
   const normalizeImageOffsets = (group) => {
     if (!group || group._kind !== "imgDeboss") return;
     const { shadow, highlight } = group._debossChildren || {};
@@ -192,7 +188,6 @@ export default function CustomizationOverlay({
   const normalizeTextOffsets = (group) => {
     if (!group || group._kind !== "textDeboss") return;
     const { shadow, highlight, base } = group._textChildren || {};
-    if (!shadow || !highlight || !base) return;
     const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
     const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
     const ox = 1 / sx;
@@ -205,7 +200,6 @@ export default function CustomizationOverlay({
   const makeImageDebossGroup = (element, { scale = 1, angle = 0 } = {}) => {
     const base = vectorizeElementToBitmap(element, { makeDark: !vecInvert, thrBias: vecBias });
     if (!base) return null;
-
     const shadow = new fabric.Image(base.getElement(), {
       originX: "center", originY: "center",
       objectCaching: false, noScaleCache: true,
@@ -216,8 +210,6 @@ export default function CustomizationOverlay({
       objectCaching: false, noScaleCache: true,
       globalCompositeOperation: "screen", opacity: 1,
     });
-
-    // offsets iniciales; se normalizan por escala del grupo
     shadow.set({ left: -vecOffset, top: -vecOffset });
     highlight.set({ left: +vecOffset, top: +vecOffset });
     base.set({ left: 0, top: 0 });
@@ -226,7 +218,7 @@ export default function CustomizationOverlay({
       originX: "center", originY: "center",
       angle, scaleX: scale, scaleY: scale,
       objectCaching: false, selectable: true, evented: true,
-      subTargetCheck: false, // no seleccionar hijos
+      subTargetCheck: false,
     });
     group._kind = "imgDeboss";
     group._vecSourceEl = element;
@@ -334,7 +326,7 @@ export default function CustomizationOverlay({
     group.canvas?.requestRenderAll();
   };
 
-  /* ==== Fabric init ==== */
+  /* ===== Fabric init ===== */
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricRef.current) return;
     const c = new fabric.Canvas(canvasRef.current, {
@@ -345,7 +337,6 @@ export default function CustomizationOverlay({
     });
     fabricRef.current = c;
 
-    // upper canvas preparado para táctil pero sólo activo en edición
     const upper = c.upperCanvasEl;
     upper.style.position = "absolute";
     upper.style.inset = "0";
@@ -354,9 +345,8 @@ export default function CustomizationOverlay({
     upper.style.touchAction = "none";
     upper.style.userSelect = "none";
     upper.style.webkitUserSelect = "none";
-    upper.style.pointerEvents = "none"; // activamos en edición
+    upper.style.pointerEvents = "none"; // solo en edición
 
-    // Doble click: editar texto (hijo base)
     c.on("mouse:dblclick", (e) => {
       const g = e.target;
       if (!g || g._kind !== "textDeboss") return;
@@ -407,10 +397,7 @@ export default function CustomizationOverlay({
     };
   }, [visible]);
 
-  // Redimensionar al tamaño del wrap
-  useEffect(() => { measureWrap(); }, [size.w, size.h]); // eslint-disable-line
-
-  /* ==== Alternar edición (no bloquear carrousels fuera de edición) ==== */
+  /* ===== Alternar edición: no bloquear carruseles fuera de diseño ===== */
   useEffect(() => {
     const c = fabricRef.current;
     if (!c) return;
@@ -418,18 +405,16 @@ export default function CustomizationOverlay({
     c.skipTargetFind = !on;
     c.selection = on;
     c.defaultCursor = on ? "move" : "default";
-
     (c.getObjects?.() || []).forEach((o) => {
       o.selectable = on;
       o.evented = on;
       o.lockMovementX = !on;
       o.lockMovementY = !on;
     });
-
-    c.upperCanvasEl.style.pointerEvents = on ? "auto" : "none"; // <== clave para clicks del host
+    c.upperCanvasEl.style.pointerEvents = on ? "auto" : "none";
   }, [editing]);
 
-  /* ==== Zoom (rueda / pinch) sólo en edición ==== */
+  /* ===== Zoom (rueda/pinch) solo en edición ===== */
   useEffect(() => {
     const c = fabricRef.current;
     const upper = c?.upperCanvasEl;
@@ -445,7 +430,6 @@ export default function CustomizationOverlay({
     const pts = new Map();
     let startDist = 0, startScale = getZoom() || 1;
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
     const onPD = (e) => {
       if (!editing || e.pointerType !== "touch") return;
       upper.setPointerCapture?.(e.pointerId);
@@ -485,10 +469,9 @@ export default function CustomizationOverlay({
       window.removeEventListener("pointerup", onPU);
       window.removeEventListener("pointercancel", onPU);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, zoom, localZoom]);
 
-  /* ==== Acciones ==== */
+  /* ===== Acciones ===== */
   const addText = () => {
     const c = fabricRef.current; if (!c) return;
     const group = makeTextDebossGroup("Nuevo párrafo", {
@@ -580,13 +563,13 @@ export default function CustomizationOverlay({
     c.requestRenderAll();
   };
 
-  // Re-vectorizar / actualizar offsets
+  // Revectorizar / actualizar offsets
   useEffect(() => {
     if (!editing || selType !== "image") return;
     const c = fabricRef.current; if (!c) return;
     const a = c.getActiveObject();
     if (a && a._kind === "imgDeboss") revectorizeImageGroup(a);
-  }, [vecBias, vecInvert]); // eslint-disable-line
+  }, [vecBias, vecInvert]);
 
   useEffect(() => {
     if (!editing || selType !== "image") return;
@@ -597,7 +580,7 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
-  /* ==== Overlay dentro del anchor (no bloquea fuera de edición) ==== */
+  /* ===== Overlay: oculto completamente fuera de “Diseñar” ===== */
   const OverlayCanvas = (
     <div
       ref={wrapRef}
@@ -605,7 +588,8 @@ export default function CustomizationOverlay({
         position: "absolute",
         inset: 0,
         zIndex: Z_CANVAS,
-        pointerEvents: editing ? "auto" : "none", // <- clave
+        display: editing ? "block" : "none", // <- evita bloquear carruseles en PC
+        pointerEvents: editing ? "auto" : "none",
         touchAction: editing ? "none" : "auto",
       }}
     >
@@ -618,7 +602,7 @@ export default function CustomizationOverlay({
     </div>
   );
 
-  /* ==== Menú ==== */
+  /* ===== Menú ===== */
   function Menu() {
     const zVal = Math.round((getZoom() || 1) * 100);
     return (
@@ -637,78 +621,80 @@ export default function CustomizationOverlay({
             <input type="text" readOnly className="form-control form-control-sm text-center" value={`${zVal}%`} />
             <button type="button" className="btn btn-outline-secondary" onClick={() => setZoomValue((getZoom() || 1) + 0.1)}>+</button>
           </div>
-          <button type="button" className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={exitDesignMode} style={{ minWidth: "16ch" }}>
+          <button type="button" className="btn btn-outline-secondary text-nowrap" onMouseDown={(e) => e.preventDefault()} onClick={exitDesignMode} style={{ minWidth: "16ch" }}>
             Seleccionar Maceta
           </button>
-          <button type="button" className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`} onMouseDown={(e) => e.preventDefault()} onClick={enterDesignMode} style={{ minWidth: "12ch" }}>
+          <button type="button" className="btn btn-dark text-nowrap" onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing(true)} style={{ minWidth: "12ch" }}>
             Diseñar
           </button>
         </div>
 
         {editing && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addText} disabled={!ready}>+ Texto</button>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => addInputRef.current?.click()} disabled={!ready}>+ Imagen</button>
-            <button type="button" className="btn btn-sm btn-outline-danger" onClick={onDelete} disabled={!ready || selType === "none"} title="Eliminar seleccionado">Borrar</button>
-          </div>
-        )}
+          <>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addText} disabled={!ready}>+ Texto</button>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => addInputRef.current?.click()} disabled={!ready}>+ Imagen</button>
+              <button type="button" className="btn btn-sm btn-outline-danger" onClick={onDelete} disabled={!ready || selType === "none"} title="Eliminar seleccionado">Borrar</button>
+            </div>
 
-        {editing && selType === "text" && (
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-              <span className="input-group-text">Fuente</span>
-              <select className="form-select form-select-sm" value={fontFamily} onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection((o) => o.set({ fontFamily: v })); }}>
-                {FONT_OPTIONS.map((f) => <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>)}
-              </select>
-            </div>
-            <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-              <button type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection((o) => o.set({ fontWeight: nv ? "700" : "normal" })); }}>B</button>
-              <button type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection((o) => o.set({ fontStyle: nv ? "italic" : "normal" })); }}>I</button>
-              <button type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection((o) => o.set({ underline: nv })); }}>U</button>
-            </div>
-            <div className="input-group input-group-sm" style={{ width: 160 }}>
-              <span className="input-group-text">Tamaño</span>
-              <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
-                     onChange={(e) => { const v = clamp(parseInt(e.target.value || "0", 10), 8, 200); setFontSize(v); applyToSelection((o) => o.set({ fontSize: v })); }} />
-            </div>
-            <div className="btn-group dropup">
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setShowAlignMenu((v) => !v)}>
-                {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
-              </button>
-              {showAlignMenu && (
-                <ul className="dropdown-menu show" style={{ position: "absolute" }}>
-                  {["left", "center", "right", "justify"].map((a) => (
-                    <li key={a}>
-                      <button type="button" className={`dropdown-item ${textAlign === a ? "active" : ""}`} onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection((o) => o.set({ textAlign: a })); }}>
-                        {a}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
+            {selType === "text" && (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+                  <span className="input-group-text">Fuente</span>
+                  <select className="form-select form-select-sm" value={fontFamily} onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection((o) => o.set({ fontFamily: v })); }}>
+                    {FONT_OPTIONS.map((f) => <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>)}
+                  </select>
+                </div>
+                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                  <button type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection((o) => o.set({ fontWeight: nv ? "700" : "normal" })); }}>B</button>
+                  <button type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection((o) => o.set({ fontStyle: nv ? "italic" : "normal" })); }}>I</button>
+                  <button type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection((o) => o.set({ underline: nv })); }}>U</button>
+                </div>
+                <div className="input-group input-group-sm" style={{ width: 160 }}>
+                  <span className="input-group-text">Tamaño</span>
+                  <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
+                         onChange={(e) => { const v = clamp(parseInt(e.target.value || "0", 10), 8, 200); setFontSize(v); applyToSelection((o) => o.set({ fontSize: v })); }} />
+                </div>
+                <div className="btn-group dropup">
+                  <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setShowAlignMenu((v) => !v)}>
+                    {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
+                  </button>
+                  {showAlignMenu && (
+                    <ul className="dropdown-menu show" style={{ position: "absolute" }}>
+                      {["left", "center", "right", "justify"].map((a) => (
+                        <li key={a}>
+                          <button type="button" className={`dropdown-item ${textAlign === a ? "active" : ""}`} onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection((o) => o.set({ textAlign: a })); }}>
+                            {a}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
-        {editing && selType === "image" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            <div className="input-group input-group-sm" style={{ width: 230 }}>
-              <span className="input-group-text">Detalles</span>
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setVecBias((v) => clamp(v - 5, -60, 60))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setVecBias((v) => clamp(v + 5, -60, 60))}>+</button>
-            </div>
-            <div className="input-group input-group-sm" style={{ width: 190 }}>
-              <span className="input-group-text">Profundidad</span>
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setVecOffset((v) => clamp(v - 1, 0, 5))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setVecOffset((v) => clamp(v + 1, 0, 5))}>+</button>
-            </div>
-            <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-              <button type="button" className={`btn ${!vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setVecInvert(false)}>Oscuro</button>
-              <button type="button" className={`btn ${vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setVecInvert(true)}>Claro</button>
-            </div>
-          </div>
+            {selType === "image" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                <div className="input-group input-group-sm" style={{ width: 230 }}>
+                  <span className="input-group-text">Detalles</span>
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setVecBias((v) => clamp(v - 5, -60, 60))}>−</button>
+                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setVecBias((v) => clamp(v + 5, -60, 60))}>+</button>
+                </div>
+                <div className="input-group input-group-sm" style={{ width: 190 }}>
+                  <span className="input-group-text">Profundidad</span>
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setVecOffset((v) => clamp(v - 1, 0, 5))}>−</button>
+                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setVecOffset((v) => clamp(v + 1, 0, 5))}>+</button>
+                </div>
+                <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
+                  <button type="button" className={`btn ${!vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setVecInvert(false)}>Oscuro</button>
+                  <button type="button" className={`btn ${vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setVecInvert(true)}>Claro</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Inputs ocultos */}
@@ -718,11 +704,36 @@ export default function CustomizationOverlay({
     );
   }
 
-  /* ==== Render ==== */
+  /* FAB “Diseñar” (no bloquea carruseles) */
+  function DesignFab() {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        style={{
+          position: "fixed",
+          right: 16,
+          bottom: 16,
+          zIndex: Z_MENU,
+          padding: "10px 14px",
+          borderRadius: 999,
+          border: "1px solid #ddd",
+          background: "#111",
+          color: "#fff",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          cursor: "pointer"
+        }}
+      >
+        Diseñar
+      </button>
+    );
+  }
+
+  /* ===== Render ===== */
   return (
     <>
       {anchorRef?.current ? createPortal(OverlayCanvas, anchorRef.current) : null}
-      {typeof document !== "undefined" ? createPortal(
+
+      {typeof document !== "undefined" && editing ? createPortal(
         <div style={{ position: "fixed", left: "50%", bottom: 8, transform: "translateX(-50%)", zIndex: Z_MENU, width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ pointerEvents: "auto", display: "inline-flex" }}>
             <Menu />
@@ -730,6 +741,8 @@ export default function CustomizationOverlay({
         </div>,
         document.body
       ) : null}
+
+      {typeof document !== "undefined" && !editing ? createPortal(<DesignFab />, document.body) : null}
     </>
   );
 }
