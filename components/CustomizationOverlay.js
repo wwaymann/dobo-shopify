@@ -347,6 +347,11 @@ export default function CustomizationOverlay({
 
     // upper canvas preparado para táctil pero sólo activo en edición
     const upper = c.upperCanvasEl;
+    const lower = c.lowerCanvasEl;
+lower.style.pointerEvents = "none";
+canvasRef.current && (canvasRef.current.style.pointerEvents = "none"); // mismo nodo que lower
+upper.style.pointerEvents = "none";
+
     // Asegura que el canvas inferior no bloquee clics fuera de edición
 c.lowerCanvasEl.style.pointerEvents = "none";
 
@@ -430,8 +435,9 @@ c.lowerCanvasEl.style.pointerEvents = "none";
     });
 
     c.upperCanvasEl.style.pointerEvents = on ? "auto" : "none"; // <== clave para clicks del host
-    // Desbloquea/ bloquea también el canvas inferior
-c.lowerCanvasEl.style.pointerEvents = on ? "auto" : "none";
+// El lower NUNCA debe tomar eventos
+c.lowerCanvasEl.style.pointerEvents = "none";
+
 
   }, [editing]);
 
@@ -610,7 +616,8 @@ c.lowerCanvasEl.style.pointerEvents = on ? "auto" : "none";
       style={{
         position: "absolute",
         inset: 0,
-       zIndex: editing ? Z_CANVAS : -1,   // detrás de todo fuera de edición
+    zIndex: Z_CANVAS,
+   // detrás de todo fuera de edición
 pointerEvents: editing ? "auto" : "none",
  // <- clave
         touchAction: editing ? "none" : "auto",
