@@ -458,9 +458,13 @@ c.lowerCanvasEl.style.pointerEvents = "none";
       o.lockMovementY = !on;
     });
 
-    c.upperCanvasEl.style.pointerEvents = on ? "auto" : "none"; // <== clave para clicks del host
-// El lower NUNCA debe tomar eventos
+   // init
 c.lowerCanvasEl.style.pointerEvents = "none";
+c.upperCanvasEl.style.pointerEvents = "none";
+// toggle
+c.upperCanvasEl.style.pointerEvents = editing ? "auto" : "none";
+c.lowerCanvasEl.style.pointerEvents = "none";
+
 
 
   }, [editing]);
@@ -761,7 +765,8 @@ c.lowerCanvasEl.style.pointerEvents = "none";
   /* ==== Render ==== */
   return (
     <>
-      {anchorRef?.current ? createPortal(OverlayCanvas, anchorRef.current) : null}
+      {typeof document !== "undefined" ? createPortal(OverlayCanvas, document.body) : null}
+
       {typeof document !== "undefined" ? createPortal(
         <div style={{ position: "fixed", left: "50%", bottom: 8, transform: "translateX(-50%)", zIndex: Z_MENU, width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ pointerEvents: "auto", display: "inline-flex" }}>
