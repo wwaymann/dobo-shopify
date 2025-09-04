@@ -295,12 +295,11 @@ function Home() {
   const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
   const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
 
-  const clickToStep = (e, handlers) => {
-  if (editingRef.current) return; // ignorar si se está diseñando
+ const clickToStep = (e, handlers) => {
   const rect = e.currentTarget.getBoundingClientRect();
-  const x = (e.clientX ?? (e.touches?.[0]?.clientX ?? 0)) - rect.left;
-  const isRight = x > rect.width / 2;
-  isRight ? handlers.next() : handlers.prev();
+  const x = (e.clientX ?? (e.changedTouches?.[0]?.clientX ?? 0)) - rect.left;
+  const rightSide = x > rect.width / 2;
+  rightSide ? handlers.next() : handlers.prev();
 };
 
   /* ---------- lock pot carousel while editing ---------- */
@@ -867,12 +866,14 @@ function Home() {
               <div
                 className={styles.carouselContainer}
                 ref={potScrollRef}
-                data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
-                aria-disabled={editing ? "true" : "false"}
-                {...potSwipeEvents}
-onClick={(e) => clickToStep(e, potHandlers)}
-              >
+  {...potSwipeEvents}
+  onPointerUp={(e) => {
+    if (editing) return;
+    // solo botón izquierdo para mouse; pen idem; touch no tiene button
+    if ((e.pointerType === "mouse" || e.pointerType === "pen") && e.button !== 0) return;
+    clickToStep(e, potHandlers);
+  }}
+>
                 <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                   {pots.map((product, index) => {
                     const isSelected = index === selectedPotIndex;
@@ -891,20 +892,13 @@ onClick={(e) => clickToStep(e, potHandlers)}
               <div
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
-                data-capture="plant-container"
-                style={{
-                  zIndex: 2,
-                  position: "absolute",
-                  bottom: "300px",
-                  height: "530px",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  touchAction: "pan-y",
-                  userSelect: "none",
-                }}
-                {...plantSwipeEvents}
-onClick={(e) => clickToStep(e, potHandlers)}
-              >
+  {...plantSwipeEvents}
+  onPointerUp={(e) => {
+    if (editing) return;
+    if ((e.pointerType === "mouse" || e.pointerType === "pen") && e.button !== 0) return;
+    clickToStep(e, plantHandlers);
+  }}
+>
                 <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                   {plants.map((product) => (
                     <div key={product.id} className={styles.carouselItem}>
