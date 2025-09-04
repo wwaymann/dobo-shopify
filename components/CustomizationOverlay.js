@@ -347,6 +347,9 @@ export default function CustomizationOverlay({
 
     // upper canvas preparado para táctil pero sólo activo en edición
     const upper = c.upperCanvasEl;
+    // Asegura que el canvas inferior no bloquee clics fuera de edición
+c.lowerCanvasEl.style.pointerEvents = "none";
+
     upper.style.position = "absolute";
     upper.style.inset = "0";
     upper.style.width = "100%";
@@ -427,6 +430,9 @@ export default function CustomizationOverlay({
     });
 
     c.upperCanvasEl.style.pointerEvents = on ? "auto" : "none"; // <== clave para clicks del host
+    // Desbloquea/ bloquea también el canvas inferior
+c.lowerCanvasEl.style.pointerEvents = on ? "auto" : "none";
+
   }, [editing]);
 
   /* ==== Zoom (rueda / pinch) sólo en edición ==== */
@@ -604,8 +610,9 @@ export default function CustomizationOverlay({
       style={{
         position: "absolute",
         inset: 0,
-        zIndex: Z_CANVAS,
-        pointerEvents: editing ? "auto" : "none", // <- clave
+       zIndex: editing ? Z_CANVAS : -1,   // detrás de todo fuera de edición
+pointerEvents: editing ? "auto" : "none",
+ // <- clave
         touchAction: editing ? "none" : "auto",
       }}
     >
