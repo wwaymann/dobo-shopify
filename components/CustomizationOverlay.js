@@ -826,8 +826,8 @@ const exitDesignMode = () => {
       ref={overlayRef}
       style={{
         position: 'absolute',
-        left: '0px', right: '0px', bottom: 0, top: '320px',  // ajusta el valor si necesitas más/menos
-        zIndex: Z_CANVAS,
+        style={{ position: "absolute", inset: 0,
+        zIndex: Z_CANVAS, pointerEvents: editing ? "auto" : "none",
         pointerEvents: editing ? 'auto' : 'none',
         overscrollBehavior: 'contain'
       }}
