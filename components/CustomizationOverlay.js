@@ -40,7 +40,8 @@ export default function CustomizationOverlay({
   const [selType, setSelType] = useState("none"); // 'none' | 'text' | 'image'
 
   const [size, setSize] = useState({ w: 1, h: 1 });
-  const [box, setBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
+ const [box, setBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
+
 
 
   // Tipografía
@@ -72,20 +73,14 @@ export default function CustomizationOverlay({
   
 
   /* ==== Medición del contenedor (rect real en px) ==== */
-  const measureWrap = () => {
-  const anchor = anchorRef?.current;
-  if (!anchor) return;
-  const target = stageRef?.current || anchor; // si no hay stage, cubre anchor
+const measureWrap = () => {
+  const target = stageRef?.current || anchorRef?.current;
+  if (!target) return;
 
-  const ar = anchor.getBoundingClientRect();
-  const tr = target.getBoundingClientRect();
-
-  const left = Math.round(tr.left - ar.left);
-  const top  = Math.round(tr.top  - ar.top);
+  const tr = target.getBoundingClientRect(); // coords en viewport
   const w = Math.max(1, Math.round(tr.width));
   const h = Math.max(1, Math.round(tr.height));
-
-  setBox({ left, top, w, h });
+  setBox({ left: Math.round(tr.left), top: Math.round(tr.top), w, h });
   setSize({ w, h });
 
   const c = fabricRef.current;
@@ -98,19 +93,20 @@ export default function CustomizationOverlay({
 };
 
 
+
 useLayoutEffect(() => {
-  const anchor = anchorRef?.current;
-  if (!anchor) return;
+  const anchor = anchorRef?.current || null;
+  const stage = stageRef?.current || null;
 
-  const prev = anchor.style.position;
-  if (getComputedStyle(anchor).position === "static") anchor.style.position = "relative";
+  if (anchor && getComputedStyle(anchor).position === "static") {
+    anchor.dataset._prevPos = "static";
+    anchor.style.position = "relative";
+  }
 
-  const ro = new ResizeObserver(measureWrap);
-  try { ro.observe(anchor); } catch {}
-
-  const stage = stageRef?.current;
-  const roStage = stage ? new ResizeObserver(measureWrap) : null;
-  try { roStage?.observe(stage); } catch {}
+  const roA = anchor ? new ResizeObserver(measureWrap) : null;
+  const roS = stage  ? new ResizeObserver(measureWrap) : null;
+  try { roA?.observe(anchor); } catch {}
+  try { roS?.observe(stage); } catch {}
 
   window.addEventListener("resize", measureWrap);
   window.addEventListener("scroll", measureWrap, true);
@@ -118,13 +114,14 @@ useLayoutEffect(() => {
   measureWrap();
 
   return () => {
-    try { ro.disconnect(); } catch {}
-    try { roStage?.disconnect(); } catch {}
+    try { roA?.disconnect(); } catch {}
+    try { roS?.disconnect(); } catch {}
     window.removeEventListener("resize", measureWrap);
     window.removeEventListener("scroll", measureWrap, true);
-    try { anchor.style.position = prev; } catch {}
+    if (anchor && anchor.dataset._prevPos === "static") anchor.style.position = "static";
   };
 }, [anchorRef, stageRef]);
+
 
 
   useEffect(() => { measureWrap(); }, [zoom, localZoom]); // re-medir cuando cambia el zoom externo
@@ -640,18 +637,17 @@ c.lowerCanvasEl.style.pointerEvents = "none";
   const OverlayCanvas = (
     <div
       ref={wrapRef}
-      style={{
-    position: "absolute",
-left: box.left,
-top: box.top,
-width: box.w,
-height: box.h,
-zIndex: Z_CANVAS,                    // puede quedar fijo
-pointerEvents: editing ? "auto" : "none",
+     style={{
+  position: "fixed",
+  left: box.left,
+  top: box.top,
+  width: box.w,
+  height: box.h,
+  zIndex: Z_CANVAS,
+  pointerEvents: editing ? "auto" : "none",
+  touchAction: editing ? "none" : "auto",
+}}
 
- // <- clave
-        touchAction: editing ? "none" : "auto",
-      }}
     >
       <canvas
         ref={canvasRef}
