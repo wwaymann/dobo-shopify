@@ -432,6 +432,7 @@ useEffect(() => {
   c.requestRenderAll?.();
 }, [editing]);
 
+
     
     return () => {
       c.off("selection:created", onSel);
