@@ -69,7 +69,7 @@ export default function CustomizationOverlay({
     }
      requestAnimationFrame(measureWrap); // fuerza re-medición tras aplicar el zoom
 };
-  };
+  
 
   /* ==== Medición del contenedor (rect real en px) ==== */
   const measureWrap = () => {
