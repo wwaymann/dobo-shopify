@@ -822,16 +822,18 @@ const exitDesignMode = () => {
 
   // ===== Overlay Canvas (dentro de la maceta; escala junto con la escena) =====
   const OverlayCanvas = (
-    <div
-      ref={overlayRef}
-      style={{
-        position: 'absolute',
-        style={{ position: "absolute", inset: 0,
-        zIndex: Z_CANVAS, pointerEvents: editing ? "auto" : "none",
-        pointerEvents: editing ? 'auto' : 'none',
-        overscrollBehavior: 'contain'
-      }}
-    >
+ <div
+  ref={overlayRef}
+  style={{
+    position: "absolute",
+    inset: 0,
+    zIndex: Z_CANVAS,
+    pointerEvents: editing ? "auto" : "none",
+    touchAction: editing ? "none" : "auto",
+    overscrollBehavior: "contain",
+  }}
+>
+
       <canvas
         data-dobo-design="1" 
         ref={canvasRef}
