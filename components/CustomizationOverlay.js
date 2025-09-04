@@ -40,6 +40,8 @@ export default function CustomizationOverlay({
   const [selType, setSelType] = useState("none"); // 'none' | 'text' | 'image'
 
   const [size, setSize] = useState({ w: 1, h: 1 });
+  const [box, setBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
+
 
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -65,40 +67,65 @@ export default function CustomizationOverlay({
       stageRef?.current?.style.setProperty("--zoom", String(val));
       setLocalZoom(val);
     }
+     requestAnimationFrame(measureWrap); // fuerza re-medición tras aplicar el zoom
+};
   };
 
   /* ==== Medición del contenedor (rect real en px) ==== */
   const measureWrap = () => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const w = Math.max(1, Math.round(r.width));
-    const h = Math.max(1, Math.round(r.height));
-    setSize({ w, h });
-    const c = fabricRef.current;
-    if (c) {
-      c.setWidth(w);
-      c.setHeight(h);
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-    }
-  };
+  const anchor = anchorRef?.current;
+  if (!anchor) return;
+  const target = stageRef?.current || anchor; // si no hay stage, cubre anchor
 
-  useLayoutEffect(() => {
-    const anchor = anchorRef?.current;
-    if (!anchor) return;
-    const prev = anchor.style.position;
-    if (getComputedStyle(anchor).position === "static") anchor.style.position = "relative";
-    const ro = new ResizeObserver(measureWrap);
-    try { ro.observe(anchor); } catch {}
-    window.addEventListener("resize", measureWrap);
-    measureWrap();
-    return () => {
-      try { ro.disconnect(); } catch {}
-      window.removeEventListener("resize", measureWrap);
-      try { anchor.style.position = prev; } catch {}
-    };
-  }, [anchorRef]);
+  const ar = anchor.getBoundingClientRect();
+  const tr = target.getBoundingClientRect();
+
+  const left = Math.round(tr.left - ar.left);
+  const top  = Math.round(tr.top  - ar.top);
+  const w = Math.max(1, Math.round(tr.width));
+  const h = Math.max(1, Math.round(tr.height));
+
+  setBox({ left, top, w, h });
+  setSize({ w, h });
+
+  const c = fabricRef.current;
+  if (c) {
+    c.setWidth(w);
+    c.setHeight(h);
+    c.calcOffset?.();
+    c.requestRenderAll?.();
+  }
+};
+
+
+useLayoutEffect(() => {
+  const anchor = anchorRef?.current;
+  if (!anchor) return;
+
+  const prev = anchor.style.position;
+  if (getComputedStyle(anchor).position === "static") anchor.style.position = "relative";
+
+  const ro = new ResizeObserver(measureWrap);
+  try { ro.observe(anchor); } catch {}
+
+  const stage = stageRef?.current;
+  const roStage = stage ? new ResizeObserver(measureWrap) : null;
+  try { roStage?.observe(stage); } catch {}
+
+  window.addEventListener("resize", measureWrap);
+  window.addEventListener("scroll", measureWrap, true);
+
+  measureWrap();
+
+  return () => {
+    try { ro.disconnect(); } catch {}
+    try { roStage?.disconnect(); } catch {}
+    window.removeEventListener("resize", measureWrap);
+    window.removeEventListener("scroll", measureWrap, true);
+    try { anchor.style.position = prev; } catch {}
+  };
+}, [anchorRef, stageRef]);
+
 
   useEffect(() => { measureWrap(); }, [zoom, localZoom]); // re-medir cuando cambia el zoom externo
 
@@ -614,11 +641,14 @@ c.lowerCanvasEl.style.pointerEvents = "none";
     <div
       ref={wrapRef}
       style={{
-        position: "absolute",
-        inset: 0,
-    zIndex: Z_CANVAS,
-   // detrás de todo fuera de edición
+    position: "absolute",
+left: box.left,
+top: box.top,
+width: box.w,
+height: box.h,
+zIndex: Z_CANVAS,                    // puede quedar fijo
 pointerEvents: editing ? "auto" : "none",
+
  // <- clave
         touchAction: editing ? "none" : "auto",
       }}
