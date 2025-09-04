@@ -21,8 +21,8 @@ const FONT_OPTIONS = [
 ];
 
 export default function CustomizationOverlay({
-  stageRef,        // contenedor que escala (opcional)
-  anchorRef,       // carrusel / área a cubrir
+  stageRef,        // nodo exacto de la imagen/escena
+  anchorRef,       // contenedor general (fallback si no hay stageRef)
   visible = true,
   zoom,            // opcional
   setZoom,         // opcional
@@ -40,9 +40,7 @@ export default function CustomizationOverlay({
   const [selType, setSelType] = useState("none"); // 'none' | 'text' | 'image'
 
   const [size, setSize] = useState({ w: 1, h: 1 });
- const [box, setBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
-
-
+  const [box, setBox]   = useState({ left: 0, top: 0, w: 1, h: 1 }); // rect en viewport
 
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -68,63 +66,58 @@ export default function CustomizationOverlay({
       stageRef?.current?.style.setProperty("--zoom", String(val));
       setLocalZoom(val);
     }
-     requestAnimationFrame(measureWrap); // fuerza re-medición tras aplicar el zoom
-};
-  
-
-  /* ==== Medición del contenedor (rect real en px) ==== */
-const measureWrap = () => {
-  const target = stageRef?.current || anchorRef?.current;
-  if (!target) return;
-
-  const tr = target.getBoundingClientRect(); // coords en viewport
-  const w = Math.max(1, Math.round(tr.width));
-  const h = Math.max(1, Math.round(tr.height));
-  setBox({ left: Math.round(tr.left), top: Math.round(tr.top), w, h });
-  setSize({ w, h });
-
-  const c = fabricRef.current;
-  if (c) {
-    c.setWidth(w);
-    c.setHeight(h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }
-};
-
-
-
-useLayoutEffect(() => {
-  const anchor = anchorRef?.current || null;
-  const stage = stageRef?.current || null;
-
-  if (anchor && getComputedStyle(anchor).position === "static") {
-    anchor.dataset._prevPos = "static";
-    anchor.style.position = "relative";
-  }
-
-  const roA = anchor ? new ResizeObserver(measureWrap) : null;
-  const roS = stage  ? new ResizeObserver(measureWrap) : null;
-  try { roA?.observe(anchor); } catch {}
-  try { roS?.observe(stage); } catch {}
-
-  window.addEventListener("resize", measureWrap);
-  window.addEventListener("scroll", measureWrap, true);
-
-  measureWrap();
-
-  return () => {
-    try { roA?.disconnect(); } catch {}
-    try { roS?.disconnect(); } catch {}
-    window.removeEventListener("resize", measureWrap);
-    window.removeEventListener("scroll", measureWrap, true);
-    if (anchor && anchor.dataset._prevPos === "static") anchor.style.position = "static";
+    // Re-medición tras cambios visuales
+    requestAnimationFrame(measureWrap);
   };
-}, [anchorRef, stageRef]);
 
+  /* ==== Medición del rect visible del overlay ==== */
+  const measureWrap = () => {
+    const target = stageRef?.current || anchorRef?.current;
+    if (!target) return;
 
+    const tr = target.getBoundingClientRect(); // coords en viewport
+    const w = Math.max(1, Math.round(tr.width));
+    const h = Math.max(1, Math.round(tr.height));
+    const left = Math.round(tr.left);
+    const top  = Math.round(tr.top);
 
-  useEffect(() => { measureWrap(); }, [zoom, localZoom]); // re-medir cuando cambia el zoom externo
+    setBox({ left, top, w, h });
+    setSize({ w, h });
+
+    const c = fabricRef.current;
+    if (c) {
+      c.setWidth(w);
+      c.setHeight(h);
+      c.calcOffset?.();
+      c.requestRenderAll?.();
+    }
+  };
+
+  useLayoutEffect(() => {
+    const anchor = anchorRef?.current || null;
+    const stage  = stageRef?.current  || null;
+
+    // Observa tamaño del anchor y del stage
+    const roA = anchor ? new ResizeObserver(measureWrap) : null;
+    const roS = stage  ? new ResizeObserver(measureWrap)  : null;
+    try { roA?.observe(anchor); } catch {}
+    try { roS?.observe(stage); }  catch {}
+
+    // Recalcula en resize y scroll (captura true para burbujeos internos)
+    window.addEventListener("resize", measureWrap);
+    window.addEventListener("scroll", measureWrap, true);
+
+    measureWrap();
+
+    return () => {
+      try { roA?.disconnect(); } catch {}
+      try { roS?.disconnect(); } catch {}
+      window.removeEventListener("resize", measureWrap);
+      window.removeEventListener("scroll", measureWrap, true);
+    };
+  }, [anchorRef, stageRef]);
+
+  useEffect(() => { measureWrap(); }, [zoom, localZoom]);
 
   /* ==== Utils imagen ==== */
   const downscale = (imgEl) => {
@@ -200,7 +193,7 @@ useLayoutEffect(() => {
     obj.setCoords?.();
   };
 
-  /* ==== Grupos con offsets normalizados (no se separan) ==== */
+  /* ==== Offsets normalizados ==== */
   const normalizeImageOffsets = (group) => {
     if (!group || group._kind !== "imgDeboss") return;
     const { shadow, highlight } = group._debossChildren || {};
@@ -241,7 +234,6 @@ useLayoutEffect(() => {
       globalCompositeOperation: "screen", opacity: 1,
     });
 
-    // offsets iniciales; se normalizan por escala del grupo
     shadow.set({ left: -vecOffset, top: -vecOffset });
     highlight.set({ left: +vecOffset, top: +vecOffset });
     base.set({ left: 0, top: 0 });
@@ -250,7 +242,7 @@ useLayoutEffect(() => {
       originX: "center", originY: "center",
       angle, scaleX: scale, scaleY: scale,
       objectCaching: false, selectable: true, evented: true,
-      subTargetCheck: false, // no seleccionar hijos
+      subTargetCheck: false,
     });
     group._kind = "imgDeboss";
     group._vecSourceEl = element;
@@ -369,16 +361,18 @@ useLayoutEffect(() => {
     });
     fabricRef.current = c;
 
-    // upper canvas preparado para táctil pero sólo activo en edición
+    // Canvases
     const upper = c.upperCanvasEl;
     const lower = c.lowerCanvasEl;
-lower.style.pointerEvents = "none";
-canvasRef.current && (canvasRef.current.style.pointerEvents = "none"); // mismo nodo que lower
-upper.style.pointerEvents = "none";
 
-    // Asegura que el canvas inferior no bloquee clics fuera de edición
-c.lowerCanvasEl.style.pointerEvents = "none";
+    // El inferior solo pinta. Nunca eventos.
+    lower.style.pointerEvents = "none";
+    // El elemento <canvas> base tampoco recibe eventos
+    canvasRef.current.style.pointerEvents = "none";
+    // El upper solo en edición
+    upper.style.pointerEvents = "none";
 
+    // Ubicación y tamaño controlados por el wrapper (fixed sobre stage)
     upper.style.position = "absolute";
     upper.style.inset = "0";
     upper.style.width = "100%";
@@ -386,9 +380,8 @@ c.lowerCanvasEl.style.pointerEvents = "none";
     upper.style.touchAction = "none";
     upper.style.userSelect = "none";
     upper.style.webkitUserSelect = "none";
-    upper.style.pointerEvents = "none"; // activamos en edición
 
-    // Doble click: editar texto (hijo base)
+    // Doble click para editar texto
     c.on("mouse:dblclick", (e) => {
       const g = e.target;
       if (!g || g._kind !== "textDeboss") return;
@@ -439,17 +432,19 @@ c.lowerCanvasEl.style.pointerEvents = "none";
     };
   }, [visible]);
 
-  // Redimensionar al tamaño del wrap
+  // Redimensionar al tamaño del rect
   useEffect(() => { measureWrap(); }, [size.w, size.h]); // eslint-disable-line
 
-  /* ==== Alternar edición (no bloquear carrousels fuera de edición) ==== */
+  /* ==== Alternar edición ==== */
   useEffect(() => {
     const c = fabricRef.current;
     if (!c) return;
     const on = !!editing;
+
     c.skipTargetFind = !on;
     c.selection = on;
     c.defaultCursor = on ? "move" : "default";
+    c.hoverCursor   = on ? "move" : "default";
 
     (c.getObjects?.() || []).forEach((o) => {
       o.selectable = on;
@@ -458,18 +453,12 @@ c.lowerCanvasEl.style.pointerEvents = "none";
       o.lockMovementY = !on;
     });
 
-   // init
-c.lowerCanvasEl.style.pointerEvents = "none";
-c.upperCanvasEl.style.pointerEvents = "none";
-// toggle
-c.upperCanvasEl.style.pointerEvents = editing ? "auto" : "none";
-c.lowerCanvasEl.style.pointerEvents = "none";
-
-
-
+    // Upper solo en edición. Lower nunca.
+    c.upperCanvasEl.style.pointerEvents = on ? "auto" : "none";
+    c.lowerCanvasEl.style.pointerEvents = "none";
   }, [editing]);
 
-  /* ==== Zoom (rueda / pinch) sólo en edición ==== */
+  /* ==== Zoom (rueda / pinch) solo en edición ==== */
   useEffect(() => {
     const c = fabricRef.current;
     const upper = c?.upperCanvasEl;
@@ -479,7 +468,6 @@ c.lowerCanvasEl.style.pointerEvents = "none";
       if (!editing) return;
       e.preventDefault();
       setZoomValue((getZoom() || 1) + (e.deltaY > 0 ? -0.08 : 0.08));
-      measureWrap();
     };
 
     const pts = new Map();
@@ -505,7 +493,6 @@ c.lowerCanvasEl.style.pointerEvents = "none";
       if (!p1 || !p2 || !startDist) return;
       const factor = dist(p1, p2) / startDist;
       setZoomValue(clamp(startScale * Math.pow(factor, 0.9), 0.8, 2.5));
-      measureWrap();
     };
     const onPU = (e) => {
       if (e.pointerType !== "touch") return;
@@ -637,21 +624,20 @@ c.lowerCanvasEl.style.pointerEvents = "none";
 
   if (!visible) return null;
 
-  /* ==== Overlay dentro del anchor (no bloquea fuera de edición) ==== */
+  /* ==== Overlay posicionado fijo sobre stage (no tapa carruseles) ==== */
   const OverlayCanvas = (
     <div
       ref={wrapRef}
-     style={{
-  position: "fixed",
-  left: box.left,
-  top: box.top,
-  width: box.w,
-  height: box.h,
-  zIndex: Z_CANVAS,
-  pointerEvents: editing ? "auto" : "none",
-  touchAction: editing ? "none" : "auto",
-}}
-
+      style={{
+        position: "fixed",
+        left: box.left,
+        top: box.top,
+        width: box.w,
+        height: box.h,
+        zIndex: Z_CANVAS,
+        pointerEvents: editing ? "auto" : "none",
+        touchAction: editing ? "none" : "auto",
+      }}
     >
       <canvas
         ref={canvasRef}
@@ -766,7 +752,6 @@ c.lowerCanvasEl.style.pointerEvents = "none";
   return (
     <>
       {typeof document !== "undefined" ? createPortal(OverlayCanvas, document.body) : null}
-
       {typeof document !== "undefined" ? createPortal(
         <div style={{ position: "fixed", left: "50%", bottom: 8, transform: "translateX(-50%)", zIndex: Z_MENU, width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ pointerEvents: "auto", display: "inline-flex" }}>
