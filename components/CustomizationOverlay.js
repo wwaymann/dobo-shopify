@@ -397,6 +397,42 @@ export default function CustomizationOverlay({
       };
     }
 
+// ⬇️ Pega/rehemplaza este efecto debajo del Fabric init y antes del return:
+useEffect(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+
+  const upper = c.upperCanvasEl;
+  const lower = c.lowerCanvasEl;
+
+  // El canvas superior SOLO capta eventos en modo Diseñar
+  if (upper) {
+    upper.style.pointerEvents = editing ? 'auto' : 'none';
+    upper.style.touchAction   = editing ? 'none' : 'auto';
+    upper.tabIndex            = editing ? 0 : -1;
+  }
+
+  // El canvas inferior NUNCA debe captar eventos (así no tapa el carrusel)
+  if (lower) {
+    lower.style.pointerEvents = 'none';
+  }
+
+  // Objetos interactivos solo en modo Diseñar
+  c.skipTargetFind = !editing;
+  c.selection      = !!editing;
+
+  (c.getObjects?.() || []).forEach(o => {
+    o.selectable     = !!editing;
+    o.evented        = !!editing;
+    o.lockMovementX  = !editing;
+    o.lockMovementY  = !editing;
+    o.hoverCursor    = editing ? 'move' : 'default';
+  });
+
+  c.requestRenderAll?.();
+}, [editing]);
+
+    
     return () => {
       c.off("selection:created", onSel);
       c.off("selection:updated", onSel);
@@ -599,16 +635,21 @@ export default function CustomizationOverlay({
 
   /* ==== Overlay dentro del anchor (no bloquea fuera de edición) ==== */
   const OverlayCanvas = (
-    <div
-      ref={wrapRef}
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: Z_CANVAS,
-        pointerEvents: editing ? "auto" : "none", // <- clave
-        touchAction: editing ? "none" : "auto",
-      }}
-    >
+   <div
+  ref={overlayRef}
+  style={{
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '320px',     // tu offset actual
+    bottom: 0,
+    zIndex: Z_CANVAS,
+    display: editing ? 'block' : 'none',   // <— NUEVO: no ocupa hit-test
+    pointerEvents: editing ? 'auto' : 'none',
+    overscrollBehavior: 'contain'
+  }}
+>
+
       <canvas
         ref={canvasRef}
         width={Math.max(1, Math.round(size.w))}
