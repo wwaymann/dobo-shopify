@@ -295,79 +295,17 @@ function Home() {
   const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
   const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
 
-  /* ---------- lock pot carousel while editing ---------- */
-  useEffect(() => {
-    const el = potScrollRef.current;
+useEffect(() => {
+  const pots = potScrollRef.current;
+  const plants = plantScrollRef.current;
+  [pots, plants].forEach((el) => {
     if (!el) return;
+    // congelar en modo diseño, habilitar fuera de diseño
+    el.style.pointerEvents = editing ? "none" : "auto";
+    el.style.touchAction   = editing ? "none" : "pan-y";
+  });
+}, [editing]);
 
-    const block = (e) => {
-      if (!editing) return;
-      e.preventDefault();
-      if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
-      e.stopPropagation();
-    };
-
-    const freezeScroll = () => {
-      if (!editing) return;
-      el.scrollLeft = freezeX;
-      el.scrollTop = freezeY;
-    };
-
-    let restoreTab = () => {};
-    let freezeX = el.scrollLeft;
-    let freezeY = el.scrollTop;
-
-    if (editing) {
-      const focusables = el.querySelectorAll("a,button,[tabindex]");
-      const saved = [];
-      focusables.forEach((n) => {
-        saved.push([n, n.getAttribute("tabindex"), n.hasAttribute("disabled")]);
-        n.setAttribute("tabindex", "-1");
-        if (n.tagName === "BUTTON") n.disabled = true;
-        n.setAttribute("aria-disabled", "true");
-      });
-      restoreTab = () => {
-        saved.forEach(([n, tab, wasDisabled]) => {
-          if (tab === null) n.removeAttribute("tabindex");
-          else n.setAttribute("tabindex", tab);
-          n.removeAttribute("aria-disabled");
-          if (n.tagName === "BUTTON") n.disabled = wasDisabled;
-        });
-      };
-
-      try {
-        el.inert = true;
-      } catch {}
-      el.classList.add("pot-carousel--locked");
-
-      const optsPF = { capture: true, passive: false };
-      const optsCap = { capture: true };
-
-      ["wheel", "touchstart", "touchmove"].forEach((t) => el.addEventListener(t, block, optsPF));
-      ["touchend", "pointerdown", "pointerup", "click", "dblclick", "contextmenu", "keydown", "dragstart", "mousedown", "mousemove", "mouseup"].forEach(
-        (t) => el.addEventListener(t, block, optsCap)
-      );
-      el.addEventListener("scroll", freezeScroll, optsCap);
-
-      return () => {
-        el.classList.remove("pot-carousel--locked");
-        try {
-          el.inert = false;
-        } catch {}
-        ["wheel", "touchstart", "touchmove"].forEach((t) => el.removeEventListener(t, block, optsPF));
-        ["touchend", "pointerdown", "pointerup", "click", "dblclick", "contextmenu", "keydown", "dragstart", "mousedown", "mousemove", "mouseup"].forEach(
-          (t) => el.removeEventListener(t, block, optsCap)
-        );
-        el.removeEventListener("scroll", freezeScroll, optsCap);
-        restoreTab();
-      };
-    } else {
-      el.classList.remove("pot-carousel--locked");
-      try {
-        el.inert = false;
-      } catch {}
-    }
-  }, [editing]);
 
   /* ---------- zoom wheel + pinch ---------- */
   useEffect(() => {
