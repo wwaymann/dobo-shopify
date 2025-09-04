@@ -295,6 +295,14 @@ function Home() {
   const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
   const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
 
+  const clickToStep = (e, handlers) => {
+  if (editingRef.current) return; // ignorar si se está diseñando
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = (e.clientX ?? (e.touches?.[0]?.clientX ?? 0)) - rect.left;
+  const isRight = x > rect.width / 2;
+  isRight ? handlers.next() : handlers.prev();
+};
+
   /* ---------- lock pot carousel while editing ---------- */
   useEffect(() => {
     const el = potScrollRef.current;
@@ -863,6 +871,7 @@ function Home() {
                 style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 aria-disabled={editing ? "true" : "false"}
                 {...potSwipeEvents}
+onClick={(e) => clickToStep(e, potHandlers)}
               >
                 <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                   {pots.map((product, index) => {
@@ -894,6 +903,7 @@ function Home() {
                   userSelect: "none",
                 }}
                 {...plantSwipeEvents}
+onClick={(e) => clickToStep(e, potHandlers)}
               >
                 <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                   {plants.map((product) => (
