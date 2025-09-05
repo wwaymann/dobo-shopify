@@ -260,13 +260,11 @@ useEffect(() => {
     objs.forEach(o => enableNode(o, on));
 
     const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
-    if (upper) {
-      upper.style.pointerEvents = on ? 'auto' : 'none';
-      upper.style.touchAction = on ? 'manipulation' : 'auto';
-      upper.tabIndex = on ? 0 : -1;
-    }
-    if (lower) lower.style.pointerEvents = 'none';
 
+
+ if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
+ if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+    
     c.defaultCursor = on ? 'move' : 'default';
     c.discardActiveObject?.();
     c.calcOffset?.();
@@ -302,14 +300,12 @@ useEffect(() => {
     else stageRef?.current?.style.setProperty('--zoom', String(val));
   };
 
-  // rueda (PC)
   const onWheel = (e) => {
     if (!editing) return;
     e.preventDefault();
     setZ(getZ() + (e.deltaY > 0 ? -0.08 : 0.08));
   };
 
-  // pinch (móvil)
   const pts = new Map();
   let startDist = 0, startScale = getZ();
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -335,8 +331,9 @@ useEffect(() => {
     setZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(factor, 0.9))));
   };
 
-  const onPU = (e) => {
+  const release = (e) => {
     if (e.pointerType !== 'touch') return;
+    upper.releasePointerCapture?.(e.pointerId);
     pts.delete(e.pointerId);
     if (pts.size < 2) { startDist = 0; startScale = getZ(); }
   };
@@ -345,17 +342,18 @@ useEffect(() => {
   upper.addEventListener('wheel', onWheel, opts);
   upper.addEventListener('pointerdown', onPD, opts);
   upper.addEventListener('pointermove', onPM, opts);
-  window.addEventListener('pointerup', onPU, { passive: true });
-  window.addEventListener('pointercancel', onPU, { passive: true });
+  window.addEventListener('pointerup', release, { passive: true });
+  window.addEventListener('pointercancel', release, { passive: true });
 
   return () => {
     upper.removeEventListener('wheel', onWheel, opts);
     upper.removeEventListener('pointerdown', onPD, opts);
     upper.removeEventListener('pointermove', onPM, opts);
-    window.removeEventListener('pointerup', onPU);
-    window.removeEventListener('pointercancel', onPU);
+    window.removeEventListener('pointerup', release);
+    window.removeEventListener('pointercancel', release);
   };
 }, [editing, zoom, stageRef, setZoom]);
+
 
 
 
@@ -390,27 +388,6 @@ useEffect(() => {
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
   }, [editing, anchorRef, stageRef]);
 
-  // Bloquea scroll táctil/rueda del carrusel mientras editas
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    const el = c?.upperCanvasEl;
-    if (!el) return;
-
-    const stopScroll = (e) => {
-     if (editing) e.preventDefault(); // NO stopPropagation
-    };
-
-    const addOpts = { passive: false };
-    el.addEventListener('wheel',     stopScroll, addOpts);
-    el.addEventListener('touchmove', stopScroll, addOpts);
-
-    return () => {
-      try {
-        el.removeEventListener('wheel',     stopScroll, false);
-        el.removeEventListener('touchmove', stopScroll, false);
-      } catch {}
-    };
-  }, [editing]);
 
   // ===== Utils de imagen =====
   const downscale = (imgEl) => {
