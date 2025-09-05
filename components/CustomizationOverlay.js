@@ -341,59 +341,83 @@ export default function CustomizationOverlay({
     obj._debossSync && obj._debossSync();
   };
 
-  // Texto agrupado con relieve
-  const makeTextGroup = (text, opts = {}) => {
-    const base = new fabric.Textbox(text, {
-      ...opts,
-      originX: 'center', originY: 'center',
-      selectable: false, evented: false,
-      objectCaching: false, shadow: null, stroke: null,
-      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
-    });
-    const shadow = new fabric.Textbox(text, {
-      ...opts,
-      originX: 'center', originY: 'center',
-      left: -1, top: -1,
-      selectable: false, evented: false,
-      objectCaching: false, fill: '',
-      stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
-      globalCompositeOperation: 'multiply'
-    });
-    const highlight = new fabric.Textbox(text, {
-      ...opts,
-      originX: 'center', originY: 'center',
-      left: +1, top: +1,
-      selectable: false, evented: false,
-      objectCaching: false, fill: '',
-      stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
-      globalCompositeOperation: 'screen'
-    });
+ // ===== Relieve Texto (grupo sincronizado) =====
+const makeTextGroup = (text, opts = {}) => {
+  const base = new fabric.Textbox(text, {
+    ...opts,
+    originX: 'center', originY: 'center',
+    left: 0, top: 0,
+    selectable: false, evented: false,
+    objectCaching: false, shadow: null, stroke: null,
+    fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
+  });
+  const shadow = new fabric.Textbox(text, {
+    ...opts,
+    originX: 'center', originY: 'center',
+    left: 0, top: 0,
+    selectable: false, evented: false,
+    objectCaching: false, fill: '',
+    stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
+    globalCompositeOperation: 'multiply'
+  });
+  const highlight = new fabric.Textbox(text, {
+    ...opts,
+    originX: 'center', originY: 'center',
+    left: 0, top: 0,
+    selectable: false, evented: false,
+    objectCaching: false, fill: '',
+    stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
+    globalCompositeOperation: 'screen'
+  });
 
-    const group = new fabric.Group([shadow, highlight, base], {
-      originX: 'center', originY: 'center',
-      subTargetCheck: false,
-      objectCaching: false,
-      selectable: true, evented: true,
-      scaleX: 1, scaleY: 1
-    });
-    group._kind = 'textGroup';
-    group._textChildren = { shadow, highlight, base };
+  const group = new fabric.Group([shadow, highlight, base], {
+    originX: 'center', originY: 'center',
+    subTargetCheck: false,
+    objectCaching: false,
+    selectable: true, evented: true,
+    scaleX: 1, scaleY: 1
+  });
+  group._kind = 'textGroup';
+  group._textChildren = { shadow, highlight, base };
 
-    const sync = () => {
-      const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-      const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-      const ox = 1 / sx, oy = 1 / sy;
-      shadow.set({ left: -ox, top: -oy });
-      highlight.set({ left: +ox, top: +oy });
-      group.setCoords();
-      group.canvas?.requestRenderAll?.();
+  const sync = () => {
+    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
+    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
+    const ox = 1 / sx, oy = 1 / sy;
+
+    // clona propiedades del "base" y aplica offset inverso a la escala
+    const copyProps = o => {
+      o.set({
+        width: base.width,
+        text: base.text,
+        fontFamily: base.fontFamily,
+        fontSize: base.fontSize,
+        fontWeight: base.fontWeight,
+        fontStyle: base.fontStyle,
+        underline: base.underline,
+        textAlign: base.textAlign,
+        charSpacing: base.charSpacing
+      });
     };
-    group._debossSync = sync;
-    group.on('scaling',  sync);
-    group.on('modified', sync);
-    sync();
-    return group;
+    copyProps(shadow);
+    copyProps(highlight);
+
+    base.set({ left: 0, top: 0 });
+    shadow.set({ left: -ox, top: -oy });
+    highlight.set({ left: +ox, top: +oy });
+
+    group.setCoords();
+    group.canvas?.requestRenderAll?.();
   };
+  group._debossSync = sync;
+
+  // sincroniza en todas las transformaciones relevantes
+  ['moving','scaling','rotating','skewing','modified','changed'].forEach(ev => group.on(ev, sync));
+
+  sync();
+  return group;
+};
+
 
   // ===== Acciones =====
   const addText = () => {
@@ -795,7 +819,7 @@ export default function CustomizationOverlay({
     };
     const onCancel = () => { pA=pB=null; startDist=0; startScale=1; unpark(); clearTimeout(unparkTimer); };
 
-    target.addEventListener('wheel', onWheel, { passive:false });
+    target.addEventListener('wheel', onWheel, { passive:false, capture:true });
     target.addEventListener('pointerdown', onPD, { passive:true, capture:true });
     target.addEventListener('pointermove', onPM, { passive:false, capture:true });
     window.addEventListener('pointerup', onPU, { passive:true });
@@ -804,7 +828,7 @@ export default function CustomizationOverlay({
     window.addEventListener('blur', onCancel);
 
     return () => {
-      target.removeEventListener('wheel', onWheel, { passive:false });
+      target.removeEventListener('wheel', onWheel, { passive:false, capture:true });
       target.removeEventListener('pointerdown', onPD, { passive:true, capture:true });
       target.removeEventListener('pointermove', onPM, { passive:false, capture:true });
       window.removeEventListener('pointerup', onPU);
@@ -839,7 +863,7 @@ export default function CustomizationOverlay({
     };
 
     const opts = { capture: true, passive: false };
-    const evs = ['pointerdown','mousedown','touchstart','click','wheel'];
+    const evs = ['pointerdown','mousedown','touchstart','click'];
     evs.forEach(ev => host.addEventListener(ev, stop, opts));
 
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
