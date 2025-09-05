@@ -79,38 +79,47 @@ useEffect(() => {
     return () => { try { el.style.position = prev; } catch {} };
   }, [anchorRef]);
 
-  useLayoutEffect(() => {
-   const stage = stageRef?.current;
-   const anchor = anchorRef?.current;
-   if (!stage || !anchor) return;
+// Medida exacta del área de la maceta en coords locales del stage (sin doble escala)
+useLayoutEffect(() => {
+  const stage = stageRef?.current;
+  const anchor = anchorRef?.current;
+  if (!stage || !anchor) return;
 
-   const measure = () => {
-     const sr = stage.getBoundingClientRect();
-     const ar = anchor.getBoundingClientRect();
-     const w = Math.max(1, Math.round(anchor.clientWidth));
-     const h = Math.max(1, Math.round(anchor.clientHeight));
-     const left = Math.max(0, Math.round(ar.left - sr.left));
-     const top  = Math.max(0, Math.round(ar.top  - sr.top));
-     setBaseSize({ w, h });
-     setOverlayBox({ left, top, w, h });
-     const c = fabricCanvasRef.current;
-     if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
-   };
+  const measure = () => {
+    // tamaño sin escala, en px locales
+    const w = Math.max(1, anchor.clientWidth);
+    const h = Math.max(1, anchor.clientHeight);
 
-   measure();
-   const roA = new ResizeObserver(measure);
-   const roS = new ResizeObserver(measure);
-   try { roA.observe(anchor); } catch {}
-   try { roS.observe(stage); } catch {}
-   window.addEventListener('resize', measure, { passive: true });
-   window.addEventListener('scroll', measure, { passive: true });
-   return () => {
-     try { roA.disconnect(); } catch {}
-     try { roS.disconnect(); } catch {}
-     window.removeEventListener('resize', measure);
-     window.removeEventListener('scroll', measure);
-   };
- }, [stageRef, anchorRef]);
+    // posición relativa al stage acumulando offsets
+    let left = 0, top = 0;
+    let el = anchor;
+    while (el && el !== stage) {
+      left += el.offsetLeft || 0;
+      top  += el.offsetTop  || 0;
+      el = el.offsetParent;
+    }
+
+    setBaseSize({ w, h });
+    setOverlayBox({ left, top, w, h });
+
+    const c = fabricCanvasRef.current;
+    if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
+  };
+
+  measure();
+  const roA = new ResizeObserver(measure);
+  const roS = new ResizeObserver(measure);
+  try { roA.observe(anchor); } catch {}
+  try { roS.observe(stage); } catch {}
+  window.addEventListener('resize', measure, { passive: true });
+
+  return () => {
+    try { roA.disconnect(); } catch {}
+    try { roS.disconnect(); } catch {}
+    window.removeEventListener('resize', measure);
+  };
+}, [stageRef, anchorRef]);
+
   // Posiciona el menú dentro de la columna de carruseles
   (() => {
     const el = anchorRef?.current;
@@ -280,115 +289,95 @@ useEffect(() => {
   window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
 }, [editing]);
 
-// Zoom en modo Diseñar (móvil y PC). Pinch robusto: se traga eventos y aparca Fabric mientras dura el gesto.
+// Zoom SIEMPRE activo (PC y móvil) sobre el stage.
+// Aparca Fabric solo durante pinch de 2 dedos cuando estás en modo Diseñar.
 useEffect(() => {
+  const host = stageRef?.current;
   const c = fabricCanvasRef.current;
-  const upper = c?.upperCanvasEl;
-  if (!upper) return;
+  if (!host) return;
 
   const readZ = () => {
-    const el = stageRef?.current;
-    if (!el) return 1;
-    const v = el.style.getPropertyValue('--zoom') || getComputedStyle(el).getPropertyValue('--zoom');
+    const v = host.style.getPropertyValue('--zoom') || getComputedStyle(host).getPropertyValue('--zoom');
     const n = parseFloat((v || '').trim());
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
   const writeZ = (z) => {
     const v = Math.max(0.8, Math.min(2.5, z));
-    stageRef?.current?.style.setProperty('--zoom', String(v));
+    host.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
   };
 
   // rueda (PC)
   const onWheel = (e) => {
-    if (!editing) return;
     e.preventDefault();
     writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
   };
 
   // pinch (móvil)
   let pA = null, pB = null, startDist = 0, startScale = 1;
-  let fabricState = null;
+  let parked = false, saved = null;
 
-  const parkFabric = () => {
-    if (fabricState) return;
-    fabricState = { selection: c.selection, skip: c.skipTargetFind };
+  const park = () => {
+    if (!editing || !c || parked) { parked = true; return; }
+    saved = { selection: c.selection, skip: c.skipTargetFind };
     c.selection = false;
     c.skipTargetFind = true;
+    parked = true;
   };
-  const restoreFabric = () => {
-    if (!fabricState) return;
-    c.selection = fabricState.selection;
-    c.skipTargetFind = fabricState.skip;
-    fabricState = null;
+  const unpark = () => {
+    if (!c || !parked) return;
+    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
+    parked = false;
   };
 
   const onPD = (e) => {
-    if (!editing || e.pointerType !== 'touch') return;
-    if (!pA) {
-      pA = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      return; // primer dedo: deja que Fabric seleccione/mueva normalmente
-    }
+    if (e.pointerType !== 'touch') return;
+    if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
     if (!pB && e.pointerId !== pA.id) {
-      // segundo dedo: inicia pinch y bloquea a Fabric
       pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      startDist  = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+      startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
       startScale = readZ();
-      parkFabric();
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      park();
+      e.preventDefault(); e.stopPropagation();
     }
   };
-
   const onPM = (e) => {
-    if (!editing || e.pointerType !== 'touch') return;
+    if (e.pointerType !== 'touch') return;
     if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
     if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
     if (pA && pB && startDist) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      e.preventDefault(); e.stopPropagation();
       const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      const s = Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9)));
-      writeZ(s);
+      writeZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
     }
   };
-
   const onPU = (e) => {
     if (e.pointerType !== 'touch') return;
     if (pA && e.pointerId === pA.id) pA = null;
     if (pB && e.pointerId === pB.id) pB = null;
-    if (!pA || !pB) {
-      startDist = 0; startScale = 1;
-      restoreFabric();
-    }
+    if (!pA || !pB) { startDist = 0; startScale = 1; unpark(); }
   };
 
-  const optsCap = { capture: true, passive: false };
-  const optsNF  = { passive: false };
-  const optsCapEnd = { capture: true, passive: true };
+  const optsWheel = { passive: false };
+  const optsCap   = { passive: false, capture: true };
 
-  upper.addEventListener('wheel', onWheel, optsNF);
-  upper.addEventListener('pointerdown', onPD, optsCap);
-  upper.addEventListener('pointermove', onPM, optsCap);
-  upper.addEventListener('pointerup', onPU, optsCapEnd);
-  upper.addEventListener('pointercancel', onPU, optsCapEnd);
-  window.addEventListener('pointerup', onPU, { passive: true });
-  window.addEventListener('pointercancel', onPU, { passive: true });
+  host.addEventListener('wheel', onWheel, optsWheel);
+  host.addEventListener('pointerdown', onPD, optsCap);
+  host.addEventListener('pointermove', onPM, optsCap);
+  host.addEventListener('pointerup', onPU, { passive: true, capture: true });
+  host.addEventListener('pointercancel', onPU, { passive: true, capture: true });
 
   return () => {
-    upper.removeEventListener('wheel', onWheel, optsNF);
-    upper.removeEventListener('pointerdown', onPD, optsCap);
-    upper.removeEventListener('pointermove', onPM, optsCap);
-    upper.removeEventListener('pointerup', onPU, optsCapEnd);
-    upper.removeEventListener('pointercancel', onPU, optsCapEnd);
-    window.removeEventListener('pointerup', onPU);
-    window.removeEventListener('pointercancel', onPU);
-    restoreFabric();
+    host.removeEventListener('wheel', onWheel, optsWheel);
+    host.removeEventListener('pointerdown', onPD, optsCap);
+    host.removeEventListener('pointermove', onPM, optsCap);
+    host.removeEventListener('pointerup', onPU, { capture: true });
+    host.removeEventListener('pointercancel', onPU, { capture: true });
+    unpark();
     pA = pB = null; startDist = 0; startScale = 1;
   };
-}, [editing, stageRef, setZoom]);
+}, [stageRef, setZoom, editing]);
+
 
 
 
