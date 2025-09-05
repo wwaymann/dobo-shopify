@@ -246,7 +246,7 @@ useEffect(() => {
       upper.style.touchAction = on ? 'manipulation' : 'auto';
       upper.tabIndex = on ? 0 : -1;
     }
-    if (lower) lower.style.pointerEvents = 'auto';
+    if (lower) lower.style.pointerEvents = 'none';
 
     c.defaultCursor = on ? 'move' : 'default';
     c.discardActiveObject?.();
