@@ -286,10 +286,6 @@ if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none
 
 // cuando cambie `editing`
 useEffect(() => {
-  window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
-}, [editing]);
-
-  useEffect(() => {
   const c = fabricCanvasRef.current;
   if (!c) return;
   // Garantiza interactividad correcta tras cualquier cambio de modo
@@ -339,6 +335,7 @@ const park = () => {
   parked = true;
 };
 
+
   const unpark = () => {
     if (!c || !parked) return;
     if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
@@ -375,6 +372,7 @@ const onPU = (e) => {
   startScale = 1;
   unpark();
 };
+
 
 
   const optsWheel = { passive: false };
