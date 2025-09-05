@@ -650,103 +650,100 @@ const startInlineTextEdit = (group) => {
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-  // Zoom SIEMPRE activo (PC/móvil). Rueda + pinch con 2 dedos.
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    const upper = c?.upperCanvasEl;
-    if (!upper) return;
+// Zoom SIEMPRE activo (PC y móvil) sobre el stage.
+// Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
+useEffect(() => {
+  const c = fabricCanvasRef.current;
+  const target = stageRef?.current || c?.upperCanvasEl;
+  if (!target) return;
 
-    const readZ = () => {
-      const el = stageRef?.current;
-      const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
-      const n = parseFloat((v || '1').trim());
-      return Number.isFinite(n) && n > 0 ? n : 1;
-    };
-    const writeZ = (z) => {
-      const v = Math.max(0.8, Math.min(2.5, z));
-      stageRef?.current?.style.setProperty('--zoom', String(v));
-      if (typeof setZoom === 'function') setZoom(v);
-    };
+  const readZ = () => {
+    const el = stageRef?.current;
+    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
+    const n = parseFloat((v || '1').trim());
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  };
+  const writeZ = (z) => {
+    const v = Math.max(0.8, Math.min(2.5, z));
+    stageRef?.current?.style.setProperty('--zoom', String(v));
+    if (typeof setZoom === 'function') setZoom(v);
+  };
 
-    const onWheel = (e) => { if (textEditing) return; /* resto igual */ }
+  // PC: rueda
+  const onWheel = (e) => {
+    if (textEditing) return;
+    e.preventDefault();
+    writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
+  };
+
+  // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
+  let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
+  const park = () => {
+    if (parked || !c) return;
+    saved = { selection: c.selection, skip: c.skipTargetFind };
+    c.selection = false;
+    c.skipTargetFind = true;
+    parked = true;
+  };
+  const unpark = () => {
+    if (!c) return;
+    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
+    parked = false;
+    c.requestRenderAll?.();
+  };
+
+  const onPD = (e) => {
+    if (textEditing) return;
+    if (e.pointerType !== 'touch') return;
+    if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+    if (!pB && e.pointerId !== pA.id) {
+      pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+      startScale = readZ();
+      park();
+    }
+  };
+
+  const onPM = (e) => {
+    if (textEditing) return;
+    if (e.pointerType !== 'touch') return;
+    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
+    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
+    if (pA && pB && startDist) {
       e.preventDefault();
-      writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
-    };
+      const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+      writeZ(startScale * Math.pow(d / startDist, 0.9));
+    }
+  };
 
-    let pA=null, pB=null, startDist=0, startScale=1, parked=false, saved=null;
+  const onPU = (e) => {
+    if (textEditing) return;
+    if (e.pointerType !== 'touch') return;
+    if (pA && e.pointerId === pA.id) pA = null;
+    if (pB && e.pointerId === pB.id) pB = null;
+    if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
+  };
 
-    const park = () => {
-      if (parked || !c) return;
-      saved = { selection: c.selection, skip: c.skipTargetFind };
-      c.selection = false;
-      c.skipTargetFind = true;
-      parked = true;
-    };
-    const unpark = () => {
-      if (!c) return;
-      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved=null; }
-      parked = false;
-      c.requestRenderAll?.();
-    };
+  const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
 
-    const releaseCaptures = () => {
-      try { if (pA) upper.releasePointerCapture(pA.id); } catch {}
-      try { if (pB) upper.releasePointerCapture(pB.id); } catch {}
-    };
+  target.addEventListener('wheel', onWheel, { passive: false });
+  target.addEventListener('pointerdown', onPD, { passive: true });
+  target.addEventListener('pointermove', onPM, { passive: false, capture: true });
+  window.addEventListener('pointerup', onPU, { passive: true });
+  window.addEventListener('pointercancel', onCancel, { passive: true });
+  document.addEventListener('visibilitychange', onCancel);
+  window.addEventListener('blur', onCancel);
 
-    const onPD = (e) => { if (textEditing) return;
-      if (e.pointerType !== 'touch') return;
-      if (!pA) { pA = { id:e.pointerId, x:e.clientX, y:e.clientY }; return; }
-      if (!pB && e.pointerId !== pA.id) {
-        pB = { id:e.pointerId, x:e.clientX, y:e.clientY };
-        startDist = Math.hypot(pA.x-pB.x, pA.y-pB.y);
-        startScale = readZ();
-        park();
-        releaseCaptures();
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-
-    const onPM = (e) => { if (textEditing) return;
-      if (e.pointerType !== 'touch') return;
-      if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-      if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-      if (pA && pB && startDist) {
-        e.preventDefault();
-        e.stopPropagation();
-        const d = Math.hypot(pA.x-pB.x, pA.y-pB.y);
-        writeZ(startScale * Math.pow(d/startDist, 0.9));
-      }
-    };
-
-    const onPU = (e) => { if (textEditing) return;
-      if (e.pointerType !== 'touch') return;
-      if (pA && e.pointerId === pA.id) pA=null;
-      if (pB && e.pointerId === pB.id) pB=null;
-      if (!(pA && pB)) { startDist=0; startScale=1; unpark(); }
-    };
-
-    const onCancel = () => { pA=pB=null; startDist=0; startScale=1; unpark(); };
-
-    upper.addEventListener('wheel', onWheel, { passive:false });
-    upper.addEventListener('pointerdown', onPD, { passive:false, capture:true });
-    upper.addEventListener('pointermove', onPM, { passive:false, capture:true });
-    window.addEventListener('pointerup', onPU, { passive:true });
-    window.addEventListener('pointercancel', onCancel, { passive:true });
-    document.addEventListener('visibilitychange', onCancel);
-    window.addEventListener('blur', onCancel);
-
-    return () => {
-      upper.removeEventListener('wheel', onWheel);
-      upper.removeEventListener('pointerdown', onPD, { capture:true });
-      upper.removeEventListener('pointermove', onPM, { capture:true });
-      window.removeEventListener('pointerup', onPU);
-      window.removeEventListener('pointercancel', onCancel);
-      document.removeEventListener('visibilitychange', onCancel);
-      window.removeEventListener('blur', onCancel);
-    };
-  }, [stageRef, setZoom, textEditing]);
+  return () => {
+    target.removeEventListener('wheel', onWheel);
+    target.removeEventListener('pointerdown', onPD);
+    target.removeEventListener('pointermove', onPM, { capture: true });
+    window.removeEventListener('pointerup', onPU);
+    window.removeEventListener('pointercancel', onCancel);
+    document.removeEventListener('visibilitychange', onCancel);
+    window.removeEventListener('blur', onCancel);
+  };
+}, [stageRef, setZoom, textEditing]);
 
   // Bloquear clicks externos mientras se diseña
   useEffect(() => {
