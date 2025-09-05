@@ -324,8 +324,9 @@ useEffect(() => {
   };
 
   // pinch (móvil)
-  let pA = null, pB = null, startDist = 0, startScale = 1;
-  let parked = false, saved = null;
+  // --- dentro del mismo useEffect de zoom ---
+let pA = null, pB = null, startDist = 0, startScale = 1;
+let saved = null, parked = false;
 
 const park = () => {
   if (!editing || !c || parked) return;
@@ -334,44 +335,60 @@ const park = () => {
   c.skipTargetFind = true;
   parked = true;
 };
+const unpark = () => {
+  if (!c) return;
+  if (saved) {
+    c.selection = saved.selection;
+    c.skipTargetFind = saved.skip;
+    saved = null;
+  }
+  parked = false;
+  // re-render por si quedó algo colgado
+  c.requestRenderAll?.();
+};
 
+const onPD = (e) => {
+  if (e.pointerType !== 'touch') return;            // ratón/rueda no pasan por aquí
+  // NO prevenir ni capturar para un dedo
+  if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+  if (!pB && e.pointerId !== pA.id) {
+    pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    // recién al tener 2 dedos iniciamos pinch y aparcamos Fabric
+    startDist  = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+    startScale = readZ();
+    park();
+  }
+};
 
-  const unpark = () => {
-    if (!c || !parked) return;
-    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
-    parked = false;
-  };
+const onPM = (e) => {
+  if (e.pointerType !== 'touch') return;
+  // actualiza coordenadas si este dedo está activo
+  if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
+  if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
 
-  const onPD = (e) => {
-    if (e.pointerType !== 'touch') return;
-    if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
-    if (!pB && e.pointerId !== pA.id) {
-      pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      startScale = readZ();
-      park();
-      e.preventDefault(); e.stopPropagation();
-    }
-  };
-  const onPM = (e) => {
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-    if (pA && pB && startDist) {
-      e.preventDefault(); e.stopPropagation();
-      const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      writeZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
-    }
-  };
+  // Solo si hay dos dedos y ya iniciamos pinch, hacemos zoom y PREVENIMOS default
+  if (pA && pB && startDist > 0) {
+    e.preventDefault();
+    const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+    const scale = Math.pow(d / startDist, 0.9);
+    writeZ(Math.max(0.8, Math.min(2.5, startScale * scale)));
+  }
+  // Con un dedo: no hacemos nada -> Fabric recibe el gesto para mover/editar
+};
+
 const onPU = (e) => {
   if (e.pointerType !== 'touch') return;
   if (pA && e.pointerId === pA.id) pA = null;
   if (pB && e.pointerId === pB.id) pB = null;
-  // fin del gesto: reset y restaurar Fabric siempre
-  startDist = 0; 
-  startScale = 1;
-  unpark();
+
+  // Si quedó menos de 2 dedos, termina el pinch y restauramos Fabric
+  if (!(pA && pB)) {
+    startDist = 0;
+    startScale = 1;
+    unpark();
+  }
 };
+
 
 
 
