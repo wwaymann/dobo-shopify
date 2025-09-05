@@ -61,7 +61,16 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   const [anchorRect, setAnchorRect] = useState(null);
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
+  const [textEditing, setTextEditing] = useState(false);
 
+useEffect(() => {
+  const c = fabricCanvasRef.current;
+  const upper = c?.upperCanvasEl;
+  if (!upper) return;
+  upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
+}, [textEditing, editing]);
+
+  
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
@@ -544,68 +553,74 @@ export default function CustomizationOverlay({
 
   // === Edición inline de texto (móvil/desktop) ===
   // Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group.
-  const startInlineTextEdit = (group) => {
-    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
-    const base = group._textChildren?.base; if (!base) return;
+const startInlineTextEdit = (group) => {
+  const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
+  const base = group._textChildren?.base; if (!base) return;
 
-    const pose = {
-      left: group.left, top: group.top, originX: 'center', originY: 'center',
-      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
-    };
-
-    // quitar grupo
-    try { c.remove(group); } catch {}
-
-    // textbox editable del mismo tamaño/estilos (sin relieve)
-    const tb = new fabric.Textbox(base.text || 'Texto', {
-      left: pose.left, top: pose.top, originX: 'center', originY: 'center',
-      width: Math.min(baseSize.w * 0.9, base.width || 220),
-      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
-      fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
-      editable: true, selectable: true, evented: true, objectCaching: false
-    });
-
-    c.add(tb);
-    c.setActiveObject(tb);
-    c.requestRenderAll();
-
-    // entrar en edición; para iOS forzamos foco
-    setTimeout(() => {
-      try { tb.enterEditing?.(); } catch {}
-      try { tb.hiddenTextarea?.focus(); } catch {}
-    }, 0);
-
-    const finish = () => {
-      const newText = tb.text || '';
-      const finalPose = {
-        left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
-        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
-      };
-      try { c.remove(tb); } catch {}
-
-      const group2 = makeTextGroup(newText, {
-        width: tb.width,
-        fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
-        fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
-      });
-      group2.set(finalPose);
-      c.add(group2);
-      c.setActiveObject(group2);
-      c.requestRenderAll();
-      setSelType('text');
-    };
-
-    const onExit = () => { tb.off('editing:exited', onExit); finish(); };
-    tb.on('editing:exited', onExit);
-
-    // “tap-tap” alternativo para móvil si sale sin evento
-    const safety = setTimeout(() => {
-      if (!c || !tb) return;
-      if (!tb.isEditing) { try { tb.off('editing:exited', onExit); } catch {} finish(); }
-    }, 12000);
-    // limpiar safety si se destruye
-    tb.on('removed', () => { clearTimeout(safety); });
+  const pose = {
+    left: group.left, top: group.top, originX: 'center', originY: 'center',
+    scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
   };
+
+  try { c.remove(group); } catch {}
+
+  const tb = new fabric.Textbox(base.text || 'Texto', {
+    left: pose.left, top: pose.top, originX: 'center', originY: 'center',
+    width: Math.min(baseSize.w * 0.9, base.width || 220),
+    fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
+    fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
+    editable: true, selectable: true, evented: true, objectCaching: false
+  });
+
+  c.add(tb);
+  c.setActiveObject(tb);
+  c.requestRenderAll();
+
+  // Estamos editando: libera touch-action y desactiva pinch/zoom
+  setTextEditing(true);
+
+  // iOS: dar tiempo a crear el textarea y luego enfocar
+  setTimeout(() => {
+    try { tb.enterEditing?.(); } catch {}
+    try { tb.hiddenTextarea?.focus(); } catch {}
+    // reintento corto por si el primero no abre el teclado
+    setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
+  }, 0);
+
+  const finish = () => {
+    const newText = tb.text || '';
+    const finalPose = {
+      left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
+      scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
+    };
+    try { c.remove(tb); } catch {}
+
+    const group2 = makeTextGroup(newText, {
+      width: tb.width,
+      fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
+      fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
+    });
+    group2.set(finalPose);
+    c.add(group2);
+    c.setActiveObject(group2);
+    c.requestRenderAll();
+    setSelType('text');
+
+    // Salimos de edición: reactivar pinch/zoom y volver a touch-action previa
+    setTextEditing(false);
+  };
+
+  const onExit = () => { tb.off('editing:exited', onExit); finish(); };
+  tb.on('editing:exited', onExit);
+
+  // Safety net por si no dispara editing:exited (móvil raras veces)
+  const safety = setTimeout(() => {
+    try { tb.off('editing:exited', onExit); } catch {}
+    finish();
+  }, 15000);
+  tb.on('removed', () => { clearTimeout(safety); });
+};
+
 
   // Doble-tap móvil: detectar y abrir edición de texto
   useEffect(() => {
@@ -653,7 +668,7 @@ export default function CustomizationOverlay({
       if (typeof setZoom === 'function') setZoom(v);
     };
 
-    const onWheel = (e) => {
+    const onWheel = (e) => { if (textEditing) return; /* resto igual */ }
       e.preventDefault();
       writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
     };
@@ -679,7 +694,7 @@ export default function CustomizationOverlay({
       try { if (pB) upper.releasePointerCapture(pB.id); } catch {}
     };
 
-    const onPD = (e) => {
+    const onPD = (e) => { if (textEditing) return;
       if (e.pointerType !== 'touch') return;
       if (!pA) { pA = { id:e.pointerId, x:e.clientX, y:e.clientY }; return; }
       if (!pB && e.pointerId !== pA.id) {
@@ -693,7 +708,7 @@ export default function CustomizationOverlay({
       }
     };
 
-    const onPM = (e) => {
+    const onPM = (e) => { if (textEditing) return;
       if (e.pointerType !== 'touch') return;
       if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
       if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
@@ -705,7 +720,7 @@ export default function CustomizationOverlay({
       }
     };
 
-    const onPU = (e) => {
+    const onPU = (e) => { if (textEditing) return;
       if (e.pointerType !== 'touch') return;
       if (pA && e.pointerId === pA.id) pA=null;
       if (pB && e.pointerId === pB.id) pB=null;
@@ -731,7 +746,7 @@ export default function CustomizationOverlay({
       document.removeEventListener('visibilitychange', onCancel);
       window.removeEventListener('blur', onCancel);
     };
-  }, [stageRef, setZoom]);
+  }, [stageRef, setZoom, textEditing]);
 
   // Bloquear clicks externos mientras se diseña
   useEffect(() => {
