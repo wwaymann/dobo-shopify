@@ -559,56 +559,96 @@ useEffect(() => {
     return bm;
   };
 
-  // ===== Relieve Imagen =====
-  const attachDebossToBase = (c, baseObj, { offset = 1 } = {}) => {
-    const cloneFrom = () => {
-      const el = typeof baseObj.getElement === 'function' ? baseObj.getElement() : baseObj._element;
-      return new fabric.Image(el, {
-        originX: baseObj.originX, originY: baseObj.originY,
-        left: baseObj.left, top: baseObj.top,
-        scaleX: baseObj.scaleX, scaleY: baseObj.scaleY,
-        angle: baseObj.angle || 0,
-        selectable: false, evented: false,
-        objectCaching: false, noScaleCache: true,
-      });
-    };
-    baseObj.set({ objectCaching: false, noScaleCache: true });
-    const shadow = cloneFrom(), highlight = cloneFrom();
-    if (!shadow || !highlight) return;
-    c.add(baseObj); c.add(shadow); c.add(highlight);
-    shadow.set({ globalCompositeOperation: 'multiply', opacity: 1.0 });
-    highlight.set({ globalCompositeOperation: 'screen',   opacity: 1.0 });
-    const sync = () => {
-      const props = ['left','top','scaleX','scaleY','angle','originX','originY'];
-      [shadow, highlight].forEach((g,i) => {
-        props.forEach(p => g.set(p, baseObj[p]));
-        const d = i === 0 ? -offset : +offset;
-        g.set({ left: baseObj.left + d, top: baseObj.top + d });
-        g.setCoords();
-      });
-      c.requestRenderAll();
-    };
-    baseObj._deboss = { shadow, highlight };
-    baseObj._debossParams = { offset };
-    baseObj._debossSync = sync;
-    ['modified','moving','scaling','rotating','skewing'].forEach(ev => baseObj.on(ev, sync));
-    sync();
+// ===== Relieve Imagen =====
+const attachDebossToBase = (c, baseImg, { offset = 1 } = {}) => {
+  if (!c || !baseImg) return null;
+
+  const el = typeof baseImg.getElement === 'function' ? baseImg.getElement() : baseImg._element;
+  const pose = {
+    left: baseImg.left, top: baseImg.top,
+    scaleX: baseImg.scaleX, scaleY: baseImg.scaleY,
+    angle: baseImg.angle || 0, originX: 'center', originY: 'center'
   };
 
-  const updateDebossVisual = (baseObj, { offset }) => {
-    if (!baseObj || !baseObj._deboss) return;
-    baseObj._debossParams = { ...(baseObj._debossParams||{}), offset };
-    if (baseObj._debossSync) baseObj._debossSync();
-  };
+  baseImg.set({
+    originX: 'center', originY: 'center',
+    left: 0, top: 0,
+    selectable: false, evented: false,
+    objectCaching: false, noScaleCache: true
+  });
 
-  const clearDeboss = (obj) => {
-    const c = fabricCanvasRef.current || obj?.canvas; if (!c || !obj || !obj._deboss) return;
+  const shadow = new fabric.Image(el, {
+    originX: 'center', originY: 'center',
+    left: -offset, top: -offset,
+    selectable: false, evented: false,
+    objectCaching: false, noScaleCache: true,
+    globalCompositeOperation: 'multiply', opacity: 1
+  });
+  const highlight = new fabric.Image(el, {
+    originX: 'center', originY: 'center',
+    left: +offset, top: +offset,
+    selectable: false, evented: false,
+    objectCaching: false, noScaleCache: true,
+    globalCompositeOperation: 'screen', opacity: 1
+  });
+
+  const group = new fabric.Group([shadow, highlight, baseImg], {
+    originX: 'center', originY: 'center',
+    subTargetCheck: false,
+    objectCaching: false,
+    selectable: true, evented: true,
+    ...pose
+  });
+
+  group._kind = 'imgGroup';
+  group._debossChildren = { shadow, highlight, base: baseImg };
+  group._debossOffset = offset;
+  group._vecSourceEl = baseImg._vecSourceEl || el;
+
+  const syncOffsets = () => {
+    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
+    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
+    const ox = group._debossOffset / sx;
+    const oy = group._debossOffset / sy;
+    shadow.set({ left: -ox, top: -oy });
+    highlight.set({ left: +ox, top: +oy });
+    group.setCoords();
+    c.requestRenderAll();
+  };
+  group.on('scaling',  syncOffsets);
+  group.on('modified', syncOffsets);
+  syncOffsets();
+
+  return group;
+};
+
+const updateDebossVisual = (obj, { offset }) => {
+  const g = obj && obj._kind === 'imgGroup' ? obj : null;
+  if (!g || !g._debossChildren) return;
+  g._debossOffset = offset;
+
+  const { shadow, highlight } = g._debossChildren;
+  const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+  const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+  const ox = g._debossOffset / sx;
+  const oy = g._debossOffset / sy;
+  shadow.set({ left: -ox, top: -oy });
+  highlight.set({ left: +ox, top: +oy });
+  g.setCoords();
+  g.canvas?.requestRenderAll?.();
+};
+
+const clearDeboss = (obj) => {
+  if (!obj) return;
+  if (obj._kind === 'imgGroup' && obj.canvas) { try { obj.canvas.remove(obj); } catch {} return; }
+  const c = fabricCanvasRef.current || obj.canvas;
+  if (obj._deboss) {
     const { shadow, highlight } = obj._deboss;
     try { c.remove(shadow); } catch {}
     try { c.remove(highlight); } catch {}
-    if (obj._debossSync) ['modified','moving','scaling','rotating','skewing'].forEach(ev => { try { obj.off(ev, obj._debossSync); } catch {} });
     delete obj._deboss; delete obj._debossSync; delete obj._debossParams;
-  };
+  }
+};
 
   // ===== Relieve Texto =====
   const applyDebossToText = (t) => {
@@ -671,8 +711,10 @@ useEffect(() => {
       const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
       const s = Math.min(maxW / baseImg._vecMeta.w, maxH / baseImg._vecMeta.h);
       baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: true, evented: true, objectCaching: false });
-      attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.setActiveObject(baseImg);
+   const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
+c.add(group);
+c.setActiveObject(group);
+
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
@@ -695,8 +737,10 @@ useEffect(() => {
       const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
       if (!baseImg) { URL.revokeObjectURL(url); return; }
       baseImg.set({ ...pose, selectable: true, evented: true, objectCaching: false });
-      attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.setActiveObject(baseImg);
+    const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
+c.add(group);
+c.setActiveObject(group);
+
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
@@ -833,19 +877,39 @@ const exitDesignMode = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
 
-    const rebuild = (obj) => {
-      let element = null;
-      const pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
-      if (obj._vecSourceEl) { element = obj._vecSourceEl; clearDeboss(obj); try { c.remove(obj); } catch {} }
-      else if (obj.type === 'image') { element = (typeof obj.getElement === 'function' ? obj.getElement() : (obj._originalElement || obj._element)); try { c.remove(obj); } catch {} }
-      else { return; }
+const rebuild = (obj) => {
+  let element = null;
+  let pose = null;
 
-      const baseImg = vectorizeElementToBitmap(element, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) return;
-      baseImg.set({ ...pose, selectable: true, evented: true, objectCaching: false });
-      attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.setActiveObject(baseImg);
-    };
+  if (obj?._kind === 'imgGroup') {
+    const base = obj._debossChildren?.base;
+    if (!base) return;
+    element = base._vecSourceEl || (typeof base.getElement === 'function' ? base.getElement() : base._element);
+    pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
+    try { obj.canvas.remove(obj); } catch {}
+  } else if (obj?._vecSourceEl || obj?.type === 'image') {
+    element = obj._vecSourceEl || (typeof obj.getElement === 'function' ? obj.getElement() : obj._element);
+    pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
+    try { if (obj._deboss) clearDeboss(obj); obj.canvas.remove(obj); } catch {}
+  } else {
+    return;
+  }
+
+  const baseImg = vectorizeElementToBitmap(element, {
+    maxDim: VECTOR_SAMPLE_DIM,
+    makeDark: !vecInvert,
+    drawColor: [51, 51, 51],
+    thrBias: vecBias
+  });
+  if (!baseImg) return;
+  baseImg.set({ selectable: false, evented: false, objectCaching: false });
+
+  const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
+  group.set(pose);
+  c.add(group);
+  c.setActiveObject(group);
+};
+
 
     if (a.type === 'activeSelection' && a._objects?.length) {
       const arr = a._objects.slice(); a.discard(); arr.forEach(rebuild);
