@@ -262,8 +262,8 @@ useEffect(() => {
     const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
 
 
- if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
- if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; }
+if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
 
     else {
  if (upper) { upper.style.pointerEvents = 'none'; }
@@ -317,18 +317,14 @@ useEffect(() => {
   // pinch (móvil) SIN pointer capture
   let p1 = null, p2 = null, startDist = 0, startScale = 1;
 
-  const startIfReady = () => {
-    if (p1 && p2 && !startDist) {
-      startDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      startScale = getZ();
-    }
-  };
-
   const onPD = (e) => {
     if (!editing || e.pointerType !== 'touch') return;
     if (!p1) p1 = { id: e.pointerId, x: e.clientX, y: e.clientY };
     else if (!p2 && e.pointerId !== p1.id) p2 = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    startIfReady();
+    if (p1 && p2 && !startDist) {
+      startDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      startScale = getZ();
+    }
   };
 
   const onPM = (e) => {
@@ -344,10 +340,10 @@ useEffect(() => {
 
   const reset = () => { p1 = null; p2 = null; startDist = 0; startScale = 1; };
 
-  const optsNF = { passive: false };
-  upper.addEventListener('wheel', onWheel, optsNF);
-  upper.addEventListener('pointerdown', onPD, optsNF);
-  upper.addEventListener('pointermove', onPM, optsNF);
+  const opts = { passive: false };
+  upper.addEventListener('wheel', onWheel, opts);
+  upper.addEventListener('pointerdown', onPD, opts);
+  upper.addEventListener('pointermove', onPM, opts);
   window.addEventListener('pointerup', reset, { passive: true });
   window.addEventListener('pointercancel', reset, { passive: true });
   window.addEventListener('touchend', reset, { passive: true });
@@ -362,9 +358,7 @@ useEffect(() => {
     window.removeEventListener('touchend', reset);
     window.removeEventListener('touchcancel', reset);
   };
-  // Importante: NO dependas de `zoom` ni `setZoom` para no recrear listeners en cada tick
 }, [editing, stageRef]);
-
 
 
 
