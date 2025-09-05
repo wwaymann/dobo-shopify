@@ -174,18 +174,20 @@ useLayoutEffect(() => {
     // Helpers de tipo
     const isText  = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
     const isImage = (o) => o && o.type === 'image';
-    const classify = (a) => {
-      if (!a) return 'none';
-      if (a.type === 'activeSelection' && a._objects?.length) {
-        const arr = a._objects;
-        if (arr.every(isText)) return 'text';
-        if (arr.some(isImage)) return 'image';
-        return 'none';
-      }
-      if (isText(a)) return 'text';
-      if (isImage(a)) return 'image';
-      return 'none';
-    };
+const classify = (a) => {
+  if (!a) return 'none';
+  if (a._kind === 'imgGroup')  return 'image';
+  if (a._kind === 'textGroup') return 'text';
+  if (a.type === 'activeSelection' && a._objects?.length) {
+    if (a._objects.every(o => o._kind === 'textGroup')) return 'text';
+    if (a._objects.some(o => o._kind === 'imgGroup'))    return 'image';
+    return 'none';
+  }
+  if (a.type === 'image') return 'image';
+  if (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text') return 'text';
+  return 'none';
+};
+
     const reflectTypo = () => {
       const a = c.getActiveObject();
       if (!a) return;
@@ -248,19 +250,26 @@ useEffect(() => {
   const c = fabricCanvasRef.current;
   if (!c) return;
 
-  const enableNode = (o, on) => {
-    if (!o) return;
-    o.selectable = on;
-    o.evented = on;
-    o.lockMovementX = !on;
-    o.lockMovementY = !on;
-    o.hasControls = on;
-    o.hasBorders = on;
-    if (o.type === 'i-text' || typeof o.enterEditing === 'function') o.editable = on;
-    o.hoverCursor = on ? 'move' : 'default';
-    const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
-    if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-  };
+const enableNode = (o, on) => {
+  if (!o) return;
+  // Si es grupo de relieve, solo el grupo es seleccionable. Hijos quedan bloqueados.
+  const isReliefGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+
+  o.selectable   = on;
+  o.evented      = on;
+  o.lockMovementX = !on;
+  o.lockMovementY = !on;
+  o.hasControls  = on;
+  o.hasBorders   = on;
+  if (!isReliefGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
+  o.hoverCursor  = on ? 'move' : 'default';
+
+  // No tocar hijos si es un grupo de relieve
+  if (isReliefGroup) return;
+
+  const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
+  if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
+};
 
   const setAll = (on) => {
     c.skipTargetFind = !on;
@@ -559,68 +568,71 @@ useEffect(() => {
     return bm;
   };
 
-// ===== Relieve Imagen =====
-const attachDebossToBase = (c, baseImg, { offset = 1 } = {}) => {
-  if (!c || !baseImg) return null;
-
-  const el = typeof baseImg.getElement === 'function' ? baseImg.getElement() : baseImg._element;
-  const pose = {
-    left: baseImg.left, top: baseImg.top,
-    scaleX: baseImg.scaleX, scaleY: baseImg.scaleY,
-    angle: baseImg.angle || 0, originX: 'center', originY: 'center'
+// ===== Relieve Imagen (AGRUPADO) =====
+const attachDebossToBase = (c, baseObj, { offset = 1 } = {}) => {
+  // clonar raster base para sombras/luces
+  const cloneFrom = () => {
+    const el = typeof baseObj.getElement === 'function' ? baseObj.getElement() : baseObj._element;
+    return new fabric.Image(el, {
+      originX: 'center', originY: 'center',
+      objectCaching: false, noScaleCache: true, selectable: false, evented: false,
+    });
   };
 
-  baseImg.set({
-    originX: 'center', originY: 'center',
-    left: 0, top: 0,
-    selectable: false, evented: false,
-    objectCaching: false, noScaleCache: true
-  });
+  // base visual que se verá dentro del grupo
+  const base = cloneFrom();
+  const shadow = cloneFrom();
+  const highlight = cloneFrom();
 
-  const shadow = new fabric.Image(el, {
+  // grupo con 3 capas y meta
+  const group = new fabric.Group([shadow, highlight, base], {
     originX: 'center', originY: 'center',
-    left: -offset, top: -offset,
-    selectable: false, evented: false,
-    objectCaching: false, noScaleCache: true,
-    globalCompositeOperation: 'multiply', opacity: 1
-  });
-  const highlight = new fabric.Image(el, {
-    originX: 'center', originY: 'center',
-    left: +offset, top: +offset,
-    selectable: false, evented: false,
-    objectCaching: false, noScaleCache: true,
-    globalCompositeOperation: 'screen', opacity: 1
-  });
-
-  const group = new fabric.Group([shadow, highlight, baseImg], {
-    originX: 'center', originY: 'center',
+    objectCaching: false, selectable: true, evented: true,
     subTargetCheck: false,
-    objectCaching: false,
-    selectable: true, evented: true,
-    ...pose
   });
-
   group._kind = 'imgGroup';
-  group._debossChildren = { shadow, highlight, base: baseImg };
-  group._debossOffset = offset;
-  group._vecSourceEl = baseImg._vecSourceEl || el;
+  group._imgChildren = { base, shadow, highlight };
 
-  const syncOffsets = () => {
+  // pose inicial desde baseObj
+  group.left    = baseObj.left ?? 0;
+  group.top     = baseObj.top ?? 0;
+  group.scaleX  = baseObj.scaleX ?? 1;
+  group.scaleY  = baseObj.scaleY ?? 1;
+  group.angle   = baseObj.angle  ?? 0;
+
+  // dibuja el bitmap vectorizado dentro de base/shadow/highlight
+  const srcEl = typeof baseObj.getElement === 'function' ? baseObj.getElement() : baseObj._element;
+  const applyElement = (img) => {
+    base.setElement(img); shadow.setElement(img); highlight.setElement(img);
+  };
+  applyElement(srcEl);
+
+  // compuestos
+  shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
+  highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
+
+  // normaliza offset segun escala del grupo
+  const normalizeImgOffsets = () => {
     const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
     const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-    const ox = group._debossOffset / sx;
-    const oy = group._debossOffset / sy;
+    const ox = offset / sx;
+    const oy = offset / sy;
     shadow.set({ left: -ox, top: -oy });
     highlight.set({ left: +ox, top: +oy });
-    group.setCoords();
-    c.requestRenderAll();
+    base.set({ left: 0, top: 0 });
+    group.setCoords?.();
+    group.canvas?.requestRenderAll?.();
   };
-  group.on('scaling',  syncOffsets);
-  group.on('modified', syncOffsets);
-  syncOffsets();
+  group._debossSync = normalizeImgOffsets;
+
+  // eventos que mantienen unidas las capas
+  group.on('scaling', normalizeImgOffsets);
+  group.on('modified', normalizeImgOffsets);
+  normalizeImgOffsets();
 
   return group;
 };
+
 
 const updateDebossVisual = (obj, { offset }) => {
   const g = obj && obj._kind === 'imgGroup' ? obj : null;
@@ -650,55 +662,81 @@ const clearDeboss = (obj) => {
   }
 };
 
-  // ===== Relieve Texto =====
-  const applyDebossToText = (t) => {
-    const c = fabricCanvasRef.current; if (!c || !t) return;
-    const ownerId = `txt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    t._debossOwnerId = ownerId; t.__ownerId = ownerId;
-    t.set({ fill: '#2525257b', shadow: null, stroke: null, globalCompositeOperation: 'multiply', objectCaching: false });
-    const baseOpts = {
-      fontFamily: t.fontFamily, fontSize: t.fontSize, fontWeight: t.fontWeight,
-      fontStyle: t.fontStyle, underline: t.underline, textAlign: t.textAlign,
-      charSpacing: t.charSpacing, originX: t.originX, originY: t.originY, angle: t.angle, width: t.width,
-      selectable: false, evented: false, opacity: 0.9, objectCaching: false,
-    };
-    const makeClone = (dx, dy, stroke, strokeWidth, gco) => {
-      const clone = new t.constructor(t.text, { ...baseOpts, left: t.left + dx, top: t.top + dy, fill: '', stroke, strokeWidth, globalCompositeOperation: gco });
-      clone.__isDebossClone = true; clone.__ownerId = ownerId; clone.__cloneOf = t; clone.excludeFromExport = true;
-      return clone;
-    };
-    const shadow = makeClone(-1, -1, 'rgba(0,0,0,0.48)', 1, 'multiply');
-    const highlight = makeClone( 1,  1, 'rgba(255,255,255,0.65)', 0.6, 'screen');
-    t.__debossClones = [shadow, highlight];
-    c.add(t); c.add(shadow); c.add(highlight); c.setActiveObject(t);
-    const sync = () => {
-      const props = ['left','top','scaleX','scaleY','angle','width','fontSize','fontFamily','fontWeight','fontStyle','charSpacing','textAlign','underline','text','originX','originY'];
-      [shadow, highlight].forEach(o => { props.forEach(p => o.set(p, t[p])); });
-      shadow.set({ left: t.left - 1, top: t.top - 1 });
-      highlight.set({ left: t.left + 1, top: t.top + 1 });
-      c.requestRenderAll();
-    };
-    t._debossers = { shadow, highlight }; t._debossSync = sync;
-    t.on('changed',  sync);
-    t.on('modified', sync);
-    t.on('moving',   sync);
-    t.on('scaling',  sync);
-    t.on('rotating', sync);
-    t.on('resizing', sync);
-    sync();
+// ===== Relieve Texto =====
+const makeTextGroup = (text, opts = {}) => {
+  const base = new fabric.Textbox(text, {
+    ...opts,
+    originX: 'center', originY: 'center',
+    selectable: false, evented: false,
+    objectCaching: false, shadow: null, stroke: null,
+    fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
+  });
+  const shadow = new fabric.Textbox(text, {
+    ...opts,
+    originX: 'center', originY: 'center',
+    left: -1, top: -1,
+    selectable: false, evented: false,
+    objectCaching: false, fill: '',
+    stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
+    globalCompositeOperation: 'multiply'
+  });
+  const highlight = new fabric.Textbox(text, {
+    ...opts,
+    originX: 'center', originY: 'center',
+    left: +1, top: +1,
+    selectable: false, evented: false,
+    objectCaching: false, fill: '',
+    stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
+    globalCompositeOperation: 'screen'
+  });
+
+  const group = new fabric.Group([shadow, highlight, base], {
+    originX: 'center', originY: 'center',
+    subTargetCheck: false,
+    objectCaching: false,
+    selectable: true, evented: true,
+    scaleX: 1, scaleY: 1
+  });
+  group._kind = 'textGroup';
+  group._textChildren = { shadow, highlight, base };
+
+  const sync = () => {
+    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
+    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
+    const ox = 1 / sx, oy = 1 / sy;
+    shadow.set({ left: -ox, top: -oy });
+    highlight.set({ left: +ox, top: +oy });
+    group.setCoords();
+    group.canvas?.requestRenderAll?.();
   };
+  group.on('scaling',  sync);
+  group.on('modified', sync);
+  sync();
+  return group;
+};
+
 
   // ===== Acciones =====
-  const addText = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const t = new fabric.Textbox('Nuevo párrafo', {
-      left: baseSize.w / 2, top: baseSize.h / 2, originX: 'center', originY: 'center',
-      width: Math.min(baseSize.w * 0.9, 220),
-      fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal', fontStyle: isItalic ? 'italic' : 'normal',
-      underline: isUnderline, textAlign, fill: 'rgba(35,35,35,1)', selectable: true, editable: true, objectCaching: false,
-    });
-    c.add(t); applyDebossToText(t); c.requestRenderAll(); setEditing(true);
-  };
+const addText = () => {
+  const c = fabricCanvasRef.current; if (!c) return;
+const t = new fabric.Textbox('Nuevo párrafo', {
+  left: baseSize.w / 2, top: baseSize.h / 2,
+  originX: 'center', originY: 'center',
+  width: Math.min(baseSize.w * 0.9, 220),
+  fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal',
+  fontStyle: isItalic ? 'italic' : 'normal',
+  underline: isUnderline, textAlign,
+  selectable: false, editable: false, objectCaching: false,
+});
+const group = applyDebossToText(t);
+c.add(group);
+c.setActiveObject(group);
+setSelType('text');
+c.requestRenderAll();
+setEditing(true);
+
+};
+
 
   const addImageFromFile = (file) => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
@@ -811,21 +849,30 @@ c.setActiveObject(group);
   };
 
   const onDelete = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
+   const c = fabricCanvasRef.current; if (!c) return;
+const a = c.getActiveObject(); if (!a) return;
 
-    if (a.type === 'activeSelection' && a._objects?.length) {
-      const arr = a._objects.slice();
-      a.discard();
-      arr.forEach(o => removeWithDeboss(c, o));
-    } else {
-      removeWithDeboss(c, a);
-    }
+const removeOne = (o) => {
+  if (!o) return;
+  if (o._kind === 'imgGroup' || o._kind === 'textGroup') {
+    try { c.remove(o); } catch {}
+  } else {
+    try { c.remove(o); } catch {}
+  }
+};
 
-    sweepDebossGhosts(c);
-    c.discardActiveObject();
-    c.requestRenderAll();
-    setSelType('none');
+if (a.type === 'activeSelection' && a._objects?.length) {
+  const arr = a._objects.slice();
+  a.discard();
+  arr.forEach(removeOne);
+} else {
+  removeOne(a);
+}
+
+c.discardActiveObject();
+c.requestRenderAll();
+setSelType('none');
+
   };
 
 const clearSelectionHard = () => {
