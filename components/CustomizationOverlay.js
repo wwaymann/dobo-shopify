@@ -280,7 +280,7 @@ useEffect(() => {
   window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
 }, [editing]);
 
-// Zoom en modo Diseñar (móvil y PC). Lee --zoom en vivo y desactiva Fabric durante el pinch.
+// Zoom en modo Diseñar (móvil y PC). Pinch robusto: se traga eventos y aparca Fabric mientras dura el gesto.
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
@@ -289,15 +289,12 @@ useEffect(() => {
   const readZ = () => {
     const el = stageRef?.current;
     if (!el) return 1;
-    // lee la var CSS en vivo
     const v = el.style.getPropertyValue('--zoom') || getComputedStyle(el).getPropertyValue('--zoom');
     const n = parseFloat((v || '').trim());
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
-
   const writeZ = (z) => {
     const v = Math.max(0.8, Math.min(2.5, z));
-    // actualiza SIEMPRE la var CSS y además el estado si existe
     stageRef?.current?.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
   };
@@ -309,70 +306,90 @@ useEffect(() => {
     writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
   };
 
-  // pinch (móvil) en CAPTURE para que no lo “coma” Fabric
-  let p1 = null, p2 = null, startDist = 0, startScale = 1;
-  let fabricWas = null; // guarda flags de Fabric mientras pinch
+  // pinch (móvil)
+  let pA = null, pB = null, startDist = 0, startScale = 1;
+  let fabricState = null;
 
-  const beginPinch = () => {
-    if (fabricWas) return;
-    fabricWas = { selection: c.selection, skip: c.skipTargetFind };
+  const parkFabric = () => {
+    if (fabricState) return;
+    fabricState = { selection: c.selection, skip: c.skipTargetFind };
     c.selection = false;
     c.skipTargetFind = true;
   };
-  const endPinch = () => {
-    p1 = p2 = null; startDist = 0; startScale = 1;
-    if (fabricWas) {
-      c.selection = fabricWas.selection;
-      c.skipTargetFind = fabricWas.skip;
-      fabricWas = null;
-    }
+  const restoreFabric = () => {
+    if (!fabricState) return;
+    c.selection = fabricState.selection;
+    c.skipTargetFind = fabricState.skip;
+    fabricState = null;
   };
 
   const onPD = (e) => {
     if (!editing || e.pointerType !== 'touch') return;
-    if (!p1) p1 = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    else if (!p2 && e.pointerId !== p1.id) p2 = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    if (p1 && p2 && !startDist) {
-      beginPinch();
-      startDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    if (!pA) {
+      pA = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      return; // primer dedo: deja que Fabric seleccione/mueva normalmente
+    }
+    if (!pB && e.pointerId !== pA.id) {
+      // segundo dedo: inicia pinch y bloquea a Fabric
+      pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      startDist  = Math.hypot(pA.x - pB.x, pA.y - pB.y);
       startScale = readZ();
+      parkFabric();
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     }
   };
 
   const onPM = (e) => {
     if (!editing || e.pointerType !== 'touch') return;
-    if (p1 && e.pointerId === p1.id) { p1.x = e.clientX; p1.y = e.clientY; }
-    else if (p2 && e.pointerId === p2.id) { p2.x = e.clientX; p2.y = e.clientY; }
-    if (p1 && p2 && startDist) {
+    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
+    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
+    if (pA && pB && startDist) {
       e.preventDefault();
-      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      writeZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+      const s = Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9)));
+      writeZ(s);
     }
   };
 
-  const reset = () => endPinch();
+  const onPU = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (pA && e.pointerId === pA.id) pA = null;
+    if (pB && e.pointerId === pB.id) pB = null;
+    if (!pA || !pB) {
+      startDist = 0; startScale = 1;
+      restoreFabric();
+    }
+  };
 
-  const optsNFcap = { passive: false, capture: true }; // CAPTURE = sí
-  const optsNF    = { passive: false };
+  const optsCap = { capture: true, passive: false };
+  const optsNF  = { passive: false };
+  const optsCapEnd = { capture: true, passive: true };
 
   upper.addEventListener('wheel', onWheel, optsNF);
-  upper.addEventListener('pointerdown', onPD, optsNFcap);
-  upper.addEventListener('pointermove', onPM, optsNFcap);
-  window.addEventListener('pointerup', reset, { passive: true });
-  window.addEventListener('pointercancel', reset, { passive: true });
-  window.addEventListener('touchend', reset, { passive: true });
-  window.addEventListener('touchcancel', reset, { passive: true });
+  upper.addEventListener('pointerdown', onPD, optsCap);
+  upper.addEventListener('pointermove', onPM, optsCap);
+  upper.addEventListener('pointerup', onPU, optsCapEnd);
+  upper.addEventListener('pointercancel', onPU, optsCapEnd);
+  window.addEventListener('pointerup', onPU, { passive: true });
+  window.addEventListener('pointercancel', onPU, { passive: true });
 
   return () => {
     upper.removeEventListener('wheel', onWheel, optsNF);
-    upper.removeEventListener('pointerdown', onPD, optsNFcap);
-    upper.removeEventListener('pointermove', onPM, optsNFcap);
-    window.removeEventListener('pointerup', reset);
-    window.removeEventListener('pointercancel', reset);
-    window.removeEventListener('touchend', reset);
-    window.removeEventListener('touchcancel', reset);
+    upper.removeEventListener('pointerdown', onPD, optsCap);
+    upper.removeEventListener('pointermove', onPM, optsCap);
+    upper.removeEventListener('pointerup', onPU, optsCapEnd);
+    upper.removeEventListener('pointercancel', onPU, optsCapEnd);
+    window.removeEventListener('pointerup', onPU);
+    window.removeEventListener('pointercancel', onPU);
+    restoreFabric();
+    pA = pB = null; startDist = 0; startScale = 1;
   };
 }, [editing, stageRef, setZoom]);
+
 
 
 
