@@ -285,76 +285,78 @@ useEffect(() => {
 
 
 // === Interactividad de Fabric mientras se diseña ===
+// Zoom local sobre el overlay cuando se está diseñando (móvil y PC)
 useEffect(() => {
-  // Detecta la instancia sin suponer nombres
-  const c =
-    (typeof canvasRef !== 'undefined' && canvasRef?.current) ||
-    (typeof fabricCanvasRef !== 'undefined' && fabricCanvasRef?.current) ||
-    (typeof canvas !== 'undefined' && canvas) ||
-    null;
-  if (!c) return;
+  const c = fabricCanvasRef.current;
+  const upper = c?.upperCanvasEl;
+  if (!upper) return;
 
-  const upper = c.upperCanvasEl;
-  const lower = c.lowerCanvasEl;
+  const getZ = () =>
+    typeof zoom === 'number'
+      ? zoom
+      : parseFloat(stageRef?.current?.style.getPropertyValue('--zoom')) || 1;
 
-  if (editing) {
-    // Asegura que el canvas reciba punteros y toque
-    if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
-    if (lower) { lower.style.pointerEvents = 'none';  lower.style.touchAction = 'none'; }
+  const setZ = (z) => {
+    const val = Math.max(0.8, Math.min(2.5, z));
+    if (typeof setZoom === 'function') setZoom(val);
+    else stageRef?.current?.style.setProperty('--zoom', String(val));
+  };
 
-    // Habilita selección y búsqueda de targets
-    c.skipTargetFind = false;
-    c.selection = true;
+  // rueda (PC)
+  const onWheel = (e) => {
+    if (!editing) return;
+    e.preventDefault();
+    setZ(getZ() + (e.deltaY > 0 ? -0.08 : 0.08));
+  };
 
-    c.skipTargetFind = false;
+  // pinch (móvil)
+  const pts = new Map();
+  let startDist = 0, startScale = getZ();
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-if (c && typeof c.getObjects === 'function') {
-  const objs = c.getObjects() || [];
-  for (let i = 0; i < objs.length; i++) {
-    const o = objs[i];
-    o.selectable = true;
-    o.evented = true;
-    o.lockMovementX = false;
-    o.lockMovementY = false;
-    o.hoverCursor = 'move';
-  }
-}
+  const onPD = (e) => {
+    if (!editing || e.pointerType !== 'touch') return;
+    upper.setPointerCapture?.(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [p1, p2] = [...pts.values()];
+      startDist = dist(p1, p2);
+      startScale = getZ();
+    }
+  };
 
-if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'manipulation'; upper.tabIndex = 0; }
-  lower.style.pointerEvents = 'none';
-  lower.style.touchAction = 'none';
-c.defaultCursor = 'move';
-c.requestRenderAll?.();
+  const onPM = (e) => {
+    if (!editing || e.pointerType !== 'touch' || !pts.has(e.pointerId)) return;
+    if (pts.size < 2 || !startDist) return;
+    e.preventDefault();
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const [p1, p2] = [...pts.values()];
+    const factor = dist(p1, p2) / startDist;
+    setZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(factor, 0.9))));
+  };
 
-  } else {
-    // Estado fuera de diseño: sin edición
-    if (upper) { upper.style.pointerEvents = 'none'; upper.style.touchAction = 'auto'; }
-  lower.style.pointerEvents = 'none';
-  lower.style.touchAction = 'none';
-    c.selection = false;
-    c.skipTargetFind = true;
+  const onPU = (e) => {
+    if (e.pointerType !== 'touch') return;
+    pts.delete(e.pointerId);
+    if (pts.size < 2) { startDist = 0; startScale = getZ(); }
+  };
 
+  const opts = { passive: false };
+  upper.addEventListener('wheel', onWheel, opts);
+  upper.addEventListener('pointerdown', onPD, opts);
+  upper.addEventListener('pointermove', onPM, opts);
+  window.addEventListener('pointerup', onPU, { passive: true });
+  window.addEventListener('pointercancel', onPU, { passive: true });
 
+  return () => {
+    upper.removeEventListener('wheel', onWheel, opts);
+    upper.removeEventListener('pointerdown', onPD, opts);
+    upper.removeEventListener('pointermove', onPM, opts);
+    window.removeEventListener('pointerup', onPU);
+    window.removeEventListener('pointercancel', onPU);
+  };
+}, [editing, zoom, stageRef, setZoom]);
 
-if (c && typeof c.getObjects === 'function') {
-  const objs = c.getObjects() || [];
-  for (let i = 0; i < objs.length; i++) {
-    const o = objs[i];
-    o.selectable = false;
-    o.evented = false;
-    o.lockMovementX = true;
-    o.lockMovementY = true;
-    o.hoverCursor = 'default';
-  }
-}
-
-try { c.discardActiveObject?.(); } catch {}
-c.requestRenderAll?.();
-
-  }
-
-  if (c && typeof c.requestRenderAll === 'function') c.requestRenderAll();
-}, [editing]);
 
 
   // Bloquea clicks en maceta/carrusel, pero deja pasar dentro del overlay/canvas
