@@ -284,6 +284,23 @@ if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none
   setAll(!!editing);
 }, [editing]);
 
+// Los objetos añadidos heredan el estado de edición actual (móvil incluido)
+useEffect(() => {
+  const c = fabricCanvasRef.current; if (!c) return;
+  const apply = (o) => {
+    o.selectable = editing;
+    o.evented = editing;
+    o.lockMovementX = !editing;
+    o.lockMovementY = !editing;
+    if (o.type === 'i-text' || typeof o.enterEditing === 'function') o.editable = editing;
+    o.hoverCursor = editing ? 'move' : 'default';
+  };
+  const onAdded = (e) => { if (e?.target) apply(e.target); };
+  c.on('object:added', onAdded);
+  return () => { c.off('object:added', onAdded); };
+}, [editing]);
+
+  
 // cuando cambie `editing`
 useEffect(() => {
   const c = fabricCanvasRef.current;
@@ -300,122 +317,93 @@ useEffect(() => {
 
   
 // Zoom SIEMPRE activo (PC y móvil) sobre el stage.
-// Aparca Fabric solo durante pinch de 2 dedos cuando estás en modo Diseñar.
+// Zoom global por rueda y pinch 2 dedos.
+// Un dedo NO se intercepta, así no congela mover/editar.
 useEffect(() => {
-  const host = stageRef?.current;
   const c = fabricCanvasRef.current;
-  if (!host) return;
+  const target = stageRef?.current || c?.upperCanvasEl;
+  if (!target) return;
 
   const readZ = () => {
-    const v = host.style.getPropertyValue('--zoom') || getComputedStyle(host).getPropertyValue('--zoom');
-    const n = parseFloat((v || '').trim());
+    const el = stageRef?.current;
+    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
+    const n = parseFloat((v || '1').trim());
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
   const writeZ = (z) => {
     const v = Math.max(0.8, Math.min(2.5, z));
-    host.style.setProperty('--zoom', String(v));
+    stageRef?.current?.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
   };
 
-  // rueda (PC)
+  // PC: rueda
   const onWheel = (e) => {
     e.preventDefault();
     writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
   };
 
-  // pinch (móvil)
-  // --- dentro del mismo useEffect de zoom ---
-let pA = null, pB = null, startDist = 0, startScale = 1;
-let saved = null, parked = false;
+  // Móvil: solo 2 dedos hacen zoom. 1 dedo pasa a Fabric.
+  let pA=null, pB=null, startDist=0, startScale=1, parked=false, saved=null;
+  const park = () => {
+    if (parked || !c) return;
+    saved = { selection: c.selection, skip: c.skipTargetFind };
+    c.selection = false;
+    c.skipTargetFind = true;
+    parked = true;
+  };
+  const unpark = () => {
+    if (!c) return;
+    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved=null; }
+    parked = false;
+    c.requestRenderAll?.();
+  };
 
-const park = () => {
-  if (!editing || !c || parked) return;
-  saved = { selection: c.selection, skip: c.skipTargetFind };
-  c.selection = false;
-  c.skipTargetFind = true;
-  parked = true;
-};
-const unpark = () => {
-  if (!c) return;
-  if (saved) {
-    c.selection = saved.selection;
-    c.skipTargetFind = saved.skip;
-    saved = null;
-  }
-  parked = false;
-  // re-render por si quedó algo colgado
-  c.requestRenderAll?.();
-};
+  const onPD = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (!pA) { pA = { id:e.pointerId, x:e.clientX, y:e.clientY }; return; }
+    if (!pB && e.pointerId !== pA.id) {
+      pB = { id:e.pointerId, x:e.clientX, y:e.clientY };
+      startDist = Math.hypot(pA.x-pB.x, pA.y-pB.y);
+      startScale = readZ();
+      park();
+    }
+  };
+  const onPM = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
+    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
+    if (pA && pB && startDist) {
+      e.preventDefault();
+      const d = Math.hypot(pA.x-pB.x, pA.y-pB.y);
+      writeZ(startScale * Math.pow(d/startDist, 0.9));
+    }
+  };
+  const onPU = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (pA && e.pointerId === pA.id) pA=null;
+    if (pB && e.pointerId === pB.id) pB=null;
+    if (!(pA && pB)) { startDist=0; startScale=1; unpark(); }
+  };
+  const onCancel = () => { pA=pB=null; startDist=0; startScale=1; unpark(); };
 
-const onPD = (e) => {
-  if (e.pointerType !== 'touch') return;            // ratón/rueda no pasan por aquí
-  // NO prevenir ni capturar para un dedo
-  if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
-  if (!pB && e.pointerId !== pA.id) {
-    pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    // recién al tener 2 dedos iniciamos pinch y aparcamos Fabric
-    startDist  = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-    startScale = readZ();
-    park();
-  }
-};
-
-const onPM = (e) => {
-  if (e.pointerType !== 'touch') return;
-  // actualiza coordenadas si este dedo está activo
-  if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-  if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-
-  // Solo si hay dos dedos y ya iniciamos pinch, hacemos zoom y PREVENIMOS default
-  if (pA && pB && startDist > 0) {
-    e.preventDefault();
-    const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-    const scale = Math.pow(d / startDist, 0.9);
-    writeZ(Math.max(0.8, Math.min(2.5, startScale * scale)));
-  }
-  // Con un dedo: no hacemos nada -> Fabric recibe el gesto para mover/editar
-};
-
-const onPU = (e) => {
-  if (e.pointerType !== 'touch') return;
-  if (pA && e.pointerId === pA.id) pA = null;
-  if (pB && e.pointerId === pB.id) pB = null;
-
-  // Si quedó menos de 2 dedos, termina el pinch y restauramos Fabric
-  if (!(pA && pB)) {
-    startDist = 0;
-    startScale = 1;
-    unpark();
-  }
-};
-
-
-
-
-  const optsWheel = { passive: false };
-  const optsCap   = { passive: false, capture: true };
-
-  host.addEventListener('wheel', onWheel, optsWheel);
-  host.addEventListener('pointerdown', onPD, optsCap);
-  host.addEventListener('pointermove', onPM, optsCap);
-  host.addEventListener('pointerup', onPU, { passive: true, capture: true });
-  host.addEventListener('pointercancel', onPU, { passive: true, capture: true });
+  target.addEventListener('wheel', onWheel, { passive:false });
+  target.addEventListener('pointerdown', onPD, { passive:true });
+  target.addEventListener('pointermove', onPM, { passive:false, capture:true });
+  window.addEventListener('pointerup', onPU, { passive:true });
+  window.addEventListener('pointercancel', onCancel, { passive:true });
+  document.addEventListener('visibilitychange', onCancel);
+  window.addEventListener('blur', onCancel);
 
   return () => {
-    host.removeEventListener('wheel', onWheel, optsWheel);
-    host.removeEventListener('pointerdown', onPD, optsCap);
-    host.removeEventListener('pointermove', onPM, optsCap);
-    host.removeEventListener('pointerup', onPU, { capture: true });
-    host.removeEventListener('pointercancel', onPU, { capture: true });
-    unpark();
-    pA = pB = null; startDist = 0; startScale = 1;
+    target.removeEventListener('wheel', onWheel, { passive:false });
+    target.removeEventListener('pointerdown', onPD, { passive:true });
+    target.removeEventListener('pointermove', onPM, { passive:false, capture:true });
+    window.removeEventListener('pointerup', onPU);
+    window.removeEventListener('pointercancel', onCancel);
+    document.removeEventListener('visibilitychange', onCancel);
+    window.removeEventListener('blur', onCancel);
   };
-}, [stageRef, setZoom, editing]);
-
-
-
-
-
+}, [stageRef, setZoom]);
 
 
   // Bloquea clicks en maceta/carrusel, pero deja pasar dentro del overlay/canvas
