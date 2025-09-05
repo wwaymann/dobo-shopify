@@ -64,7 +64,12 @@ export default function CustomizationOverlay({
   
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
 
-  
+  // Mantén --zoom siempre actualizado para leerlo en tiempo real
+useEffect(() => {
+  const v = typeof zoom === 'number' ? zoom : 1;
+  stageRef?.current?.style.setProperty('--zoom', String(v));
+}, [zoom, stageRef]);
+
   // ===== Layout y medidas =====
   useLayoutEffect(() => {
     const el = anchorRef?.current;
@@ -257,15 +262,8 @@ useEffect(() => {
     const upper = c.upperCanvasEl;
     const lower = c.lowerCanvasEl;
 
-    if (upper) {
-      upper.style.pointerEvents = on ? 'auto' : 'none';
-      upper.style.touchAction   = on ? 'none' : 'auto';
-      upper.tabIndex = on ? 0 : -1;
-    }
-    if (lower) {
-      lower.style.pointerEvents = 'none';
-      lower.style.touchAction   = 'none';
-    }
+  if (upper) { upper.style.pointerEvents = editing ? 'auto' : 'none'; upper.style.touchAction = editing ? 'none' : 'auto'; }
+if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
 
     c.defaultCursor = on ? 'move' : 'default';
     try { c.discardActiveObject(); } catch {}
@@ -282,42 +280,62 @@ useEffect(() => {
   window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
 }, [editing]);
 
-// === Interactividad de Fabric mientras se diseña ===
-// Zoom en modo Diseñar (móvil y PC). Sólido: sin pointer capture y con reset.
+// Zoom en modo Diseñar (móvil y PC). Lee --zoom en vivo y desactiva Fabric durante el pinch.
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
   if (!upper) return;
 
-  const getZ = () => (
-    typeof zoom === 'number'
-      ? zoom
-      : parseFloat(stageRef?.current?.style.getPropertyValue('--zoom')) || 1
-  );
+  const readZ = () => {
+    const el = stageRef?.current;
+    if (!el) return 1;
+    // lee la var CSS en vivo
+    const v = el.style.getPropertyValue('--zoom') || getComputedStyle(el).getPropertyValue('--zoom');
+    const n = parseFloat((v || '').trim());
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  };
 
-  const setZ = (z) => {
+  const writeZ = (z) => {
     const v = Math.max(0.8, Math.min(2.5, z));
+    // actualiza SIEMPRE la var CSS y además el estado si existe
+    stageRef?.current?.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
-    else stageRef?.current?.style.setProperty('--zoom', String(v));
   };
 
   // rueda (PC)
   const onWheel = (e) => {
     if (!editing) return;
     e.preventDefault();
-    setZ(getZ() + (e.deltaY > 0 ? -0.08 : 0.08));
+    writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
   };
 
-  // pinch (móvil) SIN pointer capture
+  // pinch (móvil) en CAPTURE para que no lo “coma” Fabric
   let p1 = null, p2 = null, startDist = 0, startScale = 1;
+  let fabricWas = null; // guarda flags de Fabric mientras pinch
+
+  const beginPinch = () => {
+    if (fabricWas) return;
+    fabricWas = { selection: c.selection, skip: c.skipTargetFind };
+    c.selection = false;
+    c.skipTargetFind = true;
+  };
+  const endPinch = () => {
+    p1 = p2 = null; startDist = 0; startScale = 1;
+    if (fabricWas) {
+      c.selection = fabricWas.selection;
+      c.skipTargetFind = fabricWas.skip;
+      fabricWas = null;
+    }
+  };
 
   const onPD = (e) => {
     if (!editing || e.pointerType !== 'touch') return;
     if (!p1) p1 = { id: e.pointerId, x: e.clientX, y: e.clientY };
     else if (!p2 && e.pointerId !== p1.id) p2 = { id: e.pointerId, x: e.clientX, y: e.clientY };
     if (p1 && p2 && !startDist) {
+      beginPinch();
       startDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      startScale = getZ();
+      startScale = readZ();
     }
   };
 
@@ -328,31 +346,33 @@ useEffect(() => {
     if (p1 && p2 && startDist) {
       e.preventDefault();
       const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      setZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
+      writeZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
     }
   };
 
-  const reset = () => { p1 = null; p2 = null; startDist = 0; startScale = 1; };
+  const reset = () => endPinch();
 
-  const opts = { passive: false };
-  upper.addEventListener('wheel', onWheel, opts);
-  upper.addEventListener('pointerdown', onPD, opts);
-  upper.addEventListener('pointermove', onPM, opts);
+  const optsNFcap = { passive: false, capture: true }; // CAPTURE = sí
+  const optsNF    = { passive: false };
+
+  upper.addEventListener('wheel', onWheel, optsNF);
+  upper.addEventListener('pointerdown', onPD, optsNFcap);
+  upper.addEventListener('pointermove', onPM, optsNFcap);
   window.addEventListener('pointerup', reset, { passive: true });
   window.addEventListener('pointercancel', reset, { passive: true });
   window.addEventListener('touchend', reset, { passive: true });
   window.addEventListener('touchcancel', reset, { passive: true });
 
   return () => {
-    upper.removeEventListener('wheel', onWheel);
-    upper.removeEventListener('pointerdown', onPD);
-    upper.removeEventListener('pointermove', onPM);
+    upper.removeEventListener('wheel', onWheel, optsNF);
+    upper.removeEventListener('pointerdown', onPD, optsNFcap);
+    upper.removeEventListener('pointermove', onPM, optsNFcap);
     window.removeEventListener('pointerup', reset);
     window.removeEventListener('pointercancel', reset);
     window.removeEventListener('touchend', reset);
     window.removeEventListener('touchcancel', reset);
   };
-}, [editing, stageRef]);
+}, [editing, stageRef, setZoom]);
 
 
 
