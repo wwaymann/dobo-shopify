@@ -152,6 +152,8 @@ function Home() {
   const potScrollRef = useRef(null);
   const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+const potDownRef = useRef({ btn: null, x: 0, y: 0 });
+const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
 
   const [editing, setEditing] = useState(false);
 
@@ -295,16 +297,38 @@ function Home() {
   const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
   const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
 
+  const CLICK_STEP_PX = 8;
+const handlePointerDownCap = (e, ref) => {
+  ref.current = {
+    btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0,
+    x: e.clientX ?? 0,
+    y: e.clientY ?? 0,
+  };
+};
+const handlePointerUpCap = (e, ref, handlers) => {
+  if (editingRef.current) return;
+  const d = ref.current || { btn: null, x: 0, y: 0 };
+  if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return; // solo botón izquierdo
+  const dx = Math.abs((e.clientX ?? 0) - d.x);
+  const dy = Math.abs((e.clientY ?? 0) - d.y);
+  if (dx > CLICK_STEP_PX || dy > CLICK_STEP_PX) return; // fue swipe/drag
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = (e.clientX ?? 0) - rect.left;
+  (x > rect.width / 2 ? handlers.next : handlers.prev)();
+};
+
+
+/* ---------- lock both carousels while editing ---------- */
 useEffect(() => {
   const pots = potScrollRef.current;
   const plants = plantScrollRef.current;
   [pots, plants].forEach((el) => {
     if (!el) return;
-    // congelar en modo diseño, habilitar fuera de diseño
     el.style.pointerEvents = editing ? "none" : "auto";
     el.style.touchAction   = editing ? "none" : "pan-y";
   });
 }, [editing]);
+
 
 
   /* ---------- zoom wheel + pinch ---------- */
@@ -334,7 +358,7 @@ useEffect(() => {
 
     // WHEEL: desactivado durante edición
     const onWheel = (e) => {
-      if (editingRef.current) return;
+     
       if (!stage.contains(e.target)) return;
       e.preventDefault();
       const step = e.deltaY > 0 ? -0.08 : 0.08;
@@ -352,7 +376,7 @@ useEffect(() => {
 
     const onPD = (e) => {
       if (e.pointerType !== "touch") return;
-      if (editingRef.current) return; // no pinch-zoom en modo diseño
+    
       container.setPointerCapture?.(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) {
@@ -363,7 +387,7 @@ useEffect(() => {
     };
     const onPM = (e) => {
       if (e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
-      if (editingRef.current) return; // salir si se edita
+    
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2 && startDist > 0) {
         const [p1, p2] = [...pts.values()];
@@ -800,6 +824,11 @@ useEffect(() => {
                 data-capture="pot-container"
                 style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 aria-disabled={editing ? "true" : "false"}
+onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, potHandlers)}
+onAuxClick={(e) => e.preventDefault()}
+onContextMenu={(e) => e.preventDefault()}
+
                 {...potSwipeEvents}
               >
                 <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
@@ -831,6 +860,12 @@ useEffect(() => {
                   touchAction: "pan-y",
                   userSelect: "none",
                 }}
+
+onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, plantHandlers)}
+onAuxClick={(e) => e.preventDefault()}
+onContextMenu={(e) => e.preventDefault()}
+
                 {...plantSwipeEvents}
               >
                 <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
