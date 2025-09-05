@@ -59,6 +59,8 @@ export default function CustomizationOverlay({
   const [vecBias, setVecBias] = useState(0);         // -60..+60
 
   const suppressSelectionRef = useRef(false);
+  const lastTapRef = useRef({ t: 0, target: null });
+
   const [anchorRect, setAnchorRect] = useState(null);
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
 
@@ -84,11 +86,10 @@ export default function CustomizationOverlay({
     if (!stage || !anchor) return;
 
     const measure = () => {
-      // tamaño en px locales
       const w = Math.max(1, anchor.clientWidth);
       const h = Math.max(1, anchor.clientHeight);
 
-      // posición relativa al stage acumulando offsets
+      // posición relativa de anchor dentro de stage por offsets (sin rects para evitar scroll/zoom)
       let left = 0, top = 0;
       let el = anchor;
       while (el && el !== stage) {
@@ -110,7 +111,6 @@ export default function CustomizationOverlay({
     try { roA.observe(anchor); } catch {}
     try { roS.observe(stage); } catch {}
     window.addEventListener('resize', measure, { passive: true });
-
     return () => {
       try { roA.disconnect(); } catch {}
       try { roS.disconnect(); } catch {}
@@ -118,7 +118,7 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, anchorRef]);
 
-  // Posiciona el menú dentro de la columna de carruseles
+  // Posiciona el menú cerca de la columna de carruseles
   useEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -158,10 +158,9 @@ export default function CustomizationOverlay({
       };
     }
 
-    // Doble click para editar texto (desktop)
+    // Doble clic (desktop) -> editar texto del grupo
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
-      // Si selecciona el grupo de texto, intenta entrar a edición del hijo base (desktop)
       if (t && t._kind === 'textGroup') {
         const base = t._textChildren?.base;
         if (base && typeof base.enterEditing === 'function') {
@@ -173,6 +172,27 @@ export default function CustomizationOverlay({
       }
     });
 
+    // Doble tap (móvil) -> editar texto del grupo
+    c.on('mouse:down', (e) => {
+      const ev = e?.e;
+      const isTouch = !!ev && (ev.pointerType === 'touch' || typeof ev.touches === 'object');
+      if (!isTouch) return;
+      const t = e.target;
+      if (t && t._kind === 'textGroup') {
+        const now = Date.now();
+        if (lastTapRef.current.target === t && now - lastTapRef.current.t < 350) {
+          const base = t._textChildren?.base;
+          if (base && typeof base.enterEditing === 'function') {
+            try { c.setActiveObject(base); } catch {}
+            base.enterEditing();
+            base.hiddenTextarea?.focus?.();
+            c.requestRenderAll();
+          }
+        }
+        lastTapRef.current = { t: now, target: t };
+      }
+    });
+
     // Helpers de tipo
     const classify = (a) => {
       if (!a) return 'none';
@@ -181,19 +201,14 @@ export default function CustomizationOverlay({
       if (a.type === 'activeSelection' && a._objects?.length) {
         if (a._objects.every(o => o._kind === 'textGroup')) return 'text';
         if (a._objects.some(o => o._kind === 'imgGroup'))    return 'image';
-        return 'none';
       }
-      if (a.type === 'image') return 'image';
-      if (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text') return 'text';
       return 'none';
     };
 
     const reflectTypo = () => {
       const a = c.getActiveObject();
-      if (!a) return;
-      const group = a._kind === 'textGroup' ? a : null;
-      const base = group?. _textChildren?.base;
-      const t = base || (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text' ? a : null);
+      const group = a && a._kind === 'textGroup' ? a : null;
+      const t = group?. _textChildren?.base;
       if (t) {
         setFontFamily(t.fontFamily || FONT_OPTIONS[0].css);
         setFontSize(t.fontSize || 60);
@@ -230,6 +245,7 @@ export default function CustomizationOverlay({
 
     return () => {
       c.off('mouse:dblclick');
+      c.off('mouse:down');
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
@@ -255,8 +271,7 @@ export default function CustomizationOverlay({
 
     const enableNode = (o, on) => {
       if (!o) return;
-      // Si es grupo de relieve, solo el grupo es seleccionable. Hijos quedan bloqueados.
-      const isReliefGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
 
       o.selectable    = on;
       o.evented       = on;
@@ -264,22 +279,20 @@ export default function CustomizationOverlay({
       o.lockMovementY = !on;
       o.hasControls   = on;
       o.hasBorders    = on;
-      if (!isReliefGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
       o.hoverCursor   = on ? 'move' : 'default';
 
-      if (isReliefGroup) {
+      // Hijos de grupos: nunca editables directamente
+      if (isGroup) {
         const kids = (o._textChildren || o._imgChildren);
         if (kids) {
           Object.values(kids).forEach(k => {
-            if (k) {
-              k.selectable = false;
-              k.evented = false;
-              k.editable = false;
-            }
+            if (k) { k.selectable=false; k.evented=false; k.editable=false; }
           });
         }
         return;
       }
+
+      if (o.type === 'i-text' || typeof o.enterEditing === 'function') o.editable = on;
 
       const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
       if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
@@ -307,20 +320,20 @@ export default function CustomizationOverlay({
     setAll(!!editing);
   }, [editing]);
 
-  // Los objetos añadidos heredan el estado de edición actual (móvil incluido)
+  // Los objetos añadidos heredan el estado de edición actual
   useEffect(() => {
     const c = fabricCanvasRef.current; if (!c) return;
     const apply = (o) => {
-      const isReliefGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
       o.selectable = editing;
       o.evented = editing;
       o.lockMovementX = !editing;
       o.lockMovementY = !editing;
       o.hasControls = editing;
       o.hasBorders = editing;
-      if (!isReliefGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = editing;
       o.hoverCursor = editing ? 'move' : 'default';
-      if (isReliefGroup) {
+      if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = editing;
+      if (isGroup) {
         const kids = (o._textChildren || o._imgChildren);
         if (kids) Object.values(kids).forEach(k => { if (k) { k.selectable=false; k.evented=false; k.editable=false; }});
       }
@@ -330,11 +343,10 @@ export default function CustomizationOverlay({
     return () => { c.off('object:added', onAdded); };
   }, [editing]);
 
-  // cuando cambie `editing`
+  // cuando cambie `editing`, avisa y ajusta punteros
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
-    // Garantiza interactividad correcta tras cualquier cambio de modo
     c.selection = !!editing;
     c.skipTargetFind = !editing;
     const upper = c.upperCanvasEl;
@@ -345,7 +357,10 @@ export default function CustomizationOverlay({
     window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
   }, [editing]);
 
-  // Zoom SIEMPRE activo (PC y móvil) sobre el stage. (2 dedos para zoom; 1 dedo no intercepta)
+  // Zoom global SIEMPRE activo (PC y móvil) sobre el stage.
+  //  - Rueda (PC)
+  //  - Pinch con 2 dedos (móvil)
+  //  - 1 dedo NO se intercepta (para mover/editar objetos)
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const target = stageRef?.current || c?.upperCanvasEl;
@@ -369,7 +384,7 @@ export default function CustomizationOverlay({
       writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
     };
 
-    // Móvil: solo 2 dedos hacen zoom. 1 dedo pasa a Fabric.
+    // Móvil: pinch con 2 dedos
     let pA=null, pB=null, startDist=0, startScale=1, parked=false, saved=null;
     const park = () => {
       if (parked || !c) return;
@@ -432,7 +447,8 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, setZoom]);
 
-  // Bloquea clicks en maceta/carrusel, pero deja pasar dentro del overlay/canvas mientras editas
+  // Bloquea clicks en maceta/carrusel (debajo) mientras editas,
+  // pero NO bloquea pinch con 2 dedos (para zoom)
   useEffect(() => {
     const hostA = anchorRef?.current;
     const hostS = stageRef?.current;
@@ -451,13 +467,15 @@ export default function CustomizationOverlay({
 
     const stop = (e) => {
       if (!editing) return;
+      // si es multitouch (pinch), no bloquear
+      if (e.touches && e.touches.length >= 2) return;
       if (insideAllowed(e)) return;
       e.preventDefault();
       e.stopPropagation();
     };
 
     const opts = { capture: true, passive: false };
-    const evs = ['pointerdown','mousedown','touchstart','click','wheel'];
+    const evs = ['pointerdown','mousedown','touchstart','click']; // 'wheel' fuera para no romper zoom
     evs.forEach(ev => host.addEventListener(ev, stop, opts));
 
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
@@ -513,10 +531,7 @@ export default function CustomizationOverlay({
   };
 
   // Vectoriza a bitmap BN con fondo transparente
-  const vectorizeElementToBitmap = (
-    element,
-    opts = {}
-  ) => {
+  const vectorizeElementToBitmap = (element, opts = {}) => {
     const {
       maxDim   = VECTOR_SAMPLE_DIM,
       makeDark = true,
@@ -586,7 +601,6 @@ export default function CustomizationOverlay({
 
   // ===== Relieve Imagen (AGRUPADO) =====
   const attachDebossToBase = (c, baseObj, { offset = 1 } = {}) => {
-    // clonar raster base para sombras/luces
     const cloneFrom = () => {
       const el = typeof baseObj.getElement === 'function' ? baseObj.getElement() : baseObj._element;
       return new fabric.Image(el, {
@@ -595,12 +609,10 @@ export default function CustomizationOverlay({
       });
     };
 
-    // base visual que se verá dentro del grupo
     const base = cloneFrom();
     const shadow = cloneFrom();
     const highlight = cloneFrom();
 
-    // grupo con 3 capas y meta
     const group = new fabric.Group([shadow, highlight, base], {
       originX: 'center', originY: 'center',
       objectCaching: false, selectable: true, evented: true,
@@ -636,7 +648,6 @@ export default function CustomizationOverlay({
     };
     group._debossSync = normalizeImgOffsets;
 
-    // eventos que mantienen unidas las capas
     group.on('scaling', normalizeImgOffsets);
     group.on('modified', normalizeImgOffsets);
     normalizeImgOffsets();
@@ -648,28 +659,7 @@ export default function CustomizationOverlay({
     const g = obj && obj._kind === 'imgGroup' ? obj : null;
     if (!g || !g._debossChildren) return;
     g._debossOffset = offset;
-
-    const { shadow, highlight } = g._debossChildren;
-    const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-    const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-    const ox = g._debossOffset / sx;
-    const oy = g._debossOffset / sy;
-    shadow.set({ left: -ox, top: -oy });
-    highlight.set({ left: +ox, top: +oy });
-    g.setCoords();
-    g.canvas?.requestRenderAll?.();
-  };
-
-  const clearDeboss = (obj) => {
-    if (!obj) return;
-    if (obj._kind === 'imgGroup' && obj.canvas) { try { obj.canvas.remove(obj); } catch {} return; }
-    const c = fabricCanvasRef.current || obj.canvas;
-    if (obj._deboss) {
-      const { shadow, highlight } = obj._deboss;
-      try { c.remove(shadow); } catch {}
-      try { c.remove(highlight); } catch {}
-      delete obj._deboss; delete obj._debossSync; delete obj._debossParams;
-    }
+    g._debossSync && g._debossSync();
   };
 
   // ===== Relieve Texto (AGRUPADO) =====
@@ -730,7 +720,7 @@ export default function CustomizationOverlay({
     const c = fabricCanvasRef.current; if (!c) return;
 
     const opts = {
-      width: Math.min(baseSize.w * 0.9, 220),
+      width: Math.min(baseSize.w * 0.9, 260),
       fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal',
       fontStyle: isItalic ? 'italic' : 'normal',
       underline: isUnderline, textAlign,
@@ -835,7 +825,6 @@ export default function CustomizationOverlay({
     suppressSelectionRef.current = true;
     clearSelectionHard();
     setEditing(true);
-    // limpiar de nuevo en el siguiente frame y soltar la supresión
     requestAnimationFrame(() => {
       clearSelectionHard();
       setTimeout(() => { suppressSelectionRef.current = false; }, 150);
@@ -858,8 +847,8 @@ export default function CustomizationOverlay({
       const kids = g?._textChildren; if (!kids) return;
       const { base, shadow, highlight } = kids;
       [base, shadow, highlight].forEach(o => { if (o) mutator(o); });
-      g._debossSync && g._debossSync();
       g.setCoords?.();
+      g.canvas?.requestRenderAll?.();
     };
 
     if (a.type === 'activeSelection' && Array.isArray(a._objects)) {
@@ -871,7 +860,7 @@ export default function CustomizationOverlay({
     c.requestRenderAll();
   };
 
-  // ===== Re-vectorización automática por Detalles/Invertir =====
+  // ===== Re-vectorización por Detalles/Invertir =====
   useEffect(() => {
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -890,7 +879,7 @@ export default function CustomizationOverlay({
       } else if (obj?._vecSourceEl || obj?.type === 'image') {
         element = obj._vecSourceEl || (typeof obj.getElement === 'function' ? obj.getElement() : obj._element);
         pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
-        try { if (obj._deboss) clearDeboss(obj); obj.canvas.remove(obj); } catch {}
+        try { obj.canvas.remove(obj); } catch {}
       } else {
         return;
       }
@@ -916,6 +905,15 @@ export default function CustomizationOverlay({
 
     c.requestRenderAll();
   }, [vecBias, vecInvert, vecOffset, editing, selType]);
+
+  // Offset del relieve en caliente (imagen)
+  useEffect(() => {
+    if (!editing || selType !== 'image') return;
+    const c = fabricCanvasRef.current; if (!c) return;
+    const a = c.getActiveObject(); if (!a) return;
+    const upd = (obj) => { if (obj && obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
+    if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
+  }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
 
@@ -1136,7 +1134,7 @@ export default function CustomizationOverlay({
                 </div>
 
                 <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-                  <button type="button" className={`btn {!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onClick={() => setVecInvert(false)}>Oscuro</button>
+                  <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onClick={() => setVecInvert(false)}>Oscuro</button>
                   <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onClick={() => setVecInvert(true)}>Claro</button>
                 </div>
               </div>
