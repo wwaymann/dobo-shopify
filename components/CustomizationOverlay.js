@@ -61,6 +61,8 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   
   const [anchorRect, setAnchorRect] = useState(null);
+  
+  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
 
   
   // ===== Layout y medidas =====
@@ -73,22 +75,39 @@ export default function CustomizationOverlay({
   }, [anchorRef]);
 
   useLayoutEffect(() => {
-    const el = anchorRef?.current;
-    if (!el) return;
-    const measure = () => {
-      const w = Math.max(1, Math.round(el.clientWidth));
-      const h = Math.max(1, Math.round(el.clientHeight));
-      setBaseSize({ w, h });
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    window.addEventListener('resize', measure);
-    return () => { try { ro.disconnect(); } catch {}; window.removeEventListener('resize', measure); };
-  }, [anchorRef]);
+   const stage = stageRef?.current;
+   const anchor = anchorRef?.current;
+   if (!stage || !anchor) return;
 
+   const measure = () => {
+     const sr = stage.getBoundingClientRect();
+     const ar = anchor.getBoundingClientRect();
+     const w = Math.max(1, Math.round(anchor.clientWidth));
+     const h = Math.max(1, Math.round(anchor.clientHeight));
+     const left = Math.max(0, Math.round(ar.left - sr.left));
+     const top  = Math.max(0, Math.round(ar.top  - sr.top));
+     setBaseSize({ w, h });
+     setOverlayBox({ left, top, w, h });
+     const c = fabricCanvasRef.current;
+     if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
+   };
+
+   measure();
+   const roA = new ResizeObserver(measure);
+   const roS = new ResizeObserver(measure);
+   try { roA.observe(anchor); } catch {}
+   try { roS.observe(stage); } catch {}
+   window.addEventListener('resize', measure, { passive: true });
+   window.addEventListener('scroll', measure, { passive: true });
+   return () => {
+     try { roA.disconnect(); } catch {}
+     try { roS.disconnect(); } catch {}
+     window.removeEventListener('resize', measure);
+     window.removeEventListener('scroll', measure);
+   };
+ }, [stageRef, anchorRef]);
   // Posiciona el menú dentro de la columna de carruseles
-  useLayoutEffect(() => {
+  (() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
     const update = () => setAnchorRect(el.getBoundingClientRect());
@@ -822,19 +841,23 @@ const exitDesignMode = () => {
   ref={overlayRef}
   style={{
     position: "absolute",
-    inset: 0,
-    zIndex: Z_CANVAS,
-    pointerEvents: editing ? "auto" : "none",
-    touchAction: editing ? "none" : "auto",
-    overscrollBehavior: "contain",
+   left: overlayBox.left,
+   top: overlayBox.top,
+   width: overlayBox.w,
+   height: overlayBox.h,
+   zIndex: Z_CANVAS,
+   overflow: "hidden",
+   pointerEvents: editing ? "auto" : "none",
+   touchAction: editing ? "none" : "auto",
+   overscrollBehavior: "contain",
   }}
 >
 
       <canvas
         data-dobo-design="1" 
         ref={canvasRef}
-        width={baseSize.w}
-        height={baseSize.h}
+        width={overlayBox.w}
+        height={overlayBox.h}
         style={{
           width: '100%',
           height: '100%',
