@@ -321,14 +321,16 @@ if (c && typeof c.getObjects === 'function') {
 }
 
 if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'manipulation'; upper.tabIndex = 0; }
-if (lower) { lower.style.pointerEvents = 'auto'; }
+  lower.style.pointerEvents = 'none';
+  lower.style.touchAction = 'none';
 c.defaultCursor = 'move';
 c.requestRenderAll?.();
 
   } else {
     // Estado fuera de diseño: sin edición
     if (upper) { upper.style.pointerEvents = 'none'; upper.style.touchAction = 'auto'; }
-    if (lower) { lower.style.pointerEvents = 'auto'; }
+  lower.style.pointerEvents = 'none';
+  lower.style.touchAction = 'none';
     c.selection = false;
     c.skipTargetFind = true;
 
@@ -393,7 +395,7 @@ c.requestRenderAll?.();
     if (!el) return;
 
     const stopScroll = (e) => {
-      if (editing) { e.preventDefault(); /* no stopPropagation, deja llegar a Fabric */ }
+     if (editing) e.preventDefault(); // NO stopPropagation
     };
 
     const addOpts = { passive: false };
