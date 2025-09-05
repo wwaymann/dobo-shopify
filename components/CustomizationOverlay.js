@@ -264,6 +264,12 @@ useEffect(() => {
 
  if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
  if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+
+    else {
+ if (upper) { upper.style.pointerEvents = 'none'; }
+ if (upper) { upper.style.pointerEvents = 'none'; upper.style.touchAction = 'auto'; }
+ if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+}
     
     c.defaultCursor = on ? 'move' : 'default';
     c.discardActiveObject?.();
@@ -283,76 +289,82 @@ useEffect(() => {
 
 
 // === Interactividad de Fabric mientras se diseña ===
-// Zoom local sobre el overlay cuando se está diseñando (móvil y PC)
+// Zoom en modo Diseñar (móvil y PC). Sólido: sin pointer capture y con reset.
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
   if (!upper) return;
 
-  const getZ = () =>
+  const getZ = () => (
     typeof zoom === 'number'
       ? zoom
-      : parseFloat(stageRef?.current?.style.getPropertyValue('--zoom')) || 1;
+      : parseFloat(stageRef?.current?.style.getPropertyValue('--zoom')) || 1
+  );
 
   const setZ = (z) => {
-    const val = Math.max(0.8, Math.min(2.5, z));
-    if (typeof setZoom === 'function') setZoom(val);
-    else stageRef?.current?.style.setProperty('--zoom', String(val));
+    const v = Math.max(0.8, Math.min(2.5, z));
+    if (typeof setZoom === 'function') setZoom(v);
+    else stageRef?.current?.style.setProperty('--zoom', String(v));
   };
 
+  // rueda (PC)
   const onWheel = (e) => {
     if (!editing) return;
     e.preventDefault();
     setZ(getZ() + (e.deltaY > 0 ? -0.08 : 0.08));
   };
 
-  const pts = new Map();
-  let startDist = 0, startScale = getZ();
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  // pinch (móvil) SIN pointer capture
+  let p1 = null, p2 = null, startDist = 0, startScale = 1;
 
-  const onPD = (e) => {
-    if (!editing || e.pointerType !== 'touch') return;
-    upper.setPointerCapture?.(e.pointerId);
-    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pts.size === 2) {
-      const [p1, p2] = [...pts.values()];
-      startDist = dist(p1, p2);
+  const startIfReady = () => {
+    if (p1 && p2 && !startDist) {
+      startDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
       startScale = getZ();
     }
   };
 
+  const onPD = (e) => {
+    if (!editing || e.pointerType !== 'touch') return;
+    if (!p1) p1 = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    else if (!p2 && e.pointerId !== p1.id) p2 = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    startIfReady();
+  };
+
   const onPM = (e) => {
-    if (!editing || e.pointerType !== 'touch' || !pts.has(e.pointerId)) return;
-    if (pts.size < 2 || !startDist) return;
-    e.preventDefault();
-    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const [p1, p2] = [...pts.values()];
-    const factor = dist(p1, p2) / startDist;
-    setZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(factor, 0.9))));
+    if (!editing || e.pointerType !== 'touch') return;
+    if (p1 && e.pointerId === p1.id) { p1.x = e.clientX; p1.y = e.clientY; }
+    else if (p2 && e.pointerId === p2.id) { p2.x = e.clientX; p2.y = e.clientY; }
+    if (p1 && p2 && startDist) {
+      e.preventDefault();
+      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      setZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
+    }
   };
 
-  const release = (e) => {
-    if (e.pointerType !== 'touch') return;
-    upper.releasePointerCapture?.(e.pointerId);
-    pts.delete(e.pointerId);
-    if (pts.size < 2) { startDist = 0; startScale = getZ(); }
-  };
+  const reset = () => { p1 = null; p2 = null; startDist = 0; startScale = 1; };
 
-  const opts = { passive: false };
-  upper.addEventListener('wheel', onWheel, opts);
-  upper.addEventListener('pointerdown', onPD, opts);
-  upper.addEventListener('pointermove', onPM, opts);
-  window.addEventListener('pointerup', release, { passive: true });
-  window.addEventListener('pointercancel', release, { passive: true });
+  const optsNF = { passive: false };
+  upper.addEventListener('wheel', onWheel, optsNF);
+  upper.addEventListener('pointerdown', onPD, optsNF);
+  upper.addEventListener('pointermove', onPM, optsNF);
+  window.addEventListener('pointerup', reset, { passive: true });
+  window.addEventListener('pointercancel', reset, { passive: true });
+  window.addEventListener('touchend', reset, { passive: true });
+  window.addEventListener('touchcancel', reset, { passive: true });
 
   return () => {
-    upper.removeEventListener('wheel', onWheel, opts);
-    upper.removeEventListener('pointerdown', onPD, opts);
-    upper.removeEventListener('pointermove', onPM, opts);
-    window.removeEventListener('pointerup', release);
-    window.removeEventListener('pointercancel', release);
+    upper.removeEventListener('wheel', onWheel);
+    upper.removeEventListener('pointerdown', onPD);
+    upper.removeEventListener('pointermove', onPM);
+    window.removeEventListener('pointerup', reset);
+    window.removeEventListener('pointercancel', reset);
+    window.removeEventListener('touchend', reset);
+    window.removeEventListener('touchcancel', reset);
   };
-}, [editing, zoom, stageRef, setZoom]);
+  // Importante: NO dependas de `zoom` ni `setZoom` para no recrear listeners en cada tick
+}, [editing, stageRef]);
+
 
 
 
