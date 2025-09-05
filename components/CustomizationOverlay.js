@@ -280,8 +280,8 @@ useEffect(() => {
 
   if (editing) {
     // Asegura que el canvas reciba punteros y toque
-    if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'manipulation'; upper.tabIndex = 0; }
-    if (lower) { lower.style.pointerEvents = 'auto'; lower.style.touchAction = 'manipulation'; }
+    if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
+    if (lower) { lower.style.pointerEvents = 'none';  lower.style.touchAction = 'none'; }
 
     // Habilita selección y búsqueda de targets
     c.skipTargetFind = false;
@@ -308,16 +308,12 @@ c.requestRenderAll?.();
 
   } else {
     // Estado fuera de diseño: sin edición
-    if (upper) { upper.style.pointerEvents = 'none'; }
+    if (upper) { upper.style.pointerEvents = 'none'; upper.style.touchAction = 'auto'; }
     if (lower) { lower.style.pointerEvents = 'auto'; }
     c.selection = false;
     c.skipTargetFind = true;
 
-    // Estado fuera de diseño: sin edición
-if (upper) { upper.style.pointerEvents = 'none'; }
-if (lower) { lower.style.pointerEvents = 'auto'; }
-c.selection = false;
-c.skipTargetFind = true;
+
 
 if (c && typeof c.getObjects === 'function') {
   const objs = c.getObjects() || [];
@@ -378,7 +374,7 @@ c.requestRenderAll?.();
     if (!el) return;
 
     const stopScroll = (e) => {
-      if (editing) { e.preventDefault(); e.stopPropagation(); }
+      if (editing) { e.preventDefault(); /* no stopPropagation, deja llegar a Fabric */ }
     };
 
     const addOpts = { passive: false };
