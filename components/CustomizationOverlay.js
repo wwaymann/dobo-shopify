@@ -289,6 +289,20 @@ useEffect(() => {
   window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
 }, [editing]);
 
+  useEffect(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  // Garantiza interactividad correcta tras cualquier cambio de modo
+  c.selection = !!editing;
+  c.skipTargetFind = !editing;
+  const upper = c.upperCanvasEl;
+  if (upper) {
+    upper.style.pointerEvents = editing ? 'auto' : 'none';
+    upper.style.touchAction   = editing ? 'none' : 'auto';
+  }
+}, [editing]);
+
+  
 // Zoom SIEMPRE activo (PC y móvil) sobre el stage.
 // Aparca Fabric solo durante pinch de 2 dedos cuando estás en modo Diseñar.
 useEffect(() => {
@@ -317,13 +331,14 @@ useEffect(() => {
   let pA = null, pB = null, startDist = 0, startScale = 1;
   let parked = false, saved = null;
 
-  const park = () => {
-    if (!editing || !c || parked) { parked = true; return; }
-    saved = { selection: c.selection, skip: c.skipTargetFind };
-    c.selection = false;
-    c.skipTargetFind = true;
-    parked = true;
-  };
+const park = () => {
+  if (!editing || !c || parked) return;
+  saved = { selection: c.selection, skip: c.skipTargetFind };
+  c.selection = false;
+  c.skipTargetFind = true;
+  parked = true;
+};
+
   const unpark = () => {
     if (!c || !parked) return;
     if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
@@ -351,12 +366,16 @@ useEffect(() => {
       writeZ(Math.max(0.8, Math.min(2.5, startScale * Math.pow(d / startDist, 0.9))));
     }
   };
-  const onPU = (e) => {
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) pA = null;
-    if (pB && e.pointerId === pB.id) pB = null;
-    if (!pA || !pB) { startDist = 0; startScale = 1; unpark(); }
-  };
+const onPU = (e) => {
+  if (e.pointerType !== 'touch') return;
+  if (pA && e.pointerId === pA.id) pA = null;
+  if (pB && e.pointerId === pB.id) pB = null;
+  // fin del gesto: reset y restaurar Fabric siempre
+  startDist = 0; 
+  startScale = 1;
+  unpark();
+};
+
 
   const optsWheel = { passive: false };
   const optsCap   = { passive: false, capture: true };
