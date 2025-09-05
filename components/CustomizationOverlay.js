@@ -172,27 +172,27 @@ export default function CustomizationOverlay({
       return 'none';
     };
 
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      let base = null;
-      if (!a) return;
-      if (a._kind === 'textGroup') {
-        base = a._textChildren?.base || null;
-      } else if (a.type === 'activeSelection') {
-        const g = a._objects?.find(o => o._kind === 'textGroup');
-        base = g?._textChildren?.base || null;
-      } else if (isText(a)) {
-        base = a;
-      }
-      if (base) {
-        setFontFamily(base.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(base.fontSize || 60);
-        setIsBold((base.fontWeight + '' === '700') || base.fontWeight === 'bold');
-        setIsItalic((base.fontStyle + '' === 'italic'));
-        setIsUnderline(!!base.underline);
-        setTextAlign(base.textAlign || 'center');
-      }
-    };
+  const reflectTypo = () => {
+  const a = c.getActiveObject();
+  if (!a) return;
+  let node = null;
+  if (a._kind === 'textGroup') node = a._textChildren?.base;
+  else if (a.type === 'activeSelection' && a._objects?.length) {
+    const tg = a._objects.find(o => o._kind === 'textGroup');
+    node = tg?._textChildren?.base || null;
+  } else if (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text') {
+    node = a;
+  }
+  if (node) {
+    setFontFamily(node.fontFamily || FONT_OPTIONS[0].css);
+    setFontSize(node.fontSize || 60);
+    setIsBold((node.fontWeight + '' === '700') || node.fontWeight === 'bold');
+    setIsItalic((node.fontStyle + '' === 'italic'));
+    setIsUnderline(!!node.underline);
+    setTextAlign(node.textAlign || 'center');
+  }
+};
+
 
     const onSel = () => {
       const cobj = c.getActiveObject();
@@ -342,6 +342,7 @@ export default function CustomizationOverlay({
   };
 
  // ===== Relieve Texto (grupo sincronizado) =====
+// ===== Relieve Texto (grupo sincronizado) =====
 const makeTextGroup = (text, opts = {}) => {
   const base = new fabric.Textbox(text, {
     ...opts,
@@ -349,8 +350,9 @@ const makeTextGroup = (text, opts = {}) => {
     left: 0, top: 0,
     selectable: false, evented: false,
     objectCaching: false, shadow: null, stroke: null,
-    fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
+    fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply',
   });
+
   const shadow = new fabric.Textbox(text, {
     ...opts,
     originX: 'center', originY: 'center',
@@ -358,8 +360,9 @@ const makeTextGroup = (text, opts = {}) => {
     selectable: false, evented: false,
     objectCaching: false, fill: '',
     stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
-    globalCompositeOperation: 'multiply'
+    globalCompositeOperation: 'multiply',
   });
+
   const highlight = new fabric.Textbox(text, {
     ...opts,
     originX: 'center', originY: 'center',
@@ -367,7 +370,7 @@ const makeTextGroup = (text, opts = {}) => {
     selectable: false, evented: false,
     objectCaching: false, fill: '',
     stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
-    globalCompositeOperation: 'screen'
+    globalCompositeOperation: 'screen',
   });
 
   const group = new fabric.Group([shadow, highlight, base], {
@@ -375,7 +378,7 @@ const makeTextGroup = (text, opts = {}) => {
     subTargetCheck: false,
     objectCaching: false,
     selectable: true, evented: true,
-    scaleX: 1, scaleY: 1
+    scaleX: 1, scaleY: 1,
   });
   group._kind = 'textGroup';
   group._textChildren = { shadow, highlight, base };
@@ -385,20 +388,18 @@ const makeTextGroup = (text, opts = {}) => {
     const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
     const ox = 1 / sx, oy = 1 / sy;
 
-    // clona propiedades del "base" y aplica offset inverso a la escala
-    const copyProps = o => {
-      o.set({
-        width: base.width,
-        text: base.text,
-        fontFamily: base.fontFamily,
-        fontSize: base.fontSize,
-        fontWeight: base.fontWeight,
-        fontStyle: base.fontStyle,
-        underline: base.underline,
-        textAlign: base.textAlign,
-        charSpacing: base.charSpacing
-      });
-    };
+    const copyProps = (o) => o.set({
+      width: base.width,
+      text: base.text,
+      fontFamily: base.fontFamily,
+      fontSize: base.fontSize,
+      fontWeight: base.fontWeight,
+      fontStyle: base.fontStyle,
+      underline: base.underline,
+      textAlign: base.textAlign,
+      charSpacing: base.charSpacing,
+    });
+
     copyProps(shadow);
     copyProps(highlight);
 
@@ -410,31 +411,31 @@ const makeTextGroup = (text, opts = {}) => {
     group.canvas?.requestRenderAll?.();
   };
   group._debossSync = sync;
-
-  // sincroniza en todas las transformaciones relevantes
   ['moving','scaling','rotating','skewing','modified','changed'].forEach(ev => group.on(ev, sync));
-
   sync();
   return group;
 };
 
 
+
   // ===== Acciones =====
   const addText = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const group = makeTextGroup('Nuevo párrafo', {
-      left: baseSize.w / 2, top: baseSize.h / 2,
-      width: Math.min(baseSize.w * 0.9, 220),
-      fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal',
-      fontStyle: isItalic ? 'italic' : 'normal',
-      underline: isUnderline, textAlign
-    });
-    c.add(group);
-    c.setActiveObject(group);
-    setSelType('text');
-    c.requestRenderAll();
-    setEditing(true);
+  const c = fabricCanvasRef.current; if (!c) return;
+  const opts = {
+    width: Math.min(baseSize.w * 0.9, 220),
+    fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal',
+    fontStyle: isItalic ? 'italic' : 'normal',
+    underline: isUnderline, textAlign, charSpacing: 0,
   };
+  const group = makeTextGroup('Nuevo párrafo', opts);
+  group.set({ left: baseSize.w / 2, top: baseSize.h / 2, originX: 'center', originY: 'center' });
+  c.add(group);
+  c.setActiveObject(group);
+  setSelType('text');
+  c.requestRenderAll();
+  setEditing(true);
+};
+
 
   const addImageFromFile = (file) => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
@@ -612,29 +613,31 @@ const makeTextGroup = (text, opts = {}) => {
   };
 
   // ===== Aplicar a selección (Texto agrupado) =====
-  const applyToSelection = (mutator) => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
+const applyToSelection = (mutator) => {
+  const c = fabricCanvasRef.current; if (!c) return;
+  const a = c.getActiveObject(); if (!a) return;
 
-    const applyOne = (obj) => {
-      if (obj?._kind === 'textGroup' && obj._textChildren?.base) {
-        const { base, shadow, highlight } = obj._textChildren;
-        mutator(base);
-        // sincronizar clones
-        const props = ['text','fontFamily','fontSize','fontWeight','fontStyle','underline','textAlign','charSpacing','width'];
-        props.forEach(p => { shadow.set(p, base[p]); highlight.set(p, base[p]); });
-        obj._debossSync && obj._debossSync();
-        obj.setCoords();
-      } else if (obj && (obj.type === 'i-text' || obj.type === 'textbox' || obj.type === 'text')) {
-        mutator(obj); obj.setCoords();
-      }
-    };
-
-    if (a.type === 'activeSelection' && Array.isArray(a._objects)) a._objects.forEach(applyOne);
-    else applyOne(a);
-
-    c.requestRenderAll();
+  const applyNode = (obj) => {
+    if (!obj) return;
+    if (obj._kind === 'textGroup') {
+      const { base, shadow, highlight } = obj._textChildren || {};
+      if (base) mutator(base);
+      if (shadow) mutator(shadow);
+      if (highlight) mutator(highlight);
+      obj._debossSync && obj._debossSync();
+      obj.setCoords();
+    } else if (obj.type === 'i-text' || obj.type === 'textbox' || obj.type === 'text') {
+      mutator(obj);
+      obj.setCoords();
+    }
   };
+
+  if (a.type === 'activeSelection' && Array.isArray(a._objects)) a._objects.forEach(applyNode);
+  else applyNode(a);
+
+  c.requestRenderAll();
+};
+
 
   // ===== Re-vectorización automática por Detalles/Invertir =====
   useEffect(() => {
