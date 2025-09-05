@@ -218,23 +218,20 @@ export default function CustomizationOverlay({
     };
   }, [visible]);
 
-  // Ajusta el tamaño del lienzo a la maceta
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.renderAll();
-  }, [baseSize.w, baseSize.h]);
-
-  // Modo edición: habilita canvas, deshabilita escena
-  // === Interactividad Fabric según editing ===
+ // Ajusta el tamaño del lienzo a la maceta
 useEffect(() => {
-  const c =
-    (typeof canvasRef !== 'undefined' && canvasRef?.current) ||
-    (typeof fabricCanvasRef !== 'undefined' && fabricCanvasRef?.current) ||
-    (typeof canvas !== 'undefined' && canvas) ||
-    null;
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  c.setWidth(baseSize.w);
+  c.setHeight(baseSize.h);
+  c.calcOffset?.();
+  c.requestRenderAll?.();
+}, [baseSize.w, baseSize.h]);
+
+// Modo edición: habilita canvas, deshabilita escena
+// === Interactividad Fabric según editing ===
+useEffect(() => {
+  const c = fabricCanvasRef.current;
   if (!c) return;
 
   const enableNode = (o, on) => {
@@ -247,7 +244,6 @@ useEffect(() => {
     o.hasBorders = on;
     if (o.type === 'i-text' || typeof o.enterEditing === 'function') o.editable = on;
     o.hoverCursor = on ? 'move' : 'default';
-
     const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
     if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
   };
@@ -256,23 +252,23 @@ useEffect(() => {
     c.skipTargetFind = !on;
     c.selection = on;
 
-    const objs = typeof c.getObjects === 'function' ? c.getObjects() : [];
-    objs.forEach(o => enableNode(o, on));
+    (c.getObjects?.() || []).forEach(o => enableNode(o, on));
 
-    const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
+    const upper = c.upperCanvasEl;
+    const lower = c.lowerCanvasEl;
 
+    if (upper) {
+      upper.style.pointerEvents = on ? 'auto' : 'none';
+      upper.style.touchAction   = on ? 'none' : 'auto';
+      upper.tabIndex = on ? 0 : -1;
+    }
+    if (lower) {
+      lower.style.pointerEvents = 'none';
+      lower.style.touchAction   = 'none';
+    }
 
-if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; }
-if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
-
-    else {
- if (upper) { upper.style.pointerEvents = 'none'; }
- if (upper) { upper.style.pointerEvents = 'none'; upper.style.touchAction = 'auto'; }
- if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
-}
-    
     c.defaultCursor = on ? 'move' : 'default';
-    c.discardActiveObject?.();
+    try { c.discardActiveObject(); } catch {}
     c.calcOffset?.();
     c.requestRenderAll?.();
     setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
@@ -281,12 +277,10 @@ if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none
   setAll(!!editing);
 }, [editing]);
 
-
-  // cuando cambie `editing`
+// cuando cambie `editing`
 useEffect(() => {
-  window.dispatchEvent(new CustomEvent("dobo-editing", { detail: { editing } }));
+  window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
 }, [editing]);
-
 
 // === Interactividad de Fabric mientras se diseña ===
 // Zoom en modo Diseñar (móvil y PC). Sólido: sin pointer capture y con reset.
@@ -359,6 +353,7 @@ useEffect(() => {
     window.removeEventListener('touchcancel', reset);
   };
 }, [editing, stageRef]);
+
 
 
 
