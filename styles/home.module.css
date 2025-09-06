@@ -134,4 +134,36 @@
 /* styles/home.module.css */
 .carouselTrack { display:flex; will-change:transform; }
 .carouselItem { flex:0 0 100%; }
+
+/* ——— Dots carrusel ——— */
+.dots {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  user-select: none;
+}
+.dotsTop { top: -28px; }
+.dotsBottom { bottom: -28px; }
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 0;
+  background: #53565a;           /* gris UI */
+  opacity: 0.35;
+  cursor: pointer;
+}
+.dotActive { opacity: 1; background: #21c55d; }  /* verde activo */
+.dotsLabel {
+  font-size: 0.9rem;
+  color: #cfd3d7;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
   
