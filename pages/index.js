@@ -339,15 +339,19 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
 
 /* ---------- fetch products ---------- */
 const fetchBy = async ({ type, size, first = 50 }) => {
-  const qs = [
-    `type=${encodeURIComponent(type)}`,
-    size ? `size=${encodeURIComponent(size)}` : null,
-    `first=${first}`,
-  ].filter(Boolean).join('&');
-  const r = await fetch(`/api/products?${qs}`, { cache: 'no-store' });
+  const qs = new URLSearchParams();
+  if (type) qs.set("type", type);              // opcional: tu backend puede ignorarlo
+  if (size) qs.set("size", size);              // "Grande" | "Mediano" | "Pequeño"
+  qs.set("first", String(first));
+
+  const r = await fetch(`/api/products?${qs.toString()}`, { cache: "no-store" });
   if (!r.ok) return [];
-  return r.json();
+
+  const data = await r.json();
+  // Soporta ambos formatos: array puro o { products: [...] }
+  return Array.isArray(data) ? data : (data.products || []);
 };
+
 
 useEffect(() => {
   (async () => {
