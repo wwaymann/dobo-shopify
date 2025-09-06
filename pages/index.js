@@ -886,31 +886,7 @@ onContextMenu={(e) => e.preventDefault()}
 
                 {...potSwipeEvents}
               >
-<IndicatorDots
-  count={pots.length}
-  current={selectedPotIndex}
-  onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-  position="bottom"
-/>
 
-<button
-  className={`${styles.chev} ${styles.chevLeft}`}
-  aria-label="Anterior"
-  onClick={() => setSelectedPotIndex(Math.max(0, selectedPotIndex - 1))}
->
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M15 18l-6-6 6-6"/>
-  </svg>
-</button>
-<button
-  className={`${styles.chev} ${styles.chevRight}`}
-  aria-label="Siguiente"
-  onClick={() => setSelectedPotIndex(Math.min(pots.length - 1, selectedPotIndex + 1))}
->
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M9 6l6 6-6 6"/>
-  </svg>
-</button>
 
 
 
@@ -951,31 +927,7 @@ onContextMenu={(e) => e.preventDefault()}
 
                 {...plantSwipeEvents}
               >
-<IndicatorDots
-  count={plants.length}
-  current={selectedPlantIndex}
-  onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-  position="top"
-/>
 
-<button
-  className={`${styles.chev} ${styles.chevLeft}`}
-  aria-label="Anterior"
-  onClick={() => setSelectedPlantIndex(Math.max(0, selectedPlantIndex - 1))}
->
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M15 18l-6-6 6-6"/>
-  </svg>
-</button>
-<button
-  className={`${styles.chev} ${styles.chevRight}`}
-  aria-label="Siguiente"
-  onClick={() => setSelectedPlantIndex(Math.min(plants.length - 1, selectedPlantIndex + 1))}
->
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M9 6l6 6-6 6"/>
-  </svg>
-</button>
 
 
                 
