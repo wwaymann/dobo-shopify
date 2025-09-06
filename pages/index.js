@@ -3,25 +3,9 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
-import { useProductsBySize } from "../components/useProductsBySize";
 
-export default function Home() {
-  const { size, setSize, products, loading } = useProductsBySize("Grande");
 
-  return (
-    <div className="container">
-      {/* Selector de tamaño: pega esto arriba del carrusel */}
-      <div className="btn-group my-3">
-        {["Grande","Mediano","Pequeño"].map(s => (
-          <button
-            key={s}
-            className={`btn btn-sm ${size===s ? "btn-primary" : "btn-outline-primary"}`}
-            onClick={() => setSize(s)}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+
 
       {/* Carrusel/lista: reemplaza tu fuente de datos por `products` */}
       {loading && <p>Cargando…</p>}
@@ -83,8 +67,24 @@ const firstVariantPrice = (p) => {
 const productMin = (p) => num(p?.minPrice);
 
 /* ---------- size tag helpers ---------- */
-const SIZE_PREFIX = 'sz:';
-const getSizeTag = (tags = []) => (Array.isArray(tags) ? tags.find(t => String(t).startsWith(SIZE_PREFIX)) : '') || '';
+const getSizeTag = (tags = []) => {
+  if (!Array.isArray(tags)) return '';
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const hit = tags.find(t => {
+    const n = norm(t);
+    return n === 'grande' || n === 'mediano' || n === 'pequeño' || n === 'pequeno' || n.startsWith('sz:');
+  });
+  // Devuelve el valor capitalizado correcto
+  if (!hit) return '';
+  const h = norm(hit);
+  if (h.startsWith('sz:')) return hit.slice(3);
+  if (h === 'pequeno') return 'Pequeño';
+  if (h === 'grande') return 'Grande';
+  if (h === 'mediano') return 'Mediano';
+  if (h === 'pequeño') return 'Pequeño';
+  return '';
+};
+
 
 
 /* ---------- hover zoom helpers ---------- */
@@ -190,7 +190,7 @@ function makeSwipeEvents(swipeRef, handlers) {
   };
 }
 
-function Home() {
+function HomeContent() {
   /* ---------- state ---------- */
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
@@ -1250,4 +1250,4 @@ export async function getServerSideProps() {
   // Evita problemas de prerender en build; renderizamos en cliente
   return { props: {} };
 }
-export default dynamic(() => Promise.resolve(Home), { ssr: false });
+export default dynamic(() => Promise.resolve(HomeContent), { ssr: false });
