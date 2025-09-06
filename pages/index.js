@@ -4,9 +4,6 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 
-
-
-
 // --- Indicadores para carruseles ---
 function IndicatorDots({ count, current, onSelect, position = "bottom", label }) {
   if (!count || count < 2) return null;
@@ -44,27 +41,6 @@ const firstVariantPrice = (p) => {
   return v ? num(v) : num(p?.minPrice);
 };
 const productMin = (p) => num(p?.minPrice);
-
-/* ---------- size tag helpers ---------- */
-const getSizeTag = (tags = []) => {
-  if (!Array.isArray(tags)) return '';
-  const norm = (s) => String(s || '').trim().toLowerCase();
-  const hit = tags.find(t => {
-    const n = norm(t);
-    return n === 'grande' || n === 'mediano' || n === 'pequeño' || n === 'pequeno' || n.startsWith('sz:');
-  });
-  // Devuelve el valor capitalizado correcto
-  if (!hit) return '';
-  const h = norm(hit);
-  if (h.startsWith('sz:')) return hit.slice(3);
-  if (h === 'pequeno') return 'Pequeño';
-  if (h === 'grande') return 'Grande';
-  if (h === 'mediano') return 'Mediano';
-  if (h === 'pequeño') return 'Pequeño';
-  return '';
-};
-
-
 
 /* ---------- hover zoom helpers ---------- */
 const escapeHtml = (s) =>
@@ -169,7 +145,7 @@ function makeSwipeEvents(swipeRef, handlers) {
   };
 }
 
-function HomeContent() {
+function Home() {
   /* ---------- state ---------- */
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
@@ -190,37 +166,6 @@ function HomeContent() {
   const [sizeOptions, setSizeOptions] = useState([]);
 
   const [cartId, setCartId] = useState(null);
-// Sync: al cambiar maceta -> plantas del mismo tamaño
-useEffect(() => {
-  const pot = pots[selectedPotIndex];
-  const size = pot ? getSizeTag(pot.tags) : '';
-  let cancelled = false;
-  (async () => {
-    if (!size) return;
-    const next = await fetchBy({ type: 'planta', size });
-    if (!cancelled) {
-      setPlants(Array.isArray(next) ? next : []);
-      setSelectedPlantIndex(0);
-    }
-  })();
-  return () => { cancelled = true; };
-}, [selectedPotIndex, pots]);
-
-// Sync: al cambiar planta -> macetas del mismo tamaño
-useEffect(() => {
-  const plant = plants[selectedPlantIndex];
-  const size = plant ? getSizeTag(plant.tags) : '';
-  let cancelled = false;
-  (async () => {
-    if (!size) return;
-    const next = await fetchBy({ type: 'maceta', size });
-    if (!cancelled) {
-      setPots(Array.isArray(next) ? next : []);
-      setSelectedPotIndex(0);
-    }
-  })();
-  return () => { cancelled = true; };
-}, [selectedPlantIndex, plants]);
 
   /* ---------- refs ---------- */
   const zoomRef = useRef(1);
@@ -316,37 +261,53 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
     Beige: "#EAD8AB",
   };
 
-/* ---------- fetch products ---------- */
-const fetchBy = async ({ type, size, first = 50 }) => {
-  const qs = new URLSearchParams();
-  if (type) qs.set("type", type);              // opcional: tu backend puede ignorarlo
-  if (size) qs.set("size", size);              // "Grande" | "Mediano" | "Pequeño"
-  qs.set("first", String(first));
+  /* ---------- fetch products ---------- */
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const res = await fetch("/api/products", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
 
-  const r = await fetch(`/api/products?${qs.toString()}`, { cache: "no-store" });
-  if (!r.ok) return [];
+        const arr = Array.isArray(data) ? data : [];
+        const safe = arr.map((p) => ({
+          ...p,
+          description: p?.description || p?.descriptionHtml || p?.body_html || "",
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          variants: Array.isArray(p?.variants) ? p.variants : [],
+          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+        }));
 
-  const data = await r.json();
-  // Soporta ambos formatos: array puro o { products: [...] }
-  return Array.isArray(data) ? data : (data.products || []);
-};
+        const byTag = (t) => safe.filter((p) => p.tags.some((tag) => String(tag).toLowerCase().includes(t)));
 
+        let plantas = byTag("plantas");
+        let macetas = byTag("macetas");
+        let accesorios = byTag("accesorios");
 
-useEffect(() => {
-  (async () => {
-    // 1) Carga macetas sin filtro
-    const basePots = await fetchBy({ type: 'maceta' });
-    setPots(Array.isArray(basePots) ? basePots : []);
+        if (plantas.length + macetas.length + accesorios.length === 0 && safe.length > 0) {
+          macetas = safe;
+          plantas = [];
+          accesorios = [];
+        }
 
-    // 2) Deriva tamaño de la primera maceta
-    const defaultSize = getSizeTag(basePots?.[0]?.tags) || '';
+        setPlants(plantas);
+        setPots(macetas);
+        setAccessories(accesorios);
 
-    // 3) Carga plantas por el mismo tamaño
-    const basePlants = await fetchBy({ type: 'planta', size: defaultSize });
-    setPlants(Array.isArray(basePlants) ? basePlants : []);
-  })();
-}, []);
-
+        if (macetas.length > 0) {
+          const fv = (macetas[0].variants || []).find((v) => v?.availableForSale) || macetas[0].variants?.[0] || null;
+          setSelectedPotVariant(fv || null);
+        }
+      } catch (err) {
+        console.error("Error fetching products:", err);
+        setPlants([]);
+        setPots([]);
+        setAccessories([]);
+      }
+    }
+    fetchProducts();
+  }, []);
 
   /* ---------- handlers & swipe events ---------- */
   const createHandlers = (items, setIndex) => ({
@@ -1229,4 +1190,4 @@ export async function getServerSideProps() {
   // Evita problemas de prerender en build; renderizamos en cliente
   return { props: {} };
 }
-export default dynamic(() => Promise.resolve(HomeContent), { ssr: false });
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
