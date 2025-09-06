@@ -1,102 +1,82 @@
 // pages/api/products.js
-// Busca productos por TAG de tamaño: "Grande", "Mediano", "Pequeño"
-
-const STORE_DOMAIN =
-  process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_STORE_DOMAIN; // ej: "um7xus-0u.myshopify.com"
-const STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
-const API_VERSION = process.env.SHOPIFY_STOREFRONT_API_VERSION || "2025-01";
-
-const ENDPOINT = `https://${STORE_DOMAIN}/api/${API_VERSION}/graphql.json`;
-
-function normalizeSize(raw) {
-  if (!raw) return null;
-  const s = String(raw).trim().toLowerCase();
-  if (["grande", "g"].includes(s)) return "Grande";
-  if (["mediano", "m"].includes(s)) return "Mediano";
-  // soporta con y sin tilde
-  if (["pequeño", "pequeno", "p"].includes(s)) return "Pequeño";
-  return null;
-}
-
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.setHeader("Allow", "GET");
-    return res.status(405).json({ error: "Method Not Allowed" });
-  }
+  try {
+    const domain = process.env.SHOPIFY_STORE_DOMAIN;          // p.ej. um7xus-0u.myshopify.com
+    const version = process.env.SHOPIFY_API_VERSION || '2025-01';
+    const token = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 
-  if (!STORE_DOMAIN || !STOREFRONT_TOKEN) {
-    return res.status(500).json({ error: "Faltan variables de entorno Shopify" });
-  }
-
-  const sizeTag = normalizeSize(req.query.size);
-  if (!sizeTag) {
-    return res.status(400).json({ error: "Parámetro 'size' inválido. Use Grande, Mediano o Pequeño." });
-  }
-
-  // Construye la query de Shopify. Importante: el filtro por tag va dentro del string de búsqueda.
-  const gql = /* GraphQL */ `
-    query ProductsByTag($search: String!, $first: Int!) {
-      products(first: $first, query: $search) {
-        edges {
-          node {
-            id
-            handle
-            title
-            tags
-            images(first: 1) {
-              edges {
-                node {
-                  url
-                  altText
+    const query = `
+      query {
+        products(first: 100) {
+          edges {
+            node {
+              id
+              title
+              tags
+              description
+              descriptionHtml
+              images(first: 1) {
+                edges { node { url originalSrc src altText } }
+              }
+              priceRange {
+                minVariantPrice { amount currencyCode }
+              }
+              variants(first: 100) {
+                edges {
+                  node {
+                    id
+                    availableForSale
+                    selectedOptions { name value }
+                    image { url originalSrc src }
+                    price { amount currencyCode }
+                    compareAtPrice { amount currencyCode }
+                  }
                 }
               }
             }
           }
         }
       }
-    }
-  `;
+    `;
 
-  // Ejemplo de búsqueda:  tag:'Grande'
-  const variables = {
-    search: `tag:'${sizeTag}'`,
-    first: Number(req.query.first || 30),
-  };
-
-  try {
-    const resp = await fetch(ENDPOINT, {
-      method: "POST",
+    const resp = await fetch(`https://${domain}/api/${version}/graphql.json`, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Storefront-Access-Token": STOREFRONT_TOKEN,
+        'Content-Type': 'application/json',
+        'X-Shopify-Storefront-Access-Token': token,
       },
-      body: JSON.stringify({ query: gql, variables }),
+      body: JSON.stringify({ query }),
     });
 
     const json = await resp.json();
-
     if (!resp.ok || json.errors) {
-      return res.status(502).json({
-        error: "Error desde Shopify",
-        details: json.errors || json,
-      });
+      return res.status(401).json({ ok:false, reason:'shopify_error', detail: JSON.stringify(json) });
     }
 
-    const items =
-      json.data?.products?.edges?.map(({ node }) => ({
-        id: node.id,
-        handle: node.handle,
-        title: node.title,
-        tags: node.tags,
-        image: node.images?.edges?.[0]?.node?.url || null,
-        alt: node.images?.edges?.[0]?.node?.altText || null,
-      })) || [];
+    const products = (json.data?.products?.edges ?? []).map(({ node }) => ({
+      id: node.id,
+      title: node.title,
+      tags: node.tags || [],
+      description: node.descriptionHtml || node.description || "",
+      image:
+        node.images?.edges?.[0]?.node?.url ||
+        node.images?.edges?.[0]?.node?.originalSrc ||
+        node.images?.edges?.[0]?.node?.src ||
+        "",
+      minPrice: node.priceRange?.minVariantPrice || { amount: 0, currencyCode: 'CLP' },
+      variants: (node.variants?.edges ?? []).map(({ node: v }) => ({
+        id: v.id,
+        availableForSale: v.availableForSale,
+        selectedOptions: v.selectedOptions || [],
+        image: v.image?.url || v.image?.originalSrc || v.image?.src || "",
+        price: v.price || { amount: 0, currencyCode: 'CLP' },
+        compareAtPrice: v.compareAtPrice || null,
+      })),
+    }));
 
-    // Cache suave para Vercel (opcional)
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-
-    return res.status(200).json({ size: sizeTag, count: items.length, products: items });
+    res.status(200).json(products);
   } catch (e) {
-    return res.status(500).json({ error: "Fallo de red o parsing", details: String(e) });
+    console.error(e);
+    res.status(500).json({ ok:false, error:'api_products_failed' });
   }
 }
