@@ -4,29 +4,6 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 
-// --- Indicadores para carruseles ---
-function IndicatorDots({ count, current, onSelect, position = "bottom", label }) {
-  if (!count || count < 2) return null;
-  return (
-    <div
-      className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}
-      aria-label={label || "Indicadores"}
-    >
-      {Array.from({ length: count }).map((_, i) => (
-        <button
-          key={i}
-          type="button"
-          className={`${styles.dot} ${i === current ? styles.dotActive : ""}`}
-          aria-current={i === current ? "true" : "false"}
-          onClick={() => onSelect(i)}
-        />
-      ))}
-      {label ? <span className={styles.dotsLabel}>{label}</span> : null}
-    </div>
-  );
-}
-
-
 /* ---------- helpers precio & num ---------- */
 const money = (amount, currency = "CLP") =>
   new Intl.NumberFormat("es-CL", {
@@ -825,38 +802,6 @@ useEffect(() => {
               userSelect: "none",
             }}
           >
-  {/* === INSERTAR BLOQUE FIJO AQUÍ === */}
-  <IndicatorDots
-    count={plants.length}
-    current={selectedPlantIndex}
-    onSelect={(i)=>setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length-1)))}
-    position="top"
-  />
-  <IndicatorDots
-    count={pots.length}
-    current={selectedPotIndex}
-    onSelect={(i)=>setSelectedPotIndex(Math.max(0, Math.min(i, pots.length-1)))}
-    position="bottom"
-  />
-
-  <button className={`${styles.chev} ${styles.chevTopLeft}`} aria-label="Anterior planta"
-    onClick={()=>setSelectedPlantIndex(Math.max(0, selectedPlantIndex-1))}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-  </button>
-  <button className={`${styles.chev} ${styles.chevTopRight}`} aria-label="Siguiente planta"
-    onClick={()=>setSelectedPlantIndex(Math.min(plants.length-1, selectedPlantIndex+1))}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-  </button>
-
-  <button className={`${styles.chev} ${styles.chevBottomLeft}`} aria-label="Anterior maceta"
-    onClick={()=>setSelectedPotIndex(Math.max(0, selectedPotIndex-1))}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-  </button>
-  <button className={`${styles.chev} ${styles.chevBottomRight}`} aria-label="Siguiente maceta"
-    onClick={()=>setSelectedPotIndex(Math.min(pots.length-1, selectedPotIndex+1))}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-  </button>
-
             {/* Nodo ESCALADO */}
             <div
               ref={stageRef}
@@ -886,10 +831,6 @@ onContextMenu={(e) => e.preventDefault()}
 
                 {...potSwipeEvents}
               >
-
-
-
-
                 <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                   {pots.map((product, index) => {
                     const isSelected = index === selectedPotIndex;
@@ -927,10 +868,6 @@ onContextMenu={(e) => e.preventDefault()}
 
                 {...plantSwipeEvents}
               >
-
-
-
-                
                 <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                   {plants.map((product) => (
                     <div key={product.id} className={styles.carouselItem}>
