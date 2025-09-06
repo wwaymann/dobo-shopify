@@ -3,6 +3,46 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
+import { useProductsBySize } from "../components/useProductsBySize";
+
+export default function Home() {
+  const { size, setSize, products, loading } = useProductsBySize("Grande");
+
+  return (
+    <div className="container">
+      {/* Selector de tamaño: pega esto arriba del carrusel */}
+      <div className="btn-group my-3">
+        {["Grande","Mediano","Pequeño"].map(s => (
+          <button
+            key={s}
+            className={`btn btn-sm ${size===s ? "btn-primary" : "btn-outline-primary"}`}
+            onClick={() => setSize(s)}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* Carrusel/lista: reemplaza tu fuente de datos por `products` */}
+      {loading && <p>Cargando…</p>}
+      {!loading && products.length === 0 && <p>Sin resultados para {size}.</p>}
+      <div className="row">
+        {products.map(p => (
+          <div key={p.id} className="col-6 col-md-4 col-lg-3 mb-3">
+            <div className="card h-100">
+              {p.image && <img src={p.image} className="card-img-top" alt={p.alt || p.title} />}
+              <div className="card-body">
+                <h6 className="card-title">{p.title}</h6>
+                <small className="text-muted">{p.tags?.join(", ")}</small>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 // --- Indicadores para carruseles ---
 function IndicatorDots({ count, current, onSelect, position = "bottom", label }) {
