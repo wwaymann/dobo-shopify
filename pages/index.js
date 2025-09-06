@@ -42,6 +42,11 @@ const firstVariantPrice = (p) => {
 };
 const productMin = (p) => num(p?.minPrice);
 
+/* ---------- size tag helpers ---------- */
+const SIZE_PREFIX = 'sz:';
+const getSizeTag = (tags = []) => (Array.isArray(tags) ? tags.find(t => String(t).startsWith(SIZE_PREFIX)) : '') || '';
+
+
 /* ---------- hover zoom helpers ---------- */
 const escapeHtml = (s) =>
   (s &&
@@ -166,6 +171,37 @@ function Home() {
   const [sizeOptions, setSizeOptions] = useState([]);
 
   const [cartId, setCartId] = useState(null);
+// Sync: al cambiar maceta -> plantas del mismo tamaño
+useEffect(() => {
+  const pot = pots[selectedPotIndex];
+  const size = pot ? getSizeTag(pot.tags) : '';
+  let cancelled = false;
+  (async () => {
+    if (!size) return;
+    const next = await fetchBy({ type: 'planta', size });
+    if (!cancelled) {
+      setPlants(Array.isArray(next) ? next : []);
+      setSelectedPlantIndex(0);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [selectedPotIndex, pots]);
+
+// Sync: al cambiar planta -> macetas del mismo tamaño
+useEffect(() => {
+  const plant = plants[selectedPlantIndex];
+  const size = plant ? getSizeTag(plant.tags) : '';
+  let cancelled = false;
+  (async () => {
+    if (!size) return;
+    const next = await fetchBy({ type: 'maceta', size });
+    if (!cancelled) {
+      setPots(Array.isArray(next) ? next : []);
+      setSelectedPotIndex(0);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [selectedPlantIndex, plants]);
 
   /* ---------- refs ---------- */
   const zoomRef = useRef(1);
@@ -261,53 +297,33 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
     Beige: "#EAD8AB",
   };
 
-  /* ---------- fetch products ---------- */
-  useEffect(() => {
-    async function fetchProducts() {
-      try {
-        const res = await fetch("/api/products", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+/* ---------- fetch products ---------- */
+const fetchBy = async ({ type, size, first = 50 }) => {
+  const qs = [
+    `type=${encodeURIComponent(type)}`,
+    size ? `size=${encodeURIComponent(size)}` : null,
+    `first=${first}`,
+  ].filter(Boolean).join('&');
+  const r = await fetch(`/api/products?${qs}`, { cache: 'no-store' });
+  if (!r.ok) return [];
+  return r.json();
+};
 
-        const arr = Array.isArray(data) ? data : [];
-        const safe = arr.map((p) => ({
-          ...p,
-          description: p?.description || p?.descriptionHtml || p?.body_html || "",
-          tags: Array.isArray(p?.tags) ? p.tags : [],
-          variants: Array.isArray(p?.variants) ? p.variants : [],
-          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-        }));
+useEffect(() => {
+  (async () => {
+    // 1) Carga macetas sin filtro
+    const basePots = await fetchBy({ type: 'maceta' });
+    setPots(Array.isArray(basePots) ? basePots : []);
 
-        const byTag = (t) => safe.filter((p) => p.tags.some((tag) => String(tag).toLowerCase().includes(t)));
+    // 2) Deriva tamaño de la primera maceta
+    const defaultSize = getSizeTag(basePots?.[0]?.tags) || '';
 
-        let plantas = byTag("plantas");
-        let macetas = byTag("macetas");
-        let accesorios = byTag("accesorios");
+    // 3) Carga plantas por el mismo tamaño
+    const basePlants = await fetchBy({ type: 'planta', size: defaultSize });
+    setPlants(Array.isArray(basePlants) ? basePlants : []);
+  })();
+}, []);
 
-        if (plantas.length + macetas.length + accesorios.length === 0 && safe.length > 0) {
-          macetas = safe;
-          plantas = [];
-          accesorios = [];
-        }
-
-        setPlants(plantas);
-        setPots(macetas);
-        setAccessories(accesorios);
-
-        if (macetas.length > 0) {
-          const fv = (macetas[0].variants || []).find((v) => v?.availableForSale) || macetas[0].variants?.[0] || null;
-          setSelectedPotVariant(fv || null);
-        }
-      } catch (err) {
-        console.error("Error fetching products:", err);
-        setPlants([]);
-        setPots([]);
-        setAccessories([]);
-      }
-    }
-    fetchProducts();
-  }, []);
 
   /* ---------- handlers & swipe events ---------- */
   const createHandlers = (items, setIndex) => ({
