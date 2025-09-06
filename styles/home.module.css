@@ -136,28 +136,24 @@
 .carouselItem { flex:0 0 100%; }
 
 /* — Google Shopping dots — */
-.dots {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  pointer-events: auto;
-  user-select: none;
+/* Overlay fijo estilo Google, no escala con zoom */
+.dots{
+  position:absolute; left:50%; transform:translateX(-50%);
+  display:flex; gap:5px; z-index:5; pointer-events:auto; user-select:none;
 }
-.dotsTop { top: -22px; }
-.dotsBottom { bottom: 10px; }
+.dotsTop{ top:6px; }
+.dotsBottom{ bottom:6px; }
 
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  border: 0;
-  background: #c7c7c7;
-  opacity: 1;
-  cursor: pointer;
-  transition: width .18s ease, opacity .18s ease, background-color .18s ease;
+.dot{
+  width:6px; height:6px; border-radius:50%;
+  border:0; background:#c7c7c7; opacity:.8;
+  transition:transform .15s, opacity .15s, box-shadow .15s;
+}
+.dot:hover{ opacity:1; }
+.dot:active{ transform:scale(.9); }
+.dotActive{
+  width:8px; height:8px; border-radius:50%;
+  background:#21c55d; opacity:1; box-shadow:0 0 0 2px rgba(0,0,0,.08) inset;
 }
 .dotActive {
   width: 22px;              /* “pastilla” activa */
@@ -166,22 +162,16 @@
   background: #c7c7c7;
 }
 
-/* — Flechas sobre la imagen — */
-.chev {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px; height: 32px;
-  border: 0;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0,0,0,.25);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  opacity: .95;
+/* Flechas */
+.chev{
+  position:absolute; z-index:5;
+  width:32px; height:32px; border:0; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; opacity:.95; transition:transform .12s, box-shadow .12s;
 }
-.chevLeft  { left: 8px; }
-.chevRight { right: 8px; }
-.chev svg { width: 18px; height: 18px; }
-
+.chev:active{ transform:scale(.98); box-shadow:0 2px 6px rgba(0,0,0,.3); }
+.chevTopLeft{ top:6px; left:8px; } .chevTopRight{ top:6px; right:8px; }
+.chevBottomLeft{ bottom:6px; left:8px; } .chevBottomRight{ bottom:6px; right:8px; }
+.chev svg{ width:18px; height:18px; }
   
