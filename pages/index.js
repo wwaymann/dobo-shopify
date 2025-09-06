@@ -7,27 +7,6 @@ import dynamic from "next/dynamic";
 
 
 
-      {/* Carrusel/lista: reemplaza tu fuente de datos por `products` */}
-      {loading && <p>Cargando…</p>}
-      {!loading && products.length === 0 && <p>Sin resultados para {size}.</p>}
-      <div className="row">
-        {products.map(p => (
-          <div key={p.id} className="col-6 col-md-4 col-lg-3 mb-3">
-            <div className="card h-100">
-              {p.image && <img src={p.image} className="card-img-top" alt={p.alt || p.title} />}
-              <div className="card-body">
-                <h6 className="card-title">{p.title}</h6>
-                <small className="text-muted">{p.tags?.join(", ")}</small>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
 // --- Indicadores para carruseles ---
 function IndicatorDots({ count, current, onSelect, position = "bottom", label }) {
   if (!count || count < 2) return null;
