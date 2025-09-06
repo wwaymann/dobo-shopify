@@ -825,6 +825,38 @@ useEffect(() => {
               userSelect: "none",
             }}
           >
+  {/* === INSERTAR BLOQUE FIJO AQUÍ === */}
+  <IndicatorDots
+    count={plants.length}
+    current={selectedPlantIndex}
+    onSelect={(i)=>setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length-1)))}
+    position="top"
+  />
+  <IndicatorDots
+    count={pots.length}
+    current={selectedPotIndex}
+    onSelect={(i)=>setSelectedPotIndex(Math.max(0, Math.min(i, pots.length-1)))}
+    position="bottom"
+  />
+
+  <button className={`${styles.chev} ${styles.chevTopLeft}`} aria-label="Anterior planta"
+    onClick={()=>setSelectedPlantIndex(Math.max(0, selectedPlantIndex-1))}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+  <button className={`${styles.chev} ${styles.chevTopRight}`} aria-label="Siguiente planta"
+    onClick={()=>setSelectedPlantIndex(Math.min(plants.length-1, selectedPlantIndex+1))}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+  </button>
+
+  <button className={`${styles.chev} ${styles.chevBottomLeft}`} aria-label="Anterior maceta"
+    onClick={()=>setSelectedPotIndex(Math.max(0, selectedPotIndex-1))}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+  <button className={`${styles.chev} ${styles.chevBottomRight}`} aria-label="Siguiente maceta"
+    onClick={()=>setSelectedPotIndex(Math.min(pots.length-1, selectedPotIndex+1))}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+  </button>
+
             {/* Nodo ESCALADO */}
             <div
               ref={stageRef}
