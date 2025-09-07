@@ -16,17 +16,17 @@ const isPlanta = (p) => {
   return t === "planta" || t === "plantas" || tags.includes("planta") || tags.includes("plantas");
 };
 const getSizeTag = (tags = []) => {
-  if (!Array.isArray(tags)) return '';
-  const n = (s) => String(s||'').trim().toLowerCase();
-  const hit = tags.find(t => ["grande","mediano","pequeño","pequeno"].includes(n(t)) || n(t).startsWith("sz:"));
-  if (!hit) return '';
+  if (!Array.isArray(tags)) return "";
+  const n = (s) => String(s || "").trim().toLowerCase();
+  const hit = tags.find(t => ["grande","mediana","mediano","pequeña","pequena","pequeño","pequeno","perqueña","perquena"].includes(n(t)) || n(t).startsWith("sz:"));
+  if (!hit) return "";
   const h = n(hit);
   if (h.startsWith("sz:")) return hit.slice(3);
-  if (h === "pequeno") return "Pequeño";
-  if (h === "grande")  return "Grande";
-  if (h === "mediano") return "Mediano";
-  if (h === "pequeño") return "Pequeño";
-  return '';
+  if (h === "grande") return "Grande";
+  if (h === "mediano" || h === "mediana") return "Mediana";
+  // Ajusta a tu tag real si usas “perqueña”
+  if (["pequeño","pequeno","pequeña","pequena","perqueña","perquena"].includes(h)) return "Pequeña";
+  return "";
 };
 
 /* ---------- helpers precio & num ---------- */
@@ -36,7 +36,6 @@ const money = (amount, currency = "CLP") =>
     currency,
     maximumFractionDigits: 0,
   }).format(Number(amount || 0));
-
 const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
 const firstVariantPrice = (p) => {
   const v = p?.variants?.[0]?.price;
@@ -44,12 +43,9 @@ const firstVariantPrice = (p) => {
 };
 const productMin = (p) => num(p?.minPrice);
 
-/* ---------- hover zoom helpers ---------- */
+/* ---------- hover preview ---------- */
 const escapeHtml = (s) =>
-  (s &&
-    s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) ||
-  "";
-
+  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
 const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -65,7 +61,7 @@ p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
   <p>${escapeHtml(desc || "")}</p>
 </div></body></html>`;
 
-
+/* ---------- IframePreview ---------- */
 function getPreviewRect() {
   if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
   const isMobile = window.innerWidth <= 768;
@@ -73,7 +69,6 @@ function getPreviewRect() {
   const h = isMobile ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
   return { w, h, centered: isMobile };
 }
-
 function IframePreview(props) {
   if (!props.visible) return null;
   const dims = getPreviewRect();
@@ -89,7 +84,6 @@ function IframePreview(props) {
   const style = dims.centered
     ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: dims.w, height: dims.h }
     : { ...base, left: props.x, top: props.y, width: dims.w, height: dims.h };
-
   return (
     <div style={style}>
       <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
@@ -97,6 +91,28 @@ function IframePreview(props) {
   );
 }
 
+/* ---------- Indicadores tipo Google Shopping ---------- */
+function IndicatorDots({ count, current, onSelect, position = "bottom", label }) {
+  if (!count || count < 2) return null;
+  return (
+    <div
+      className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}
+      aria-label={label || "Indicadores"}
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <button
+          key={i}
+          type="button"
+          className={`${styles.dot} ${i === current ? styles.dotActive : ""}`}
+          aria-current={i === current ? "true" : "false"}
+          onClick={() => onSelect(i)}
+        />
+      ))}
+      {label ? <span className={styles.dotsLabel}>{label}</span> : null}
+      <span className={styles.dotsLabel}>{current + 1}/{count}</span>
+    </div>
+  );
+}
 
 /* ---------- dynamic overlay ---------- */
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
@@ -104,7 +120,7 @@ const CustomizationOverlay = dynamic(() => import("../components/CustomizationOv
 /* ---------- shop ---------- */
 const SHOP_DOMAIN = "um7xus-0u.myshopify.com";
 
-/* ---------- swipe factory (hoisted) ---------- */
+/* ---------- swipe factory ---------- */
 function makeSwipeEvents(swipeRef, handlers) {
   const begin = (x, y, id, el) => {
     swipeRef.current = { active: true, id, x, y };
@@ -132,14 +148,8 @@ function makeSwipeEvents(swipeRef, handlers) {
     onPointerMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
     onPointerUp: (e) => end(e, e.currentTarget),
     onPointerCancel: (e) => end(e, e.currentTarget),
-    onTouchStart: (e) => {
-      const t = e.touches[0];
-      begin(t.clientX, t.clientY, null, e.currentTarget);
-    },
-    onTouchMove: (e) => {
-      const t = e.touches[0];
-      move(t.clientX, t.clientY, e, e.currentTarget);
-    },
+    onTouchStart: (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, null, e.currentTarget); },
+    onTouchMove: (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e, e.currentTarget); },
     onTouchEnd: (e) => end(e, e.currentTarget),
     onTouchCancel: (e) => end(e, e.currentTarget),
     onMouseDown: (e) => begin(e.clientX, e.clientY, null, e.currentTarget),
@@ -181,24 +191,19 @@ function Home() {
 
   const [editing, setEditing] = useState(false);
 
-  // Tamaño maestro: controla filtros de macetas y plantas
+  // Tamaño maestro unificado
   const [activeSize, setActiveSize] = useState("Grande");
 
-  // Escucha bandera de edición emitida por el overlay
+  // Escucha modo edición
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
-
-  // Ref para lectura en handlers
   const editingRef = useRef(false);
   useEffect(() => { editingRef.current = editing; }, [editing]);
-
-  // Touch-action según modo
   useEffect(() => {
-    const s = stageRef.current;
-    const c = sceneWrapRef.current;
+    const s = stageRef.current, c = sceneWrapRef.current;
     if (!s || !c) return;
     const prevS = s.style.touchAction, prevC = c.style.touchAction;
     if (editing) { s.style.touchAction = "none"; c.style.touchAction = "none"; }
@@ -218,7 +223,7 @@ function Home() {
     }
   }, [cartId]);
 
-  /* ---------- color image availability ---------- */
+  /* ---------- color availability ---------- */
   const hasVariantOwnImage = ({ pot, color }) => {
     if (!pot?.variants) return false;
     const n = (x) => (x ?? "").toString().trim().toLowerCase();
@@ -245,72 +250,67 @@ function Home() {
     Beige: "#EAD8AB",
   };
 
-/* ---------- fetch products por tamaño y tipo ---------- */
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    try {
-      const [rPots, rPlants] = await Promise.all([
-        fetch(`/api/products?size=${encodeURIComponent(activeSize)}&type=maceta&first=60`, { cache: "no-store" }),
-        fetch(`/api/products?size=${encodeURIComponent(activeSize)}&type=planta&first=60`, { cache: "no-store" }),
-      ]);
-      if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
-      if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
+  /* ---------- fetch products por tamaño y tipo ---------- */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [rPots, rPlants] = await Promise.all([
+          fetch(`/api/products?size=${encodeURIComponent(activeSize)}&type=maceta&first=60`, { cache: "no-store" }),
+          fetch(`/api/products?size=${encodeURIComponent(activeSize)}&type=planta&first=60`, { cache: "no-store" }),
+        ]);
+        if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
+        if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
 
-      const dPots = await rPots.json();
-      const dPlants = await rPlants.json();
+        const dPots = await rPots.json();
+        const dPlants = await rPlants.json();
 
-      const potsList = Array.isArray(dPots) ? dPots : (dPots.products || []);
-      const plantsList = Array.isArray(dPlants) ? dPlants : (dPlants.products || []);
+        const potsList = Array.isArray(dPots) ? dPots : (dPots.products || []);
+        const plantsList = Array.isArray(dPlants) ? dPlants : (dPlants.products || []);
 
-      const norm = (list) => list.map((p) => ({
-        ...p,
-        description: p?.description || p?.descriptionHtml || p?.body_html || "",
-        tags: Array.isArray(p?.tags) ? p.tags : [],
-        variants: Array.isArray(p?.variants) ? p.variants : [],
-        image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-        minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-      }));
+        const norm = (list) => list.map((p) => ({
+          ...p,
+          description: p?.description || p?.descriptionHtml || p?.body_html || "",
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          variants: Array.isArray(p?.variants) ? p.variants : [],
+          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+        }));
 
-      if (cancelled) return;
-      const potsSafe = norm(potsList);
-      const plantsSafe = norm(plantsList);
+        if (cancelled) return;
+        const potsSafe = norm(potsList);
+        const plantsSafe = norm(plantsList);
 
-      setPots(potsSafe);
-      setPlants(plantsSafe);
+        setPots(potsSafe);
+        setPlants(plantsSafe);
 
-      if (potsSafe.length > 0) {
-        const v = (potsSafe[0].variants || []).find((x) => x?.availableForSale) || potsSafe[0].variants?.[0] || null;
-        setSelectedPotVariant(v || null);
+        if (potsSafe.length > 0) {
+          const v = (potsSafe[0].variants || []).find((x) => x?.availableForSale) || potsSafe[0].variants?.[0] || null;
+          setSelectedPotVariant(v || null);
+        }
+        setSelectedPotIndex(0);
+        setSelectedPlantIndex(0);
+      } catch (err) {
+        console.error("Error fetching products:", err);
+        if (!cancelled) {
+          setPlants([]);
+          setPots([]);
+          setAccessories([]);
+        }
       }
-      setSelectedPotIndex(0);
-      setSelectedPlantIndex(0);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSize]);
 
-      console.log(`[DOBO] ${activeSize}: macetas=${potsSafe.length}, plantas=${plantsSafe.length}`);
-    } catch (err) {
-      console.error("Error fetching products:", err);
-      if (!cancelled) {
-        setPlants([]);
-        setPots([]);
-        setAccessories([]);
-      }
-    }
-  })();
-  return () => { cancelled = true; };
-}, [activeSize]);
-
-
-  // Si el usuario cambia a una maceta de otro tamaño, sincroniza el tamaño maestro
+  // Sincroniza tamaño maestro si el usuario navega a un ítem de otro tamaño
   useEffect(() => {
     const pot = pots[selectedPotIndex];
-    const sz = pot ? getSizeTag(pot.tags) : '';
+    const sz = pot ? getSizeTag(pot.tags) : "";
     if (sz && sz !== activeSize) setActiveSize(sz);
   }, [selectedPotIndex, pots]);
-
-  // Si el usuario cambia a una planta de otro tamaño, sincroniza el tamaño maestro
   useEffect(() => {
     const plant = plants[selectedPlantIndex];
-    const sz = plant ? getSizeTag(plant.tags) : '';
+    const sz = plant ? getSizeTag(plant.tags) : "";
     if (sz && sz !== activeSize) setActiveSize(sz);
   }, [selectedPlantIndex, plants]);
 
@@ -321,7 +321,7 @@ useEffect(() => {
     [potsEl, plantsEl].forEach((el) => {
       if (!el) return;
       el.style.pointerEvents = editing ? "none" : "auto";
-      el.style.touchAction   = editing ? "none" : "pan-y";
+      el.style.touchAction = editing ? "none" : "pan-y";
     });
   }, [editing]);
 
@@ -337,7 +337,6 @@ useEffect(() => {
     const MIN = 0.8, MAX = 2.5;
     let target = zoomRef.current;
     let raf = 0;
-
     const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
     const schedule = () => {
       if (raf) return;
@@ -361,7 +360,6 @@ useEffect(() => {
     const pts = new Map();
     let startDist = 0, startScale = zoomRef.current;
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
     const onPD = (e) => {
       if (e.pointerType !== "touch") return;
       container.setPointerCapture?.(e.pointerId);
@@ -388,10 +386,7 @@ useEffect(() => {
       if (e.pointerType !== "touch") return;
       if (editingRef.current) return;
       pts.delete(e.pointerId);
-      if (pts.size < 2) {
-        startDist = 0;
-        startScale = zoomRef.current;
-      }
+      if (pts.size < 2) { startDist = 0; startScale = zoomRef.current; }
     };
 
     container.addEventListener("pointerdown", onPD, { passive: false });
@@ -412,11 +407,8 @@ useEffect(() => {
   /* ---------- accessory preview ---------- */
   function openAccPreview(e, acc) {
     const img =
-      acc && acc.image
-        ? acc.image.src || acc.image
-        : acc && acc.images && acc.images[0] && acc.images[0].src
-        ? acc.images[0].src
-        : "";
+      acc && acc.image ? acc.image.src || acc.image
+      : acc && acc.images && acc.images[0] && acc.images[0].src ? acc.images[0].src : "";
     const title = acc && (acc.title || acc.name) ? acc.title || acc.name : "";
     const desc = acc ? acc.description || acc.body_html || "" : "";
     const cx = e && typeof e.clientX === "number" ? e.clientX : 0;
@@ -440,18 +432,12 @@ useEffect(() => {
     }
   };
 
-  /* ---------- variantes: solo color, sin tamaño ---------- */
+  /* ---------- variantes: solo color ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
-    if (!pot) {
-      setColorOptions([]);
-      setSelectedPotVariant(null);
-      return;
-    }
-
+    if (!pot) { setColorOptions([]); setSelectedPotVariant(null); return; }
     const valid = (pot.variants || []).filter((v) => !!v.image);
     const lower = (s) => (s ?? "").toString().trim().toLowerCase();
-
     const colors = [
       ...new Set(
         valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value))
@@ -478,37 +464,29 @@ useEffect(() => {
   const getTotalPrice = () => {
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
-
     const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
     const plantPrice = productMin(plant);
-
     const accTotal = selectedAccessoryIndices.reduce((s, i) => {
       const acc = accessories[i];
       const v = acc?.variants?.[0]?.price;
       return s + (v ? num(v) : productMin(acc));
     }, 0);
-
     return potPrice + plantPrice + accTotal;
   };
-
   const getTotalComparePrice = () => {
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
-
     const potCmp = selectedPotVariant?.compareAtPrice
       ? num(selectedPotVariant.compareAtPrice)
       : selectedPotVariant?.price
       ? num(selectedPotVariant.price)
       : firstVariantPrice(pot);
-
     const plantCmp = productMin(plant);
-
     const accCmp = selectedAccessoryIndices.reduce((s, i) => {
       const acc = accessories[i];
       const base = acc?.variants?.[0]?.compareAtPrice ?? acc?.variants?.[0]?.price ?? acc?.minPrice;
       return s + num(base);
     }, 0);
-
     return potCmp + plantCmp + accCmp;
   };
 
@@ -523,42 +501,26 @@ useEffect(() => {
     const el = stageRef?.current;
     if (!el) return null;
     const { default: html2canvas } = await import("html2canvas");
-
     const onclone = (doc) => {
       const stage = doc.querySelector('[data-capture-stage="1"]') || doc.body;
       stage.style.overflow = "visible";
       stage.style.clipPath = "none";
-
       const pruneToSelected = (selector, keepIdx) => {
         const track = doc.querySelector(selector);
         if (!track) return;
         const slides = Array.from(track.children);
-        slides.forEach((el, i) => {
-          if (i !== keepIdx) el.remove();
-        });
+        slides.forEach((el, i) => { if (i !== keepIdx) el.remove(); });
         track.style.transform = "none";
         track.style.width = "100%";
       };
-
       pruneToSelected('[data-capture="pot-track"]', selectedPotIndex);
       pruneToSelected('[data-capture="plant-track"]', selectedPlantIndex);
-
       ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach((sel) => {
         const c = doc.querySelector(sel);
-        if (c) {
-          c.style.overflow = "visible";
-          c.style.clipPath = "none";
-        }
+        if (c) { c.style.overflow = "visible"; c.style.clipPath = "none"; }
       });
     };
-
-    const canvas = await html2canvas(el, {
-      backgroundColor: "#eeeaeaff",
-      scale: 3,
-      useCORS: true,
-      onclone,
-    });
-
+    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
     return canvas.toDataURL("image/png");
   };
 
@@ -576,9 +538,7 @@ useEffect(() => {
         if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
         previewUrl = json.url || "";
       }
-    } catch (e) {
-      console.warn("No se pudo subir el preview:", e);
-    }
+    } catch (e) { console.warn("No se pudo subir el preview:", e); }
 
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
@@ -588,7 +548,7 @@ useEffect(() => {
       { key: "_DesignPlant", value: plant?.id || "" },
       { key: "_DesignPot", value: pot?.id || "" },
       { key: "_DesignColor", value: selectedColor || "" },
-      { key: "_DesignSize", value: activeSize || "" }, // tamaño maestro
+      { key: "_DesignSize", value: activeSize || "" },
       { key: "_LinePriority", value: "0" },
     ];
   };
@@ -601,10 +561,8 @@ useEffect(() => {
       const s = asStr(id);
       return s.includes("gid://") ? s.split("/").pop() : s;
     };
-
     const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNumericLocal(mainVariantId);
     if (!isNum(main)) throw new Error("Variant principal inválido");
-
     const accs = (accessoryIds || [])
       .map((id) => (isNum(id) ? asStr(id) : gidToNumericLocal(id)))
       .filter(isNum);
@@ -612,13 +570,7 @@ useEffect(() => {
     const form = document.createElement("form");
     form.method = "POST";
     form.action = `https://${shop}/cart/add`;
-    const add = (n, v) => {
-      const i = document.createElement("input");
-      i.type = "hidden";
-      i.name = n;
-      i.value = String(v);
-      form.appendChild(i);
-    };
+    const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
     let line = 0;
 
     const getA = (name) => {
@@ -668,11 +620,9 @@ useEffect(() => {
     try {
       const attrs = await prepareDesignAttributes();
       const previewUrl = attrs.find((a) => a.key === "_DesignPreview")?.value || "";
-
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
       const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-
       const dpRes = await fetch("/api/design-product", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -681,7 +631,7 @@ useEffect(() => {
           previewUrl,
           price: basePrice,
           color: selectedColor || "Único",
-          size: activeSize || "Único", // tamaño maestro
+          size: activeSize || "Único",
           designId: attrs.find((a) => a.key === "_DesignId")?.value,
           plantTitle: plants[selectedPlantIndex]?.title || "Planta",
           potTitle: pots[selectedPotIndex]?.title || "Maceta",
@@ -689,7 +639,6 @@ useEffect(() => {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
     } catch (e) {
@@ -702,11 +651,9 @@ useEffect(() => {
     try {
       const attrs = await prepareDesignAttributes();
       const previewUrl = attrs.find((a) => a.key === "_DesignPreview")?.value || "";
-
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
       const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-
       const dpRes = await fetch("/api/design-product", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -715,7 +662,7 @@ useEffect(() => {
           previewUrl,
           price: basePrice,
           color: selectedColor || "Único",
-          size: activeSize || "Único", // tamaño maestro
+          size: activeSize || "Único",
           designId: attrs.find((a) => a.key === "_DesignId")?.value,
           plantTitle: plants[selectedPlantIndex]?.title || "Planta",
           potTitle: pots[selectedPotIndex]?.title || "Maceta",
@@ -723,7 +670,6 @@ useEffect(() => {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
     } catch (e) {
@@ -742,9 +688,10 @@ useEffect(() => {
       <div className="row justify-content-center align-items-start gx-5 gy-4">
         {/* Carruseles */}
         <div className="col-lg-5 col-md-8 col-12 text-center">
+
           {/* Selector de tamaño maestro */}
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-            {["Pequeño", "Mediano", "Grande"].map((s) => (
+            {["Pequeña","Mediana","Grande"].map((s) => (
               <button
                 key={s}
                 className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
@@ -774,6 +721,52 @@ useEffect(() => {
               userSelect: "none",
             }}
           >
+            {/* Dots + flechas PLANTAS */}
+            <IndicatorDots
+              count={plants.length}
+              current={selectedPlantIndex}
+              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              position="top"
+              label="Plantas"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevTopLeft}`}
+              aria-label="Anterior planta"
+              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevTopRight}`}
+              aria-label="Siguiente planta"
+              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
+            {/* Dots + flechas MACETAS */}
+            <IndicatorDots
+              count={pots.length}
+              current={selectedPotIndex}
+              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              position="bottom"
+              label="Macetas"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevBottomLeft}`}
+              aria-label="Anterior maceta"
+              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevBottomRight}`}
+              aria-label="Siguiente maceta"
+              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
             {/* Nodo ESCALADO */}
             <div
               ref={stageRef}
@@ -806,12 +799,14 @@ useEffect(() => {
                   if (dx > 8 || dy > 8) return;
                   const rect = e.currentTarget.getBoundingClientRect();
                   const x = (e.clientX ?? 0) - rect.left;
-                  (x > rect.width / 2 ? () => setSelectedPotIndex((p) => Math.min(pots.length - 1, p + 1)) : () => setSelectedPotIndex((p) => Math.max(0, p - 1)))();
+                  (x > rect.width / 2
+                    ? () => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
+                    : () => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0))))();
                 }}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...makeSwipeEvents(potSwipeRef, {
-                  prev: () => setSelectedPotIndex((prev) => (prev > 0 ? prev - 1 : pots.length - 1)),
+                  prev: () => setSelectedPotIndex((prev) => (prev > 0 ? prev - 1 : Math.max(pots.length - 1, 0))),
                   next: () => setSelectedPotIndex((prev) => (prev < pots.length - 1 ? prev + 1 : 0)),
                 })}
               >
@@ -854,12 +849,14 @@ useEffect(() => {
                   if (dx > 8 || dy > 8) return;
                   const rect = e.currentTarget.getBoundingClientRect();
                   const x = (e.clientX ?? 0) - rect.left;
-                  (x > rect.width / 2 ? () => setSelectedPlantIndex((p) => Math.min(plants.length - 1, p + 1)) : () => setSelectedPlantIndex((p) => Math.max(0, p - 1)))();
+                  (x > rect.width / 2
+                    ? () => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
+                    : () => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0))))();
                 }}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...makeSwipeEvents(plantSwipeRef, {
-                  prev: () => setSelectedPlantIndex((prev) => (prev > 0 ? prev - 1 : plants.length - 1)),
+                  prev: () => setSelectedPlantIndex((prev) => (prev > 0 ? prev - 1 : Math.max(plants.length - 1, 0))),
                   next: () => setSelectedPlantIndex((prev) => (prev < plants.length - 1 ? prev + 1 : 0)),
                 })}
               >
@@ -892,7 +889,7 @@ useEffect(() => {
                 <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
               </div>
 
-              {/* Color (sin tamaños de variante) */}
+              {/* Color */}
               {colorOptions.length > 0 && (
                 <div className="mb-4">
                   <h5>Color</h5>
@@ -918,23 +915,7 @@ useEffect(() => {
                             boxShadow: selectedColor === color ? "0 0 5px rgba(0,0,0,0.5)" : "none",
                           }}
                           title={color}
-                        >
-                          {!disponible && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                top: "50%",
-                                left: "50%",
-                                width: "46px",
-                                height: "2px",
-                                background: "#000",
-                                opacity: 0.6,
-                                transform: "translate(-50%, -50%) rotate(45deg)",
-                                pointerEvents: "none",
-                              }}
-                            />
-                          )}
-                        </div>
+                        />
                       );
                     })}
                   </div>
@@ -948,11 +929,9 @@ useEffect(() => {
                   <div className="d-flex justify-content-center gap-3 flex-wrap">
                     {accessories.map((product, index) => {
                       const img =
-                        product && product.image
-                          ? product.image.src || product.image
-                          : product && product.images && product.images[0] && product.images[0].src
-                          ? product.images[0].src
-                          : "/placeholder.png";
+                        product && product.image ? product.image.src || product.image
+                        : product && product.images && product.images[0] && product.images[0].src ? product.images[0].src
+                        : "/placeholder.png";
                       const title = product && (product.title || product.name) ? product.title || product.name : `Accesorio ${index + 1}`;
                       const selected = selectedAccessoryIndices.includes(index);
 
@@ -991,9 +970,7 @@ useEffect(() => {
                 <div className="mb-3 text-center">
                   <label className="form-label d-block">Cantidad</label>
                   <div className="input-group justify-content-center" style={{ maxWidth: "200px", margin: "0 auto" }}>
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}>
-                      -
-                    </button>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}>-</button>
                     <input
                       type="number"
                       className="form-control text-center"
@@ -1014,19 +991,13 @@ useEffect(() => {
                         else if (n > 1000) setQuantity(1000);
                       }}
                     />
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((prev) => Math.min(1000, prev + 1))}>
-                      +
-                    </button>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((prev) => Math.min(1000, prev + 1))}>+</button>
                   </div>
                 </div>
 
                 <div className="d-flex gap-3">
-                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>
-                    Añadir al carro
-                  </button>
-                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>
-                    Comprar ahora
-                  </button>
+                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
+                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
                 </div>
               </div>
             </div>
@@ -1043,7 +1014,6 @@ useEffect(() => {
                 <p style={{ fontSize: "1.2rem" }}>{d || "Descripción de la planta no disponible."}</p>
               );
             })()}
-
             <h6 className="mt-3"><strong>Maceta</strong></h6>
             {(() => {
               const d = pots[selectedPotIndex]?.description;
@@ -1066,25 +1036,13 @@ useEffect(() => {
         onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
       />
 
-      {/* CSS global para bloqueo del carrusel de macetas */}
       <style jsx global>{`
-        .pot-carousel--locked {
-          pointer-events: none;
-          user-select: none;
-          -webkit-user-drag: none;
-          touch-action: none;
-          overflow: hidden !important;
-          scrollbar-width: none;
-        }
-        .pot-carousel--locked::-webkit-scrollbar {
-          display: none;
-        }
+        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
+        .pot-carousel--locked::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
   );
 }
 
-export async function getServerSideProps() {
-  return { props: {} };
-}
+export async function getServerSideProps() { return { props: {} }; }
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
