@@ -1,9 +1,6 @@
 // pages/api/products.js
-// Filtra por TAG de tamaño ("Grande","Mediano","Pequeño") y por tipo usando tags:
-// maceta|macetas  o  planta|plantas. Soporta buscar sin size.
-
 const STORE_DOMAIN =
-  process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_STORE_DOMAIN; // ej: um7xus-0u.myshopify.com
+  process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_STORE_DOMAIN;
 const STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 const API_VERSION = process.env.SHOPIFY_STOREFRONT_API_VERSION || "2024-10";
 const ENDPOINT = `https://${STORE_DOMAIN}/api/${API_VERSION}/graphql.json`;
@@ -19,13 +16,18 @@ function normalizeSize(raw) {
 function normalizeType(raw) {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
-  if (["maceta", "macetas", "pot", "pots"].includes(s)) return "maceta";
-  if (["planta", "plantas", "plant", "plants"].includes(s)) return "planta";
+  if (["maceta","macetas","pot","pots"].includes(s)) return "maceta";
+  if (["planta","plantas","plant","plants"].includes(s)) return "planta";
   return null;
 }
 function buildTypeClause(t) {
-  if (t === "maceta") return `(tag:'maceta' OR tag:'macetas')`;
-  if (t === "planta") return `(tag:'planta' OR tag:'plantas')`;
+  // Soporta tag, product_type y coincidencia en título
+  if (t === "maceta") {
+    return `(tag:'maceta' OR tag:'macetas' OR product_type:'maceta' OR product_type:'macetas' OR title:maceta)`;
+  }
+  if (t === "planta") {
+    return `(tag:'planta' OR tag:'plantas' OR product_type:'planta' OR product_type:'plantas' OR title:planta)`;
+  }
   return null;
 }
 
@@ -39,15 +41,16 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Faltan variables de entorno Shopify" });
     }
 
-    const sizeTag = normalizeSize(req.query.size);        // "Grande" | "Mediano" | "Pequeño" | null
-    const typeTag = normalizeType(req.query.type);        // "maceta" | "planta" | null
-    const first = Number(req.query.first || 30);
+    const sizeTag = normalizeSize(req.query.size);
+    const typeTag = normalizeType(req.query.type);
+    const first = Number(req.query.first || 60);
 
     const parts = [];
     if (sizeTag) parts.push(`tag:'${sizeTag}'`);
     const typeClause = buildTypeClause(typeTag);
     if (typeClause) parts.push(typeClause);
 
+    // AND entre filtros; si no hay filtros, query = null
     const search = parts.length ? parts.join(" AND ") : null;
 
     const query = /* GraphQL */ `
@@ -69,6 +72,7 @@ export default async function handler(req, res) {
                     price { amount currencyCode }
                     compareAtPrice { amount currencyCode }
                     selectedOptions { name value }
+                    availableForSale
                   }
                 }
               }
@@ -122,6 +126,7 @@ export default async function handler(req, res) {
             price: e.node.price || null,
             compareAtPrice: e.node.compareAtPrice || null,
             selectedOptions: e.node.selectedOptions || [],
+            availableForSale: !!e.node.availableForSale,
           })) || [],
         minPrice: node.priceRange?.minVariantPrice || null,
       })) || [];
