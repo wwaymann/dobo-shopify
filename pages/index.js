@@ -29,7 +29,6 @@ const getSizeTag = (tags = []) => {
   return '';
 };
 
-
 /* ---------- helpers precio & num ---------- */
 const money = (amount, currency = "CLP") =>
   new Intl.NumberFormat("es-CL", {
@@ -66,37 +65,6 @@ p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
   <p>${escapeHtml(desc || "")}</p>
 </div></body></html>`;
 
-function getPreviewRect() {
-  if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
-  const isMobile = window.innerWidth <= 768;
-  const w = isMobile ? Math.min(window.innerWidth - 24, 420) : 360;
-  const h = isMobile ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
-  return { w, h, centered: isMobile };
-}
-
-function IframePreview(props) {
-  if (!props.visible) return null;
-  const dims = getPreviewRect();
-  const base = {
-    position: "fixed",
-    borderRadius: 12,
-    overflow: "hidden",
-    background: "#fff",
-    boxShadow: "0 12px 32px rgba(0,0,0,.24)",
-    zIndex: 9999,
-    pointerEvents: "none",
-  };
-  const style = dims.centered
-    ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: dims.w, height: dims.h }
-    : { ...base, left: props.x, top: props.y, width: dims.w, height: dims.h };
-
-  return (
-    <div style={style}>
-      <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
-    </div>
-  );
-}
-
 /* ---------- dynamic overlay ---------- */
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
 
@@ -117,8 +85,7 @@ function makeSwipeEvents(swipeRef, handlers) {
   const move = (x, y, ev, el) => {
     const s = swipeRef.current;
     if (!s?.active) return;
-    const dx = x - s.x,
-      dy = y - s.y;
+    const dx = x - s.x, dy = y - s.y;
     if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
       ev.preventDefault();
       if (Math.abs(dx) > 48) {
@@ -165,8 +132,6 @@ function Home() {
 
   const [selectedColor, setSelectedColor] = useState(null);
   const [colorOptions, setColorOptions] = useState([]);
-  const [selectedSize, setSelectedSize] = useState(null);
-  const [sizeOptions, setSizeOptions] = useState([]);
 
   const [cartId, setCartId] = useState(null);
 
@@ -178,13 +143,13 @@ function Home() {
   const potScrollRef = useRef(null);
   const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
-const potDownRef = useRef({ btn: null, x: 0, y: 0 });
-const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const potDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
 
   const [editing, setEditing] = useState(false);
 
-  const [activeSize, setActiveSize] = useState("Grande"); // tamaño maestro
-
+  // Tamaño maestro: controla filtros de macetas y plantas
+  const [activeSize, setActiveSize] = useState("Grande");
 
   // Escucha bandera de edición emitida por el overlay
   useEffect(() => {
@@ -193,35 +158,19 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
 
-  // Ref para leer el estado de edición dentro de handlers (sin re-montar listeners)
+  // Ref para lectura en handlers
   const editingRef = useRef(false);
-  useEffect(() => {
-    editingRef.current = editing;
-  }, [editing]);
+  useEffect(() => { editingRef.current = editing; }, [editing]);
 
-  // Conmutar touch-action al entrar/salir de “Diseñar” (móvil) — ÚNICO efecto
+  // Touch-action según modo
   useEffect(() => {
     const s = stageRef.current;
     const c = sceneWrapRef.current;
     if (!s || !c) return;
-
-    const prevS = s.style.touchAction;
-    const prevC = c.style.touchAction;
-
-    if (editing) {
-      // En modo diseño: que Fabric reciba los gestos (drag/pinch)
-      s.style.touchAction = "none";
-      c.style.touchAction = "none";
-    } else {
-      // Fuera de diseño: permitir scroll vertical normal y pinch para el contenedor
-      s.style.touchAction = "pan-y";
-      c.style.touchAction = "pan-y";
-    }
-
-    return () => {
-      s.style.touchAction = prevS;
-      c.style.touchAction = prevC;
-    };
+    const prevS = s.style.touchAction, prevC = c.style.touchAction;
+    if (editing) { s.style.touchAction = "none"; c.style.touchAction = "none"; }
+    else { s.style.touchAction = "pan-y"; c.style.touchAction = "pan-y"; }
+    return () => { s.style.touchAction = prevS; c.style.touchAction = prevC; };
   }, [editing]);
 
   /* ---------- cart persist ---------- */
@@ -237,19 +186,15 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
   }, [cartId]);
 
   /* ---------- color image availability ---------- */
-  const hasVariantOwnImage = ({ pot, color, size }) => {
+  const hasVariantOwnImage = ({ pot, color }) => {
     if (!pot?.variants) return false;
     const n = (x) => (x ?? "").toString().trim().toLowerCase();
     const nColor = color ? n(color) : null;
-    const nSize = size ? n(size) : null;
     return pot.variants.some((v) => {
       if (!v?.image && !v?.hasOwnImage) return false;
       const opts = v.selectedOptions || [];
       const matchColor = nColor ? opts.some((o) => n(o.name) === "color" && n(o.value) === nColor) : true;
-      const matchSize = nSize
-        ? opts.some((o) => (n(o.name) === "tamaño" || n(o.name) === "size") && n(o.value) === nSize)
-        : true;
-      return matchColor && matchSize;
+      return matchColor;
     });
   };
 
@@ -267,111 +212,76 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
     Beige: "#EAD8AB",
   };
 
-/* ---------- fetch products por tamaño ---------- */
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    try {
-      const url = `/api/products?size=${encodeURIComponent(activeSize)}&first=60`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.products || []);
+  /* ---------- fetch products por tamaño ---------- */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `/api/products?size=${encodeURIComponent(activeSize)}&first=60`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.products || []);
 
-      const safe = list.map((p) => ({
-        ...p,
-        description: p?.description || p?.descriptionHtml || p?.body_html || "",
-        tags: Array.isArray(p?.tags) ? p.tags : [],
-        variants: Array.isArray(p?.variants) ? p.variants : [],
-        image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-        minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-      }));
+        const safe = list.map((p) => ({
+          ...p,
+          description: p?.description || p?.descriptionHtml || p?.body_html || "",
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          variants: Array.isArray(p?.variants) ? p.variants : [],
+          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+        }));
 
-      if (cancelled) return;
-      const macetas = safe.filter(isMaceta);
-      const plantas = safe.filter(isPlanta);
+        if (cancelled) return;
+        const macetas = safe.filter(isMaceta);
+        const plantas = safe.filter(isPlanta);
 
-      setPots(macetas);
-      setPlants(plantas);
+        setPots(macetas);
+        setPlants(plantas);
 
-      // preselección de variante de maceta
-      if (macetas.length > 0) {
-        const v = (macetas[0].variants || []).find((x) => x?.availableForSale) || macetas[0].variants?.[0] || null;
-        setSelectedPotVariant(v || null);
+        // preselección de variante de maceta
+        if (macetas.length > 0) {
+          const v = (macetas[0].variants || []).find((x) => x?.availableForSale) || macetas[0].variants?.[0] || null;
+          setSelectedPotVariant(v || null);
+        }
+        setSelectedPotIndex(0);
+        setSelectedPlantIndex(0);
+      } catch (err) {
+        console.error("Error fetching products:", err);
+        if (!cancelled) {
+          setPlants([]);
+          setPots([]);
+          setAccessories([]);
+        }
       }
-      setSelectedPotIndex(0);
-      setSelectedPlantIndex(0);
-    } catch (err) {
-      console.error("Error fetching products:", err);
-      if (!cancelled) {
-        setPlants([]);
-        setPots([]);
-        setAccessories([]);
-      }
-    }
-  })();
-  return () => { cancelled = true; };
-}, [activeSize]);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSize]);
 
-  // Cambiar tamaño si el usuario cambia de maceta a otra con distinto tag
-useEffect(() => {
-  const pot = pots[selectedPotIndex];
-  const sz = pot ? getSizeTag(pot.tags) : '';
-  if (sz && sz !== activeSize) setActiveSize(sz);
-}, [selectedPotIndex, pots]);
+  // Si el usuario cambia a una maceta de otro tamaño, sincroniza el tamaño maestro
+  useEffect(() => {
+    const pot = pots[selectedPotIndex];
+    const sz = pot ? getSizeTag(pot.tags) : '';
+    if (sz && sz !== activeSize) setActiveSize(sz);
+  }, [selectedPotIndex, pots]);
 
-// Cambiar tamaño si el usuario cambia de planta a otra con distinto tag
-useEffect(() => {
-  const plant = plants[selectedPlantIndex];
-  const sz = plant ? getSizeTag(plant.tags) : '';
-  if (sz && sz !== activeSize) setActiveSize(sz);
-}, [selectedPlantIndex, plants]);
+  // Si el usuario cambia a una planta de otro tamaño, sincroniza el tamaño maestro
+  useEffect(() => {
+    const plant = plants[selectedPlantIndex];
+    const sz = plant ? getSizeTag(plant.tags) : '';
+    if (sz && sz !== activeSize) setActiveSize(sz);
+  }, [selectedPlantIndex, plants]);
 
-
-  /* ---------- handlers & swipe events ---------- */
-  const createHandlers = (items, setIndex) => ({
-    prev: () => setIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1)),
-    next: () => setIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0)),
-  });
-  const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
-  const potHandlers = createHandlers(pots, setSelectedPotIndex);
-
-  const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
-  const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
-
-  const CLICK_STEP_PX = 8;
-const handlePointerDownCap = (e, ref) => {
-  ref.current = {
-    btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0,
-    x: e.clientX ?? 0,
-    y: e.clientY ?? 0,
-  };
-};
-const handlePointerUpCap = (e, ref, handlers) => {
-  if (editingRef.current) return;
-  const d = ref.current || { btn: null, x: 0, y: 0 };
-  if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return; // solo botón izquierdo
-  const dx = Math.abs((e.clientX ?? 0) - d.x);
-  const dy = Math.abs((e.clientY ?? 0) - d.y);
-  if (dx > CLICK_STEP_PX || dy > CLICK_STEP_PX) return; // fue swipe/drag
-  const rect = e.currentTarget.getBoundingClientRect();
-  const x = (e.clientX ?? 0) - rect.left;
-  (x > rect.width / 2 ? handlers.next : handlers.prev)();
-};
-
-
-/* ---------- lock both carousels while editing ---------- */
-useEffect(() => {
-  const pots = potScrollRef.current;
-  const plants = plantScrollRef.current;
-  [pots, plants].forEach((el) => {
-    if (!el) return;
-    el.style.pointerEvents = editing ? "none" : "auto";
-    el.style.touchAction   = editing ? "none" : "pan-y";
-  });
-}, [editing]);
-
-
+  /* ---------- lock both carousels while editing ---------- */
+  useEffect(() => {
+    const potsEl = potScrollRef.current;
+    const plantsEl = plantScrollRef.current;
+    [potsEl, plantsEl].forEach((el) => {
+      if (!el) return;
+      el.style.pointerEvents = editing ? "none" : "auto";
+      el.style.touchAction   = editing ? "none" : "pan-y";
+    });
+  }, [editing]);
 
   /* ---------- zoom wheel + pinch ---------- */
   useEffect(() => {
@@ -382,8 +292,7 @@ useEffect(() => {
     zoomRef.current = zoomRef.current || 1;
     stage.style.setProperty("--zoom", String(zoomRef.current));
 
-    const MIN = 0.8,
-      MAX = 2.5;
+    const MIN = 0.8, MAX = 2.5;
     let target = zoomRef.current;
     let raf = 0;
 
@@ -394,13 +303,10 @@ useEffect(() => {
         raf = 0;
         stage.style.setProperty("--zoom", String(target));
         container.style.setProperty("--zoom", String(target));
-
       });
     };
 
-    // WHEEL: desactivado durante edición
     const onWheel = (e) => {
-     
       if (!stage.contains(e.target)) return;
       e.preventDefault();
       const step = e.deltaY > 0 ? -0.08 : 0.08;
@@ -410,15 +316,12 @@ useEffect(() => {
     };
     container.addEventListener("wheel", onWheel, { passive: false });
 
-    // PINCH: no capturar dedos si se está editando
     const pts = new Map();
-    let startDist = 0,
-      startScale = zoomRef.current;
+    let startDist = 0, startScale = zoomRef.current;
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
     const onPD = (e) => {
       if (e.pointerType !== "touch") return;
-    
       container.setPointerCapture?.(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) {
@@ -429,7 +332,6 @@ useEffect(() => {
     };
     const onPM = (e) => {
       if (e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
-    
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2 && startDist > 0) {
         const [p1, p2] = [...pts.values()];
@@ -442,7 +344,7 @@ useEffect(() => {
     };
     const onPU = (e) => {
       if (e.pointerType !== "touch") return;
-      if (editingRef.current) return; // salir si se edita
+      if (editingRef.current) return;
       pts.delete(e.pointerId);
       if (pts.size < 2) {
         startDist = 0;
@@ -496,12 +398,11 @@ useEffect(() => {
     }
   };
 
-  /* ---------- variantes: opciones y selección ---------- */
+  /* ---------- variantes: solo color, sin tamaño ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
     if (!pot) {
       setColorOptions([]);
-      setSizeOptions([]);
       setSelectedPotVariant(null);
       return;
     }
@@ -514,48 +415,22 @@ useEffect(() => {
         valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value))
       ),
     ];
-    const sizes = [
-      ...new Set(
-        valid.flatMap((v) =>
-          (v.selectedOptions || [])
-            .filter((o) => {
-              const n = lower(o.name);
-              return n === "tamaño" || n === "size";
-            })
-            .map((o) => o.value)
-        )
-      ),
-    ];
-
     setColorOptions(colors);
-    setSizeOptions(sizes);
 
-    if (!selectedSize || !sizes.includes(selectedSize)) {
-      if (sizes.length >= 2) setSelectedSize(sizes[1]);
-      else if (sizes.length === 1) setSelectedSize(sizes[0]);
-      else setSelectedSize(null);
-    }
-
-    const variantMatches = (v, color, size) => {
+    const variantMatches = (v, color) => {
       const opts = v.selectedOptions || [];
       const colorOK = color ? opts.some((o) => lower(o.name) === "color" && lower(o.value) === lower(color)) : true;
-      const sizeOK = size
-        ? opts.some((o) => {
-            const n = lower(o.name);
-            return (n === "tamaño" || n === "size") && lower(o.value) === lower(size);
-          })
-        : true;
-      return colorOK && sizeOK;
+      return colorOK;
     };
 
-    if (!(selectedColor && valid.some((v) => variantMatches(v, selectedColor, selectedSize)))) {
-      const firstColor = colors.find((c) => valid.some((v) => variantMatches(v, c, selectedSize)));
+    if (!(selectedColor && valid.some((v) => variantMatches(v, selectedColor)))) {
+      const firstColor = colors.find((c) => valid.some((v) => variantMatches(v, c)));
       if (firstColor) setSelectedColor(firstColor);
     }
 
-    const chosen = valid.find((v) => variantMatches(v, selectedColor, selectedSize)) || valid[0] || null;
+    const chosen = valid.find((v) => variantMatches(v, selectedColor)) || valid[0] || null;
     setSelectedPotVariant(chosen || null);
-  }, [pots, selectedPotIndex, selectedColor, selectedSize]);
+  }, [pots, selectedPotIndex, selectedColor]);
 
   /* ---------- totales ---------- */
   const getTotalPrice = () => {
@@ -664,14 +539,14 @@ useEffect(() => {
     }
 
     const pot = pots[selectedPotIndex];
-       const plant = plants[selectedPlantIndex];
+    const plant = plants[selectedPlantIndex];
     return [
       { key: "_DesignPreview", value: previewUrl },
       { key: "_DesignId", value: String(Date.now()) },
       { key: "_DesignPlant", value: plant?.id || "" },
       { key: "_DesignPot", value: pot?.id || "" },
       { key: "_DesignColor", value: selectedColor || "" },
-      { key: "_DesignSize", value: selectedSize || "" },
+      { key: "_DesignSize", value: activeSize || "" }, // tamaño maestro
       { key: "_LinePriority", value: "0" },
     ];
   };
@@ -764,7 +639,7 @@ useEffect(() => {
           previewUrl,
           price: basePrice,
           color: selectedColor || "Único",
-          size: selectedSize || "Único",
+          size: activeSize || "Único", // tamaño maestro
           designId: attrs.find((a) => a.key === "_DesignId")?.value,
           plantTitle: plants[selectedPlantIndex]?.title || "Planta",
           potTitle: pots[selectedPotIndex]?.title || "Maceta",
@@ -798,7 +673,7 @@ useEffect(() => {
           previewUrl,
           price: basePrice,
           color: selectedColor || "Único",
-          size: selectedSize || "Único",
+          size: activeSize || "Único", // tamaño maestro
           designId: attrs.find((a) => a.key === "_DesignId")?.value,
           plantTitle: plants[selectedPlantIndex]?.title || "Planta",
           potTitle: pots[selectedPotIndex]?.title || "Maceta",
@@ -825,6 +700,19 @@ useEffect(() => {
       <div className="row justify-content-center align-items-start gx-5 gy-4">
         {/* Carruseles */}
         <div className="col-lg-5 col-md-8 col-12 text-center">
+          {/* Selector de tamaño maestro */}
+          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
+            {["Pequeño", "Mediano", "Grande"].map((s) => (
+              <button
+                key={s}
+                className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+                onClick={() => setActiveSize(s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
           {/* Escena */}
           <div
             className="position-relative"
@@ -866,12 +754,24 @@ useEffect(() => {
                 data-capture="pot-container"
                 style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 aria-disabled={editing ? "true" : "false"}
-onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, potHandlers)}
-onAuxClick={(e) => e.preventDefault()}
-onContextMenu={(e) => e.preventDefault()}
-
-                {...potSwipeEvents}
+                onPointerDownCapture={(e) => { potDownRef.current = { btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0, x: e.clientX ?? 0, y: e.clientY ?? 0 }; }}
+                onPointerUpCapture={(e) => {
+                  if (editingRef.current) return;
+                  const d = potDownRef.current || { btn: null, x: 0, y: 0 };
+                  if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
+                  const dx = Math.abs((e.clientX ?? 0) - d.x);
+                  const dy = Math.abs((e.clientY ?? 0) - d.y);
+                  if (dx > 8 || dy > 8) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = (e.clientX ?? 0) - rect.left;
+                  (x > rect.width / 2 ? () => setSelectedPotIndex((p) => Math.min(pots.length - 1, p + 1)) : () => setSelectedPotIndex((p) => Math.max(0, p - 1)))();
+                }}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...makeSwipeEvents(potSwipeRef, {
+                  prev: () => setSelectedPotIndex((prev) => (prev > 0 ? prev - 1 : pots.length - 1)),
+                  next: () => setSelectedPotIndex((prev) => (prev < pots.length - 1 ? prev + 1 : 0)),
+                })}
               >
                 <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                   {pots.map((product, index) => {
@@ -902,13 +802,24 @@ onContextMenu={(e) => e.preventDefault()}
                   touchAction: "pan-y",
                   userSelect: "none",
                 }}
-
-onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, plantHandlers)}
-onAuxClick={(e) => e.preventDefault()}
-onContextMenu={(e) => e.preventDefault()}
-
-                {...plantSwipeEvents}
+                onPointerDownCapture={(e) => { plantDownRef.current = { btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0, x: e.clientX ?? 0, y: e.clientY ?? 0 }; }}
+                onPointerUpCapture={(e) => {
+                  if (editingRef.current) return;
+                  const d = plantDownRef.current || { btn: null, x: 0, y: 0 };
+                  if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
+                  const dx = Math.abs((e.clientX ?? 0) - d.x);
+                  const dy = Math.abs((e.clientY ?? 0) - d.y);
+                  if (dx > 8 || dy > 8) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = (e.clientX ?? 0) - rect.left;
+                  (x > rect.width / 2 ? () => setSelectedPlantIndex((p) => Math.min(plants.length - 1, p + 1)) : () => setSelectedPlantIndex((p) => Math.max(0, p - 1)))();
+                }}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...makeSwipeEvents(plantSwipeRef, {
+                  prev: () => setSelectedPlantIndex((prev) => (prev > 0 ? prev - 1 : plants.length - 1)),
+                  next: () => setSelectedPlantIndex((prev) => (prev < plants.length - 1 ? prev + 1 : 0)),
+                })}
               >
                 <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                   {plants.map((product) => (
@@ -939,14 +850,14 @@ onContextMenu={(e) => e.preventDefault()}
                 <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
               </div>
 
-              {/* Color */}
+              {/* Color (sin tamaños de variante) */}
               {colorOptions.length > 0 && (
                 <div className="mb-4">
                   <h5>Color</h5>
                   <div className="d-flex justify-content-center gap-3 flex-wrap">
                     {colorOptions.map((color, index) => {
                       const pot = pots[selectedPotIndex];
-                      const disponible = hasVariantOwnImage({ pot, color, size: selectedSize });
+                      const disponible = hasVariantOwnImage({ pot, color });
                       return (
                         <div
                           key={index}
@@ -982,36 +893,6 @@ onContextMenu={(e) => e.preventDefault()}
                             />
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Tamaño */}
-              {sizeOptions.length > 0 && (
-                <div className="mb-4">
-                  <h5>Tamaño</h5>
-                  <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    {sizeOptions.map((size, index) => {
-                      const pot = pots[selectedPotIndex];
-                      const disponible = hasVariantOwnImage({ pot, color: selectedColor, size });
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => disponible && setSelectedSize(size)}
-                          className={`btn ${selectedSize === size ? "btn-dark" : "btn-outline-secondary"}`}
-                          style={{
-                            cursor: disponible ? "pointer" : "not-allowed",
-                            opacity: disponible ? 1 : 0.35,
-                            filter: disponible ? "none" : "grayscale(100%)",
-                            pointerEvents: disponible ? "auto" : "none",
-                            textDecoration: disponible ? "none" : "line-through",
-                          }}
-                          disabled={!disponible}
-                        >
-                          {size}
-                        </button>
                       );
                     })}
                   </div>
@@ -1111,9 +992,7 @@ onContextMenu={(e) => e.preventDefault()}
 
           {/* Descripciones */}
           <div className="text-start px-3 mb-4" style={{ maxWidth: "500px", margin: "0 auto" }}>
-            <h6>
-              <strong>Planta</strong>
-            </h6>
+            <h6><strong>Planta</strong></h6>
             {(() => {
               const d = plants[selectedPlantIndex]?.description;
               return d && /<[^>]+>/.test(d) ? (
@@ -1123,9 +1002,7 @@ onContextMenu={(e) => e.preventDefault()}
               );
             })()}
 
-            <h6 className="mt-3">
-              <strong>Maceta</strong>
-            </h6>
+            <h6 className="mt-3"><strong>Maceta</strong></h6>
             {(() => {
               const d = pots[selectedPotIndex]?.description;
               return d && /<[^>]+>/.test(d) ? (
@@ -1166,7 +1043,6 @@ onContextMenu={(e) => e.preventDefault()}
 }
 
 export async function getServerSideProps() {
-  // Evita problemas de prerender en build; renderizamos en cliente
   return { props: {} };
 }
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
