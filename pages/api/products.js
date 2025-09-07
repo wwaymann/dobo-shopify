@@ -11,7 +11,7 @@ function normalizeSize(raw) {
   const s = String(raw).trim().toLowerCase();
   if (s === "grande" || s === "g") return "Grande";
   if (s === "mediana" || s === "mediano" || s === "m") return "Mediana";
-  if (["perqueña","perquena","pequeña","pequena","pequeño","pequeno","p"].includes(s)) return "perqueña";
+  if (["perqueña","perquena","pequeña","pequena","pequeño","pequeno","p"].includes(s)) return "Pequeña";
   return null;
 }
 function normalizeType(raw) {
