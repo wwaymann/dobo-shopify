@@ -4,32 +4,31 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 
-/* ---------- type & size helpers ---------- */
-const isMaceta = (p) => {
-  const t = String(p?.productType || "").trim().toLowerCase();
-  const tags = Array.isArray(p?.tags) ? p.tags.map(x => String(x).trim().toLowerCase()) : [];
-  return t === "maceta" || t === "macetas" || tags.includes("maceta") || tags.includes("macetas");
-};
-const isPlanta = (p) => {
-  const t = String(p?.productType || "").trim().toLowerCase();
-  const tags = Array.isArray(p?.tags) ? p.tags.map(x => String(x).trim().toLowerCase()) : [];
-  return t === "planta" || t === "plantas" || tags.includes("planta") || tags.includes("plantas");
-};
+/* ---------- helpers tamaño ---------- */
 const getSizeTag = (tags = []) => {
   if (!Array.isArray(tags)) return "";
   const n = (s) => String(s || "").trim().toLowerCase();
-  const hit = tags.find(t => ["grande","mediana","mediano","pequeña","pequena","pequeño","pequeno","perqueña","perquena"].includes(n(t)) || n(t).startsWith("sz:"));
+  const hit = tags.find((t) =>
+    [
+      "grande",
+      "mediana",
+      "mediano",
+      "pequeña",
+      "pequena",
+      "pequeño",
+      "pequeno",
+      "perqueña",
+      "perquena",
+    ].includes(n(t))
+  );
   if (!hit) return "";
   const h = n(hit);
-  if (h.startsWith("sz:")) return hit.slice(3);
   if (h === "grande") return "Grande";
-  if (h === "mediano" || h === "mediana") return "Mediana";
-  // Ajusta a tu tag real si usas “perqueña”
-  if (["pequeño","pequeno","pequeña","pequena","perqueña","perquena"].includes(h)) return "Pequeña";
-  return "";
+  if (h === "mediana" || h === "mediano") return "Mediana";
+  return "Pequeña";
 };
 
-/* ---------- helpers precio & num ---------- */
+/* ---------- precio ---------- */
 const money = (amount, currency = "CLP") =>
   new Intl.NumberFormat("es-CL", {
     style: "currency",
@@ -43,35 +42,37 @@ const firstVariantPrice = (p) => {
 };
 const productMin = (p) => num(p?.minPrice);
 
-/* ---------- hover preview ---------- */
+/* ---------- preview accesorios ---------- */
 const escapeHtml = (s) =>
-  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
+  (s &&
+    s.replace(/[&<>"']/g, (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    })[m])) ||
+  "";
 const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{box-sizing:border-box} body{margin:0;background:#fff;font-family:system-ui,sans-serif}
+<style>*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,sans-serif}
 .wrap{padding:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
 img{max-width:100%;height:auto;display:block}
 h4{margin:0;font-size:14px;font-weight:600;text-align:center}
 p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
-</style></head>
-<body><div class="wrap">
-  <img src="${escapeHtml(imgUrl)}" alt="">
-  <h4>${escapeHtml(title || "")}</h4>
-  <p>${escapeHtml(desc || "")}</p>
+</style></head><body><div class="wrap">
+<img src="${escapeHtml(imgUrl)}" alt=""><h4>${escapeHtml(title||"")}</h4><p>${escapeHtml(desc||"")}</p>
 </div></body></html>`;
-
-/* ---------- IframePreview ---------- */
 function getPreviewRect() {
   if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
-  const isMobile = window.innerWidth <= 768;
-  const w = isMobile ? Math.min(window.innerWidth - 24, 420) : 360;
-  const h = isMobile ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
-  return { w, h, centered: isMobile };
+  const m = window.innerWidth <= 768;
+  const w = m ? Math.min(window.innerWidth - 24, 420) : 360;
+  const h = m ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
+  return { w, h, centered: m };
 }
 function IframePreview(props) {
   if (!props.visible) return null;
-  const dims = getPreviewRect();
+  const d = getPreviewRect();
   const base = {
     position: "fixed",
     borderRadius: 12,
@@ -81,23 +82,34 @@ function IframePreview(props) {
     zIndex: 9999,
     pointerEvents: "none",
   };
-  const style = dims.centered
-    ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: dims.w, height: dims.h }
-    : { ...base, left: props.x, top: props.y, width: dims.w, height: dims.h };
+  const style = d.centered
+    ? {
+        ...base,
+        left: "50%",
+        bottom: 12,
+        transform: "translateX(-50%)",
+        width: d.w,
+        height: d.h,
+      }
+    : { ...base, left: props.x, top: props.y, width: d.w, height: d.h };
   return (
     <div style={style}>
-      <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
+      <iframe
+        srcDoc={props.html}
+        style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }}
+      />
     </div>
   );
 }
 
-/* ---------- Indicadores tipo Google Shopping ---------- */
-function IndicatorDots({ count, current, onSelect, position = "bottom", label }) {
+/* ---------- dots ---------- */
+function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
   if (!count || count < 2) return null;
   return (
     <div
-      className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}
-      aria-label={label || "Indicadores"}
+      className={`${styles.dots} ${
+        position === "top" ? styles.dotsTop : styles.dotsBottom
+      }`}
     >
       {Array.from({ length: count }).map((_, i) => (
         <button
@@ -108,19 +120,18 @@ function IndicatorDots({ count, current, onSelect, position = "bottom", label })
           onClick={() => onSelect(i)}
         />
       ))}
-      {label ? <span className={styles.dotsLabel}>{label}</span> : null}
       <span className={styles.dotsLabel}>{current + 1}/{count}</span>
     </div>
   );
 }
 
-/* ---------- dynamic overlay ---------- */
-const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
+/* ---------- overlay ---------- */
+const CustomizationOverlay = dynamic(
+  () => import("../components/CustomizationOverlay"),
+  { ssr: false }
+);
 
-/* ---------- shop ---------- */
-const SHOP_DOMAIN = "um7xus-0u.myshopify.com";
-
-/* ---------- swipe factory ---------- */
+/* ---------- swipe ---------- */
 function makeSwipeEvents(swipeRef, handlers) {
   const begin = (x, y, id, el) => {
     swipeRef.current = { active: true, id, x, y };
@@ -134,7 +145,8 @@ function makeSwipeEvents(swipeRef, handlers) {
   const move = (x, y, ev, el) => {
     const s = swipeRef.current;
     if (!s?.active) return;
-    const dx = x - s.x, dy = y - s.y;
+    const dx = x - s.x,
+      dy = y - s.y;
     if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
       ev.preventDefault();
       if (Math.abs(dx) > 48) {
@@ -148,8 +160,14 @@ function makeSwipeEvents(swipeRef, handlers) {
     onPointerMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
     onPointerUp: (e) => end(e, e.currentTarget),
     onPointerCancel: (e) => end(e, e.currentTarget),
-    onTouchStart: (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, null, e.currentTarget); },
-    onTouchMove: (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e, e.currentTarget); },
+    onTouchStart: (e) => {
+      const t = e.touches[0];
+      begin(t.clientX, t.clientY, null, e.currentTarget);
+    },
+    onTouchMove: (e) => {
+      const t = e.touches[0];
+      move(t.clientX, t.clientY, e, e.currentTarget);
+    },
     onTouchEnd: (e) => end(e, e.currentTarget),
     onTouchCancel: (e) => end(e, e.currentTarget),
     onMouseDown: (e) => begin(e.clientX, e.clientY, null, e.currentTarget),
@@ -159,7 +177,6 @@ function makeSwipeEvents(swipeRef, handlers) {
 }
 
 function Home() {
-  /* ---------- state ---------- */
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
@@ -168,128 +185,133 @@ function Home() {
   const [selectedPotIndex, setSelectedPotIndex] = useState(0);
   const [selectedPotVariant, setSelectedPotVariant] = useState(null);
 
+  const [accIndex, setAccIndex] = useState(0);
   const [selectedAccessoryIndices, setSelectedAccessoryIndices] = useState([]);
-  const [quantity, setQuantity] = useState(1);
 
-  const [accPreview, setAccPreview] = useState({ visible: false, x: 0, y: 0, html: "" });
+  const [quantity, setQuantity] = useState(1);
+  const [accPreview, setAccPreview] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    html: "",
+  });
 
   const [selectedColor, setSelectedColor] = useState(null);
   const [colorOptions, setColorOptions] = useState([]);
 
-  const [cartId, setCartId] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [activeSize, setActiveSize] = useState("Grande");
 
-  /* ---------- refs ---------- */
   const zoomRef = useRef(1);
   const sceneWrapRef = useRef(null);
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
   const potScrollRef = useRef(null);
+  const accScrollRef = useRef(null);
   const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
-  const potDownRef = useRef({ btn: null, x: 0, y: 0 });
-  const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const editingRef = useRef(false);
 
-  const [editing, setEditing] = useState(false);
-
-  // Tamaño maestro unificado
-  const [activeSize, setActiveSize] = useState("Grande");
-
-  // Escucha modo edición
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
-  const editingRef = useRef(false);
-  useEffect(() => { editingRef.current = editing; }, [editing]);
   useEffect(() => {
-    const s = stageRef.current, c = sceneWrapRef.current;
+    editingRef.current = editing;
+  }, [editing]);
+  useEffect(() => {
+    const s = stageRef.current;
+    const c = sceneWrapRef.current;
     if (!s || !c) return;
-    const prevS = s.style.touchAction, prevC = c.style.touchAction;
-    if (editing) { s.style.touchAction = "none"; c.style.touchAction = "none"; }
-    else { s.style.touchAction = "pan-y"; c.style.touchAction = "pan-y"; }
-    return () => { s.style.touchAction = prevS; c.style.touchAction = prevC; };
+    const ps = s.style.touchAction,
+      pc = c.style.touchAction;
+    s.style.touchAction = editing ? "none" : "pan-y";
+    c.style.touchAction = editing ? "none" : "pan-y";
+    return () => {
+      s.style.touchAction = ps;
+      c.style.touchAction = pc;
+    };
   }, [editing]);
 
-  /* ---------- cart persist ---------- */
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem("cartId");
-    if (saved) setCartId(saved);
-  }, []);
-  useEffect(() => {
-    if (cartId && typeof window !== "undefined") {
-      window.localStorage.setItem("cartId", cartId);
-    }
-  }, [cartId]);
-
-  /* ---------- color availability ---------- */
-  const hasVariantOwnImage = ({ pot, color }) => {
-    if (!pot?.variants) return false;
-    const n = (x) => (x ?? "").toString().trim().toLowerCase();
-    const nColor = color ? n(color) : null;
-    return pot.variants.some((v) => {
-      if (!v?.image && !v?.hasOwnImage) return false;
-      const opts = v.selectedOptions || [];
-      const matchColor = nColor ? opts.some((o) => n(o.name) === "color" && n(o.value) === nColor) : true;
-      return matchColor;
-    });
-  };
-
-  /* ---------- color map ---------- */
-  const colorMap = {
-    Rojo: "#a14747",
-    Azul: "#484f76",
-    Verde: "#7ed27e",
-    "Verde oliva profundo": "#556b2f",
-    Negro: "#000000",
-    Blanco: "#ffffff",
-    Gris: "#999999",
-    "Gris cemento": "#999999",
-    Amarillo: "#f8db00",
-    Beige: "#EAD8AB",
-  };
-
-  /* ---------- fetch products por tamaño y tipo ---------- */
+  /* ---------- fetch por tamaño y tipo ---------- */
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [rPots, rPlants] = await Promise.all([
-          fetch(`/api/products?size=${encodeURIComponent(activeSize)}&type=maceta&first=60`, { cache: "no-store" }),
-          fetch(`/api/products?size=${encodeURIComponent(activeSize)}&type=planta&first=60`, { cache: "no-store" }),
+        const [rPots, rPlants, rAcc] = await Promise.all([
+          fetch(
+            `/api/products?size=${encodeURIComponent(activeSize)}&type=maceta&first=60`,
+            { cache: "no-store" }
+          ),
+          fetch(
+            `/api/products?size=${encodeURIComponent(activeSize)}&type=planta&first=60`,
+            { cache: "no-store" }
+          ),
+          fetch(
+            `/api/products?size=${encodeURIComponent(activeSize)}&type=accesorio&first=60`,
+            { cache: "no-store" }
+          ),
         ]);
         if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
         if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
 
+        let accList = [];
+        if (rAcc.ok) {
+          const dAcc = await rAcc.json();
+          accList = Array.isArray(dAcc) ? dAcc : dAcc.products || [];
+          if (accList.length === 0) {
+            const rAll = await fetch(`/api/products?type=accesorio&first=60`, {
+              cache: "no-store",
+            });
+            if (rAll.ok) {
+              const dAll = await rAll.json();
+              accList = Array.isArray(dAll) ? dAll : dAll.products || [];
+            }
+          }
+        }
+
         const dPots = await rPots.json();
         const dPlants = await rPlants.json();
+        const potsList = Array.isArray(dPots) ? dPots : dPots.products || [];
+        const plantsList = Array.isArray(dPlants) ? dPlants : dPlants.products || [];
 
-        const potsList = Array.isArray(dPots) ? dPots : (dPots.products || []);
-        const plantsList = Array.isArray(dPlants) ? dPlants : (dPlants.products || []);
-
-        const norm = (list) => list.map((p) => ({
-          ...p,
-          description: p?.description || p?.descriptionHtml || p?.body_html || "",
-          tags: Array.isArray(p?.tags) ? p.tags : [],
-          variants: Array.isArray(p?.variants) ? p.variants : [],
-          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-        }));
+        const norm = (list) =>
+          list.map((p) => ({
+            ...p,
+            description:
+              p?.description || p?.descriptionHtml || p?.body_html || "",
+            descriptionHtml: p?.descriptionHtml || "",
+            tags: Array.isArray(p?.tags) ? p.tags : [],
+            variants: Array.isArray(p?.variants) ? p.variants : [],
+            image:
+              p?.image?.src ||
+              p?.image ||
+              (Array.isArray(p?.images) && p.images[0]?.src) ||
+              "",
+            minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+          }));
 
         if (cancelled) return;
+
         const potsSafe = norm(potsList);
         const plantsSafe = norm(plantsList);
+        const accSafe = norm(accList);
 
         setPots(potsSafe);
         setPlants(plantsSafe);
+        setAccessories(accSafe);
 
         if (potsSafe.length > 0) {
-          const v = (potsSafe[0].variants || []).find((x) => x?.availableForSale) || potsSafe[0].variants?.[0] || null;
+          const v =
+            (potsSafe[0].variants || []).find((x) => x?.availableForSale) ||
+            potsSafe[0].variants?.[0] ||
+            null;
           setSelectedPotVariant(v || null);
         }
         setSelectedPotIndex(0);
         setSelectedPlantIndex(0);
+        setAccIndex(0);
       } catch (err) {
         console.error("Error fetching products:", err);
         if (!cancelled) {
@@ -299,10 +321,12 @@ function Home() {
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeSize]);
 
-  // Sincroniza tamaño maestro si el usuario navega a un ítem de otro tamaño
+  /* ---------- sync tamaño por navegación de carrusel ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
     const sz = pot ? getSizeTag(pot.tags) : "";
@@ -314,29 +338,28 @@ function Home() {
     if (sz && sz !== activeSize) setActiveSize(sz);
   }, [selectedPlantIndex, plants]);
 
-  /* ---------- lock both carousels while editing ---------- */
+  /* ---------- bloquear carruseles en edición ---------- */
   useEffect(() => {
-    const potsEl = potScrollRef.current;
-    const plantsEl = plantScrollRef.current;
-    [potsEl, plantsEl].forEach((el) => {
-      if (!el) return;
-      el.style.pointerEvents = editing ? "none" : "auto";
-      el.style.touchAction = editing ? "none" : "pan-y";
-    });
+    [potScrollRef.current, plantScrollRef.current, accScrollRef.current].forEach(
+      (el) => {
+        if (!el) return;
+        el.style.pointerEvents = editing ? "none" : "auto";
+        el.style.touchAction = editing ? "none" : "pan-y";
+      }
+    );
   }, [editing]);
 
-  /* ---------- zoom wheel + pinch ---------- */
+  /* ---------- zoom rueda ---------- */
   useEffect(() => {
-    const container = sceneWrapRef.current;
-    const stage = stageRef.current;
+    const container = sceneWrapRef.current,
+      stage = stageRef.current;
     if (!container || !stage) return;
-
     zoomRef.current = zoomRef.current || 1;
     stage.style.setProperty("--zoom", String(zoomRef.current));
-
-    const MIN = 0.8, MAX = 2.5;
-    let target = zoomRef.current;
-    let raf = 0;
+    const MIN = 0.8,
+      MAX = 2.5;
+    let target = zoomRef.current,
+      raf = 0;
     const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
     const schedule = () => {
       if (raf) return;
@@ -346,7 +369,6 @@ function Home() {
         container.style.setProperty("--zoom", String(target));
       });
     };
-
     const onWheel = (e) => {
       if (!stage.contains(e.target)) return;
       e.preventDefault();
@@ -356,107 +378,46 @@ function Home() {
       schedule();
     };
     container.addEventListener("wheel", onWheel, { passive: false });
-
-    const pts = new Map();
-    let startDist = 0, startScale = zoomRef.current;
-    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-    const onPD = (e) => {
-      if (e.pointerType !== "touch") return;
-      container.setPointerCapture?.(e.pointerId);
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pts.size === 2) {
-        const [p1, p2] = [...pts.values()];
-        startDist = dist(p1, p2);
-        startScale = zoomRef.current;
-      }
-    };
-    const onPM = (e) => {
-      if (e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pts.size === 2 && startDist > 0) {
-        const [p1, p2] = [...pts.values()];
-        const factor = dist(p1, p2) / startDist;
-        zoomRef.current = clamp(startScale * Math.pow(factor, 0.9));
-        target = zoomRef.current;
-        schedule();
-        e.preventDefault();
-      }
-    };
-    const onPU = (e) => {
-      if (e.pointerType !== "touch") return;
-      if (editingRef.current) return;
-      pts.delete(e.pointerId);
-      if (pts.size < 2) { startDist = 0; startScale = zoomRef.current; }
-    };
-
-    container.addEventListener("pointerdown", onPD, { passive: false });
-    container.addEventListener("pointermove", onPM, { passive: false });
-    window.addEventListener("pointerup", onPU, { passive: true });
-    window.addEventListener("pointercancel", onPU, { passive: true });
-
     return () => {
       container.removeEventListener("wheel", onWheel);
-      container.removeEventListener("pointerdown", onPD);
-      container.removeEventListener("pointermove", onPM);
-      window.removeEventListener("pointerup", onPU);
-      window.removeEventListener("pointercancel", onPU);
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
 
-  /* ---------- accessory preview ---------- */
-  function openAccPreview(e, acc) {
-    const img =
-      acc && acc.image ? acc.image.src || acc.image
-      : acc && acc.images && acc.images[0] && acc.images[0].src ? acc.images[0].src : "";
-    const title = acc && (acc.title || acc.name) ? acc.title || acc.name : "";
-    const desc = acc ? acc.description || acc.body_html || "" : "";
-    const cx = e && typeof e.clientX === "number" ? e.clientX : 0;
-    const cy = e && typeof e.clientY === "number" ? e.clientY : 0;
-    setAccPreview({ visible: true, x: cx + 16, y: cy + 16, html: buildIframeHTML(img, title, desc) });
-  }
-  const handleAccEnter = (e, acc) => openAccPreview(e, acc);
-  const handleAccMove = (e) => {
-    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
-    if (isMobile) return;
-    setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p));
-  };
-  const handleAccLeave = () => setAccPreview((p) => ({ ...p, visible: false }));
-  const handleAccClick = (e, acc) => {
-    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
-    if (isMobile) {
-      if (accPreview.visible) handleAccLeave();
-      else openAccPreview(e, acc);
-    } else {
-      openAccPreview(e, acc);
-    }
-  };
-
   /* ---------- variantes: solo color ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
-    if (!pot) { setColorOptions([]); setSelectedPotVariant(null); return; }
+    if (!pot) {
+      setColorOptions([]);
+      setSelectedPotVariant(null);
+      return;
+    }
     const valid = (pot.variants || []).filter((v) => !!v.image);
     const lower = (s) => (s ?? "").toString().trim().toLowerCase();
     const colors = [
       ...new Set(
-        valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value))
+        valid.flatMap((v) =>
+          (v.selectedOptions || [])
+            .filter((o) => lower(o.name) === "color")
+            .map((o) => o.value)
+        )
       ),
     ];
     setColorOptions(colors);
 
-    const variantMatches = (v, color) => {
+    const match = (v, c) => {
       const opts = v.selectedOptions || [];
-      const colorOK = color ? opts.some((o) => lower(o.name) === "color" && lower(o.value) === lower(color)) : true;
-      return colorOK;
+      return c
+        ? opts.some(
+            (o) => lower(o.name) === "color" && lower(o.value) === lower(c)
+          )
+        : true;
     };
-
-    if (!(selectedColor && valid.some((v) => variantMatches(v, selectedColor)))) {
-      const firstColor = colors.find((c) => valid.some((v) => variantMatches(v, c)));
-      if (firstColor) setSelectedColor(firstColor);
+    if (!(selectedColor && valid.some((v) => match(v, selectedColor)))) {
+      const first = colors.find((c) => valid.some((v) => match(v, c)));
+      if (first) setSelectedColor(first);
     }
-
-    const chosen = valid.find((v) => variantMatches(v, selectedColor)) || valid[0] || null;
+    const chosen = valid.find((v) => match(v, selectedColor)) || valid[0] || null;
     setSelectedPotVariant(chosen || null);
   }, [pots, selectedPotIndex, selectedColor]);
 
@@ -464,12 +425,14 @@ function Home() {
   const getTotalPrice = () => {
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const potPrice = selectedPotVariant?.price
+      ? num(selectedPotVariant.price)
+      : firstVariantPrice(pot);
     const plantPrice = productMin(plant);
     const accTotal = selectedAccessoryIndices.reduce((s, i) => {
-      const acc = accessories[i];
-      const v = acc?.variants?.[0]?.price;
-      return s + (v ? num(v) : productMin(acc));
+      const a = accessories[i];
+      const v = a?.variants?.[0]?.price;
+      return s + (v ? num(v) : productMin(a));
     }, 0);
     return potPrice + plantPrice + accTotal;
   };
@@ -483,48 +446,61 @@ function Home() {
       : firstVariantPrice(pot);
     const plantCmp = productMin(plant);
     const accCmp = selectedAccessoryIndices.reduce((s, i) => {
-      const acc = accessories[i];
-      const base = acc?.variants?.[0]?.compareAtPrice ?? acc?.variants?.[0]?.price ?? acc?.minPrice;
+      const a = accessories[i];
+      const base =
+        a?.variants?.[0]?.compareAtPrice ??
+        a?.variants?.[0]?.price ??
+        a?.minPrice;
       return s + num(base);
     }, 0);
     return potCmp + plantCmp + accCmp;
   };
 
-  /* ---------- id helpers ---------- */
+  /* ---------- ids ---------- */
   const gidToNumeric = (id) => {
     const s = String(id || "");
     return s.includes("gid://") ? s.split("/").pop() : s;
   };
 
-  /* ---------- captura preview ---------- */
-  const captureDesignPreview = async () => {
+  /* ---------- captura y cart ---------- */
+  async function captureDesignPreview() {
     const el = stageRef?.current;
     if (!el) return null;
     const { default: html2canvas } = await import("html2canvas");
     const onclone = (doc) => {
-      const stage = doc.querySelector('[data-capture-stage="1"]') || doc.body;
-      stage.style.overflow = "visible";
-      stage.style.clipPath = "none";
-      const pruneToSelected = (selector, keepIdx) => {
-        const track = doc.querySelector(selector);
-        if (!track) return;
-        const slides = Array.from(track.children);
-        slides.forEach((el, i) => { if (i !== keepIdx) el.remove(); });
-        track.style.transform = "none";
-        track.style.width = "100%";
+      const st = doc.querySelector('[data-capture-stage="1"]') || doc.body;
+      st.style.overflow = "visible";
+      st.style.clipPath = "none";
+      const prune = (sel, keep) => {
+        const tr = doc.querySelector(sel);
+        if (!tr) return;
+        Array.from(tr.children).forEach((node, i) => {
+          if (i !== keep) node.remove();
+        });
+        tr.style.transform = "none";
+        tr.style.width = "100%";
       };
-      pruneToSelected('[data-capture="pot-track"]', selectedPotIndex);
-      pruneToSelected('[data-capture="plant-track"]', selectedPlantIndex);
-      ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach((sel) => {
-        const c = doc.querySelector(sel);
-        if (c) { c.style.overflow = "visible"; c.style.clipPath = "none"; }
-      });
+      prune('[data-capture="pot-track"]', selectedPotIndex);
+      prune('[data-capture="plant-track"]', selectedPlantIndex);
+      ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach(
+        (sel) => {
+          const c = doc.querySelector(sel);
+          if (c) {
+            c.style.overflow = "visible";
+            c.style.clipPath = "none";
+          }
+        }
+      );
     };
-    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
+    const canvas = await html2canvas(el, {
+      backgroundColor: "#eeeaeaff",
+      scale: 3,
+      useCORS: true,
+      onclone,
+    });
     return canvas.toDataURL("image/png");
-  };
-
-  const prepareDesignAttributes = async () => {
+  }
+  async function prepareDesignAttributes() {
     let previewUrl = "";
     try {
       const dataUrl = await captureDesignPreview();
@@ -538,8 +514,7 @@ function Home() {
         if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
         previewUrl = json.url || "";
       }
-    } catch (e) { console.warn("No se pudo subir el preview:", e); }
-
+    } catch {}
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
     return [
@@ -551,43 +526,45 @@ function Home() {
       { key: "_DesignSize", value: activeSize || "" },
       { key: "_LinePriority", value: "0" },
     ];
-  };
-
-  /* ---------- cart post ---------- */
-  const postCart = (shop, mainVariantId, qty, attrs, accessoryIds, returnTo) => {
+  }
+  function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     const asStr = (v) => String(v || "").trim();
     const isNum = (v) => /^\d+$/.test(asStr(v));
-    const gidToNumericLocal = (id) => {
+    const gidToNum = (id) => {
       const s = asStr(id);
       return s.includes("gid://") ? s.split("/").pop() : s;
     };
-    const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNumericLocal(mainVariantId);
+    const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
     if (!isNum(main)) throw new Error("Variant principal inválido");
     const accs = (accessoryIds || [])
-      .map((id) => (isNum(id) ? asStr(id) : gidToNumericLocal(id)))
+      .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
       .filter(isNum);
-
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = `https://${shop}/cart/add`;
-    const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
+    form.action = `https://um7xus-0u.myshopify.com/cart/add`;
+    const add = (n, v) => {
+      const i = document.createElement("input");
+      i.type = "hidden";
+      i.name = n;
+      i.value = String(v);
+      form.appendChild(i);
+    };
     let line = 0;
-
     const getA = (name) => {
       const n = name.toLowerCase();
-      return (attrs || []).find((a) => {
-        const k = (a.key || "").toLowerCase();
-        return k === n || k === `_${n}`;
-      })?.value || "";
+      return (
+        (attrs || []).find((a) => {
+          const k = (a.key || "").toLowerCase();
+          return k === n || k === `_${n}`;
+        })?.value || ""
+      );
     };
-
-    const previewUrl = getA("DesignPreview");
-    const designId = getA("DesignId");
-    const designPlant = getA("DesignPlant");
-    const designPot = getA("DesignPot");
-    const designColor = getA("DesignColor");
-    const designSize = getA("DesignSize");
-
+    const previewUrl = getA("DesignPreview"),
+      designId = getA("DesignId"),
+      designPlant = getA("DesignPlant"),
+      designPot = getA("DesignPot"),
+      designColor = getA("DesignColor"),
+      designSize = getA("DesignSize");
     add(`items[${line}][id]`, main);
     add(`items[${line}][quantity]`, String(qty || 1));
     add(`items[${line}][properties][_LinePriority]`, "0");
@@ -598,7 +575,6 @@ function Home() {
     if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
     if (designSize) add(`items[${line}][properties][_DesignSize]`, designSize);
     line++;
-
     accs.forEach((id) => {
       add(`items[${line}][id]`, id);
       add(`items[${line}][quantity]`, "1");
@@ -606,21 +582,21 @@ function Home() {
       add(`items[${line}][properties][_LinePriority]`, "1");
       line++;
     });
-
     if (returnTo) add("return_to", returnTo);
     document.body.appendChild(form);
     form.submit();
-  };
-
-  /* ---------- actions ---------- */
+  }
   const getAccessoryVariantIds = () =>
-    selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
-
-  const buyNow = async () => {
+    selectedAccessoryIndices
+      .map((i) => accessories[i]?.variants?.[0]?.id)
+      .map(gidToNumeric)
+      .filter((id) => /^\d+$/.test(id));
+  async function buyNow() {
     try {
       const attrs = await prepareDesignAttributes();
-      const previewUrl = attrs.find((a) => a.key === "_DesignPreview")?.value || "";
-      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const potPrice = selectedPotVariant?.price
+        ? num(selectedPotVariant.price)
+        : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
       const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
       const dpRes = await fetch("/api/design-product", {
@@ -628,7 +604,7 @@ function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
           price: basePrice,
           color: selectedColor || "Único",
           size: activeSize || "Único",
@@ -640,18 +616,17 @@ function Home() {
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
       const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+      postCart("um7xus-0u.myshopify.com", dp.variantId, quantity, attrs, accIds, "/checkout");
     } catch (e) {
-      console.error(e);
       alert(`No se pudo iniciar el checkout: ${e.message}`);
     }
-  };
-
-  const addToCart = async () => {
+  }
+  async function addToCart() {
     try {
       const attrs = await prepareDesignAttributes();
-      const previewUrl = attrs.find((a) => a.key === "_DesignPreview")?.value || "";
-      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const potPrice = selectedPotVariant?.price
+        ? num(selectedPotVariant.price)
+        : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
       const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
       const dpRes = await fetch("/api/design-product", {
@@ -659,7 +634,7 @@ function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
           price: basePrice,
           color: selectedColor || "Único",
           size: activeSize || "Único",
@@ -671,12 +646,21 @@ function Home() {
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
       const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+      postCart("um7xus-0u.myshopify.com", dp.variantId, quantity, attrs, accIds, "/cart");
     } catch (e) {
-      console.error(e);
       alert(`No se pudo añadir: ${e.message}`);
     }
-  };
+  }
+
+  /* ---------- handlers swipe ---------- */
+  const createHandlers = (items, setIndex) => ({
+    prev: () => setIndex((p) => (p > 0 ? p - 1 : Math.max(items.length - 1, 0))),
+    next: () => setIndex((p) => (p < items.length - 1 ? p + 1 : 0)),
+  });
+  const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
+  const potHandlers = createHandlers(pots, setSelectedPotIndex);
+  const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
+  const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
 
   /* ---------- UI ---------- */
   const baseCode = selectedPotVariant?.price?.currencyCode || "CLP";
@@ -686,12 +670,11 @@ function Home() {
   return (
     <div className={`container mt-5 ${styles.container}`} style={{ paddingBottom: "150px" }}>
       <div className="row justify-content-center align-items-start gx-5 gy-4">
-        {/* Carruseles */}
         <div className="col-lg-5 col-md-8 col-12 text-center">
 
-          {/* Selector de tamaño maestro */}
+          {/* Selector de tamaño */}
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-            {["Pequeña","Mediana","Grande"].map((s) => (
+            {["Pequeña", "Mediana", "Grande"].map((s) => (
               <button
                 key={s}
                 className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
@@ -712,7 +695,6 @@ function Home() {
               background: "linear-gradient(135deg, #f8f9fa 0%, #ebefe9ff 100%)",
               border: "3px dashed #6c757d",
               borderRadius: "20px",
-              position: "relative",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -721,53 +703,71 @@ function Home() {
               userSelect: "none",
             }}
           >
-            {/* Dots + flechas PLANTAS */}
+            {/* Dots + flechas plantas */}
             <IndicatorDots
               count={plants.length}
               current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              onSelect={(i) =>
+                setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))
+              }
               position="top"
-              label="Plantas"
             />
             <button
               className={`${styles.chev} ${styles.chevTopLeft}`}
               aria-label="Anterior planta"
-              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
+              onClick={() =>
+                setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
             <button
               className={`${styles.chev} ${styles.chevTopRight}`}
               aria-label="Siguiente planta"
-              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
+              onClick={() =>
+                setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 6l6 6-6 6" />
+              </svg>
             </button>
 
-            {/* Dots + flechas MACETAS */}
+            {/* Dots + flechas macetas */}
             <IndicatorDots
               count={pots.length}
               current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              onSelect={(i) =>
+                setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))
+              }
               position="bottom"
-              label="Macetas"
             />
             <button
               className={`${styles.chev} ${styles.chevBottomLeft}`}
               aria-label="Anterior maceta"
-              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+              onClick={() =>
+                setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
             <button
               className={`${styles.chev} ${styles.chevBottomRight}`}
               aria-label="Siguiente maceta"
-              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+              onClick={() =>
+                setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 6l6 6-6 6" />
+              </svg>
             </button>
 
-            {/* Nodo ESCALADO */}
+            {/* Nodo escalado con carruseles */}
             <div
               ref={stageRef}
               data-capture-stage="1"
@@ -788,33 +788,19 @@ function Home() {
                 ref={potScrollRef}
                 data-capture="pot-container"
                 style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
-                aria-disabled={editing ? "true" : "false"}
-                onPointerDownCapture={(e) => { potDownRef.current = { btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0, x: e.clientX ?? 0, y: e.clientY ?? 0 }; }}
-                onPointerUpCapture={(e) => {
-                  if (editingRef.current) return;
-                  const d = potDownRef.current || { btn: null, x: 0, y: 0 };
-                  if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
-                  const dx = Math.abs((e.clientX ?? 0) - d.x);
-                  const dy = Math.abs((e.clientY ?? 0) - d.y);
-                  if (dx > 8 || dy > 8) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const x = (e.clientX ?? 0) - rect.left;
-                  (x > rect.width / 2
-                    ? () => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
-                    : () => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0))))();
-                }}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...makeSwipeEvents(potSwipeRef, {
-                  prev: () => setSelectedPotIndex((prev) => (prev > 0 ? prev - 1 : Math.max(pots.length - 1, 0))),
-                  next: () => setSelectedPotIndex((prev) => (prev < pots.length - 1 ? prev + 1 : 0)),
-                })}
+                {...potSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
-                  {pots.map((product, index) => {
-                    const isSelected = index === selectedPotIndex;
-                    const variantImage = isSelected ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
-                    const imageUrl = variantImage || product.image;
+                <div
+                  className={styles.carouselTrack}
+                  data-capture="pot-track"
+                  style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
+                >
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel
+                      ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null
+                      : null;
+                    const imageUrl = vImg || product.image;
                     return (
                       <div key={product.id} className={styles.carouselItem}>
                         <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
@@ -839,47 +825,124 @@ function Home() {
                   touchAction: "pan-y",
                   userSelect: "none",
                 }}
-                onPointerDownCapture={(e) => { plantDownRef.current = { btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0, x: e.clientX ?? 0, y: e.clientY ?? 0 }; }}
-                onPointerUpCapture={(e) => {
-                  if (editingRef.current) return;
-                  const d = plantDownRef.current || { btn: null, x: 0, y: 0 };
-                  if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
-                  const dx = Math.abs((e.clientX ?? 0) - d.x);
-                  const dy = Math.abs((e.clientY ?? 0) - d.y);
-                  if (dx > 8 || dy > 8) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const x = (e.clientX ?? 0) - rect.left;
-                  (x > rect.width / 2
-                    ? () => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
-                    : () => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0))))();
-                }}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...makeSwipeEvents(plantSwipeRef, {
-                  prev: () => setSelectedPlantIndex((prev) => (prev > 0 ? prev - 1 : Math.max(plants.length - 1, 0))),
-                  next: () => setSelectedPlantIndex((prev) => (prev < plants.length - 1 ? prev + 1 : 0)),
-                })}
+                {...plantSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                <div
+                  className={styles.carouselTrack}
+                  data-capture="plant-track"
+                  style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
+                >
                   {plants.map((product) => (
                     <div key={product.id} className={styles.carouselItem}>
-                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
+                      <img
+                        src={product.image}
+                        alt={product.title}
+                        className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+                      />
                     </div>
                   ))}
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Carrusel accesorios */}
+          {accessories.length > 0 && (
+            <div className="mt-4 position-relative" style={{ width: "100%", maxWidth: 500, margin: "0 auto" }}>
+              <IndicatorDots count={accessories.length} current={accIndex} onSelect={(i) => setAccIndex(i)} />
+              <button
+                className="btn btn-sm btn-outline-secondary"
+                style={{ position: "absolute", left: 0, top: "45%", zIndex: 2 }}
+                onClick={() => setAccIndex((i) => (i > 0 ? i - 1 : Math.max(accessories.length - 1, 0)))}
+              >
+                ‹
+              </button>
+              <button
+                className="btn btn-sm btn-outline-secondary"
+                style={{ position: "absolute", right: 0, top: "45%", zIndex: 2 }}
+                onClick={() => setAccIndex((i) => (i < accessories.length - 1 ? i + 1 : 0))}
+              >
+                ›
+              </button>
+
+              <div ref={accScrollRef} style={{ overflow: "hidden" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    width: `${accessories.length * 100}%`,
+                    transform: `translateX(-${(accIndex * 100) / accessories.length}%)`,
+                    transition: "transform .3s ease",
+                  }}
+                >
+                  {accessories.map((product, index) => {
+                    const img =
+                      product?.image ||
+                      (Array.isArray(product?.images) && product.images[0]?.src) ||
+                      "/placeholder.png";
+                    const title = product?.title || product?.name || `Accesorio ${index + 1}`;
+                    const selected = selectedAccessoryIndices.includes(index);
+                    return (
+                      <div key={product?.id || index} style={{ flex: "0 0 100%", padding: "0 24px" }}>
+                        <div
+                          onClick={(e) => {
+                            const next = selected
+                              ? selectedAccessoryIndices.filter((i) => i !== index)
+                              : [...selectedAccessoryIndices, index];
+                            setSelectedAccessoryIndices(next);
+                            const cx = typeof e?.clientX === "number" ? e.clientX : 0,
+                              cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                            setAccPreview({
+                              visible: true,
+                              x: cx + 16,
+                              y: cy + 16,
+                              html: buildIframeHTML(img, title, product?.description || ""),
+                            });
+                          }}
+                          onMouseEnter={(e) => {
+                            const cx = typeof e?.clientX === "number" ? e.clientX : 0,
+                              cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                            setAccPreview({
+                              visible: true,
+                              x: cx + 16,
+                              y: cy + 16,
+                              html: buildIframeHTML(img, title, product?.description || ""),
+                            });
+                          }}
+                          onMouseMove={(e) =>
+                            setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
+                          }
+                          onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
+                          style={{
+                            border: selected ? "3px solid black" : "1px solid #ccc",
+                            borderRadius: 12,
+                            padding: 6,
+                            cursor: "pointer",
+                            width: "100%",
+                            maxWidth: 420,
+                            margin: "0 auto",
+                          }}
+                          aria-label={title}
+                        >
+                          <img
+                            src={img}
+                            alt={title}
+                            style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 6 }}
+                          />
+                          <div className="mt-2 small text-muted">{title}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Overlay de edición */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
-
-        {/* Información y selección */}
+        {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
           {pots.length > 0 && plants.length > 0 && (
             <div className="text-center">
-              {/* Precio combinado */}
               <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
                 {totalBase > totalNow && (
                   <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
@@ -889,88 +952,36 @@ function Home() {
                 <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
               </div>
 
-              {/* Color */}
               {colorOptions.length > 0 && (
                 <div className="mb-4">
                   <h5>Color</h5>
                   <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    {colorOptions.map((color, index) => {
-                      const pot = pots[selectedPotIndex];
-                      const disponible = hasVariantOwnImage({ pot, color });
-                      return (
-                        <div
-                          key={index}
-                          onClick={() => disponible && setSelectedColor(color)}
-                          style={{
-                            position: "relative",
-                            width: "40px",
-                            height: "40px",
-                            borderRadius: "50%",
-                            backgroundColor: colorMap[color] || "#ccc",
-                            border: selectedColor === color ? "3px solid black" : "1px solid #ccc",
-                            cursor: disponible ? "pointer" : "not-allowed",
-                            opacity: disponible ? 1 : 0.35,
-                            filter: disponible ? "none" : "grayscale(100%)",
-                            pointerEvents: disponible ? "auto" : "none",
-                            boxShadow: selectedColor === color ? "0 0 5px rgba(0,0,0,0.5)" : "none",
-                          }}
-                          title={color}
-                        />
-                      );
-                    })}
+                    {colorOptions.map((color, index) => (
+                      <div
+                        key={index}
+                        onClick={() => setSelectedColor(color)}
+                        title={color}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: "50%",
+                          backgroundColor: "#ccc",
+                          border: selectedColor === color ? "3px solid black" : "1px solid #ccc",
+                          cursor: "pointer",
+                        }}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Accesorios */}
-              {accessories && accessories.length > 0 && (
-                <div className="mb-4">
-                  <h5>Accesorios</h5>
-                  <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    {accessories.map((product, index) => {
-                      const img =
-                        product && product.image ? product.image.src || product.image
-                        : product && product.images && product.images[0] && product.images[0].src ? product.images[0].src
-                        : "/placeholder.png";
-                      const title = product && (product.title || product.name) ? product.title || product.name : `Accesorio ${index + 1}`;
-                      const selected = selectedAccessoryIndices.includes(index);
-
-                      return (
-                        <div
-                          key={product?.id || index}
-                          onClick={(e) => {
-                            handleAccClick(e, product);
-                            setSelectedAccessoryIndices((prev) => (prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]));
-                          }}
-                          onMouseEnter={(e) => handleAccEnter(e, product)}
-                          onMouseMove={handleAccMove}
-                          onMouseLeave={handleAccLeave}
-                          aria-label={title}
-                          style={{
-                            border: selected ? "3px solid black" : "1px solid #ccc",
-                            borderRadius: "12px",
-                            padding: "6px",
-                            cursor: "zoom-in",
-                            width: "100px",
-                            height: "100px",
-                            overflow: "hidden",
-                            transition: "transform 0.2s ease",
-                          }}
-                        >
-                          <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Cantidad + botones */}
               <div className="d-flex flex-column align-items-center mb-5">
                 <div className="mb-3 text-center">
                   <label className="form-label d-block">Cantidad</label>
-                  <div className="input-group justify-content-center" style={{ maxWidth: "200px", margin: "0 auto" }}>
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}>-</button>
+                  <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>
+                      -
+                    </button>
                     <input
                       type="number"
                       className="form-control text-center"
@@ -991,43 +1002,53 @@ function Home() {
                         else if (n > 1000) setQuantity(1000);
                       }}
                     />
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((prev) => Math.min(1000, prev + 1))}>+</button>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>
+                      +
+                    </button>
                   </div>
                 </div>
 
                 <div className="d-flex gap-3">
-                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
-                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>
+                    Añadir al carro
+                  </button>
+                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>
+                    Comprar ahora
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
           {/* Descripciones */}
-          <div className="text-start px-3 mb-4" style={{ maxWidth: "500px", margin: "0 auto" }}>
+          <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
             <h6><strong>Planta</strong></h6>
             {(() => {
-              const d = plants[selectedPlantIndex]?.description;
-              return d && /<[^>]+>/.test(d) ? (
-                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: d }} />
+              const p = plants[selectedPlantIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
               ) : (
-                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción de la planta no disponible."}</p>
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
               );
             })()}
+
             <h6 className="mt-3"><strong>Maceta</strong></h6>
             {(() => {
-              const d = pots[selectedPotIndex]?.description;
-              return d && /<[^>]+>/.test(d) ? (
-                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: d }} />
+              const p = pots[selectedPotIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
               ) : (
-                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción de la maceta no disponible."}</p>
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
               );
             })()}
           </div>
         </div>
       </div>
 
-      {/* Preview flotante */}
       <IframePreview
         visible={accPreview.visible}
         x={accPreview.x}
@@ -1037,12 +1058,23 @@ function Home() {
       />
 
       <style jsx global>{`
-        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
-        .pot-carousel--locked::-webkit-scrollbar { display: none; }
+        .pot-carousel--locked {
+          pointer-events: none;
+          user-select: none;
+          -webkit-user-drag: none;
+          touch-action: none;
+          overflow: hidden !important;
+          scrollbar-width: none;
+        }
+        .pot-carousel--locked::-webkit-scrollbar {
+          display: none;
+        }
       `}</style>
     </div>
   );
 }
 
-export async function getServerSideProps() { return { props: {} }; }
+export async function getServerSideProps() {
+  return { props: {} };
+}
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
