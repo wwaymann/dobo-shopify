@@ -4,6 +4,32 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 
+/* ---------- type & size helpers ---------- */
+const isMaceta = (p) => {
+  const t = String(p?.productType || "").trim().toLowerCase();
+  const tags = Array.isArray(p?.tags) ? p.tags.map(x => String(x).trim().toLowerCase()) : [];
+  return t === "maceta" || t === "macetas" || tags.includes("maceta") || tags.includes("macetas");
+};
+const isPlanta = (p) => {
+  const t = String(p?.productType || "").trim().toLowerCase();
+  const tags = Array.isArray(p?.tags) ? p.tags.map(x => String(x).trim().toLowerCase()) : [];
+  return t === "planta" || t === "plantas" || tags.includes("planta") || tags.includes("plantas");
+};
+const getSizeTag = (tags = []) => {
+  if (!Array.isArray(tags)) return '';
+  const n = (s) => String(s||'').trim().toLowerCase();
+  const hit = tags.find(t => ["grande","mediano","pequeño","pequeno"].includes(n(t)) || n(t).startsWith("sz:"));
+  if (!hit) return '';
+  const h = n(hit);
+  if (h.startsWith("sz:")) return hit.slice(3);
+  if (h === "pequeno") return "Pequeño";
+  if (h === "grande")  return "Grande";
+  if (h === "mediano") return "Mediano";
+  if (h === "pequeño") return "Pequeño";
+  return '';
+};
+
+
 /* ---------- helpers precio & num ---------- */
 const money = (amount, currency = "CLP") =>
   new Intl.NumberFormat("es-CL", {
@@ -157,6 +183,9 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
 
   const [editing, setEditing] = useState(false);
 
+  const [activeSize, setActiveSize] = useState("Grande"); // tamaño maestro
+
+
   // Escucha bandera de edición emitida por el overlay
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
@@ -238,53 +267,66 @@ const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
     Beige: "#EAD8AB",
   };
 
-  /* ---------- fetch products ---------- */
-  useEffect(() => {
-    async function fetchProducts() {
-      try {
-        const res = await fetch("/api/products", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+/* ---------- fetch products por tamaño ---------- */
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const url = `/api/products?size=${encodeURIComponent(activeSize)}&first=60`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (data.products || []);
 
-        const arr = Array.isArray(data) ? data : [];
-        const safe = arr.map((p) => ({
-          ...p,
-          description: p?.description || p?.descriptionHtml || p?.body_html || "",
-          tags: Array.isArray(p?.tags) ? p.tags : [],
-          variants: Array.isArray(p?.variants) ? p.variants : [],
-          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-        }));
+      const safe = list.map((p) => ({
+        ...p,
+        description: p?.description || p?.descriptionHtml || p?.body_html || "",
+        tags: Array.isArray(p?.tags) ? p.tags : [],
+        variants: Array.isArray(p?.variants) ? p.variants : [],
+        image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+        minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+      }));
 
-        const byTag = (t) => safe.filter((p) => p.tags.some((tag) => String(tag).toLowerCase().includes(t)));
+      if (cancelled) return;
+      const macetas = safe.filter(isMaceta);
+      const plantas = safe.filter(isPlanta);
 
-        let plantas = byTag("plantas");
-        let macetas = byTag("macetas");
-        let accesorios = byTag("accesorios");
+      setPots(macetas);
+      setPlants(plantas);
 
-        if (plantas.length + macetas.length + accesorios.length === 0 && safe.length > 0) {
-          macetas = safe;
-          plantas = [];
-          accesorios = [];
-        }
-
-        setPlants(plantas);
-        setPots(macetas);
-        setAccessories(accesorios);
-
-        if (macetas.length > 0) {
-          const fv = (macetas[0].variants || []).find((v) => v?.availableForSale) || macetas[0].variants?.[0] || null;
-          setSelectedPotVariant(fv || null);
-        }
-      } catch (err) {
-        console.error("Error fetching products:", err);
+      // preselección de variante de maceta
+      if (macetas.length > 0) {
+        const v = (macetas[0].variants || []).find((x) => x?.availableForSale) || macetas[0].variants?.[0] || null;
+        setSelectedPotVariant(v || null);
+      }
+      setSelectedPotIndex(0);
+      setSelectedPlantIndex(0);
+    } catch (err) {
+      console.error("Error fetching products:", err);
+      if (!cancelled) {
         setPlants([]);
         setPots([]);
         setAccessories([]);
       }
     }
-    fetchProducts();
-  }, []);
+  })();
+  return () => { cancelled = true; };
+}, [activeSize]);
+
+  // Cambiar tamaño si el usuario cambia de maceta a otra con distinto tag
+useEffect(() => {
+  const pot = pots[selectedPotIndex];
+  const sz = pot ? getSizeTag(pot.tags) : '';
+  if (sz && sz !== activeSize) setActiveSize(sz);
+}, [selectedPotIndex, pots]);
+
+// Cambiar tamaño si el usuario cambia de planta a otra con distinto tag
+useEffect(() => {
+  const plant = plants[selectedPlantIndex];
+  const sz = plant ? getSizeTag(plant.tags) : '';
+  if (sz && sz !== activeSize) setActiveSize(sz);
+}, [selectedPlantIndex, plants]);
+
 
   /* ---------- handlers & swipe events ---------- */
   const createHandlers = (items, setIndex) => ({
