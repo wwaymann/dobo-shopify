@@ -9,8 +9,8 @@ function normalizeSize(raw) {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
   if (s === "grande" || s === "g") return "Grande";
-  if (s === "mediano" || s === "m") return "Mediano";
-  if (s === "pequeño" || s === "pequeno" || s === "p") return "Pequeño";
+  if (s === "mediana" || s === "m") return "Mediano";
+  if (s === "pequeña" || s === "pequeno" || s === "p") return "Pequeño";
   return null;
 }
 function normalizeType(raw) {
