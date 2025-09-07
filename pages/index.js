@@ -65,6 +65,39 @@ p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
   <p>${escapeHtml(desc || "")}</p>
 </div></body></html>`;
 
+
+function getPreviewRect() {
+  if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
+  const isMobile = window.innerWidth <= 768;
+  const w = isMobile ? Math.min(window.innerWidth - 24, 420) : 360;
+  const h = isMobile ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
+  return { w, h, centered: isMobile };
+}
+
+function IframePreview(props) {
+  if (!props.visible) return null;
+  const dims = getPreviewRect();
+  const base = {
+    position: "fixed",
+    borderRadius: 12,
+    overflow: "hidden",
+    background: "#fff",
+    boxShadow: "0 12px 32px rgba(0,0,0,.24)",
+    zIndex: 9999,
+    pointerEvents: "none",
+  };
+  const style = dims.centered
+    ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: dims.w, height: dims.h }
+    : { ...base, left: props.x, top: props.y, width: dims.w, height: dims.h };
+
+  return (
+    <div style={style}>
+      <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
+    </div>
+  );
+}
+
+
 /* ---------- dynamic overlay ---------- */
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
 
