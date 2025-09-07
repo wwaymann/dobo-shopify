@@ -15,7 +15,7 @@ function normalizeSize(raw) {
     s === "pequeña"  || s === "pequena" ||
     s === "pequeño"  || s === "pequeno" ||
     s === "p"
-  ) return "perqueña";          // <-- exactamente como está en tus tags
+  ) return "Pequeña";          // <-- exactamente como está en tus tags
   return null;
 }
 
