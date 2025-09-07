@@ -9,10 +9,16 @@ function normalizeSize(raw) {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
   if (s === "grande" || s === "g") return "Grande";
-  if (s === "mediana" || s === "mediano" || s === "m") return "Mediano";
-  if (s === "pequeña" || s === "pequeño" || s === "pequeno" || s === "pequena" || s === "p") return "Pequeño";
+  if (s === "mediana" || s === "mediano" || s === "m") return "Mediana";
+  if (
+    s === "perqueña" || s === "perquena" ||
+    s === "pequeña"  || s === "pequena" ||
+    s === "pequeño"  || s === "pequeno" ||
+    s === "p"
+  ) return "perqueña";          // <-- exactamente como está en tus tags
   return null;
 }
+
 function normalizeType(raw) {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
