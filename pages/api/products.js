@@ -5,34 +5,32 @@ const STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 const API_VERSION = process.env.SHOPIFY_STOREFRONT_API_VERSION || "2024-10";
 const ENDPOINT = `https://${STORE_DOMAIN}/api/${API_VERSION}/graphql.json`;
 
+// Ajusta “perqueña/pequeña” según tus tags reales
 function normalizeSize(raw) {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
   if (s === "grande" || s === "g") return "Grande";
   if (s === "mediana" || s === "mediano" || s === "m") return "Mediana";
-  if (
-    s === "perqueña" || s === "perquena" ||
-    s === "pequeña"  || s === "pequena" ||
-    s === "pequeño"  || s === "pequeno" ||
-    s === "p"
-  ) return "Pequeña";          // <-- exactamente como está en tus tags
+  if (["perqueña","perquena","pequeña","pequena","pequeño","pequeno","p"].includes(s)) return "perqueña";
   return null;
 }
-
 function normalizeType(raw) {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
   if (["maceta","macetas","pot","pots"].includes(s)) return "maceta";
   if (["planta","plantas","plant","plants"].includes(s)) return "planta";
+  if (["accesorio","accesorios","accessory","accessories"].includes(s)) return "accesorio";
   return null;
 }
 function buildTypeClause(t) {
-  // Soporta tag, product_type y coincidencia en título
   if (t === "maceta") {
     return `(tag:'maceta' OR tag:'macetas' OR product_type:'maceta' OR product_type:'macetas' OR title:maceta)`;
   }
   if (t === "planta") {
     return `(tag:'planta' OR tag:'plantas' OR product_type:'planta' OR product_type:'plantas' OR title:planta)`;
+  }
+  if (t === "accesorio") {
+    return `(tag:'accesorio' OR tag:'accesorios' OR product_type:'accesorio' OR product_type:'accesorios' OR title:accesorio)`;
   }
   return null;
 }
@@ -55,8 +53,6 @@ export default async function handler(req, res) {
     if (sizeTag) parts.push(`tag:'${sizeTag}'`);
     const typeClause = buildTypeClause(typeTag);
     if (typeClause) parts.push(typeClause);
-
-    // AND entre filtros; si no hay filtros, query = null
     const search = parts.length ? parts.join(" AND ") : null;
 
     const query = /* GraphQL */ `
@@ -69,6 +65,8 @@ export default async function handler(req, res) {
               title
               productType
               tags
+              description
+              descriptionHtml
               images(first: 1) { edges { node { url altText } } }
               variants(first: 50) {
                 edges {
@@ -97,22 +95,10 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({ query, variables: { first, search } }),
     });
-
     const json = await resp.json();
-
     if (!resp.ok || json.errors) {
-      console.error("Shopify error", {
-        status: resp.status,
-        errors: json.errors,
-        search,
-        endpoint: ENDPOINT,
-      });
-      return res.status(502).json({
-        error: "Error desde Shopify",
-        status: resp.status,
-        details: json.errors || json,
-        search,
-      });
+      console.error("Shopify error", { status: resp.status, errors: json.errors, search, endpoint: ENDPOINT });
+      return res.status(502).json({ error: "Error desde Shopify", status: resp.status, details: json.errors || json, search });
     }
 
     const products =
@@ -122,6 +108,8 @@ export default async function handler(req, res) {
         title: node.title,
         productType: node.productType || "",
         tags: node.tags || [],
+        description: node.description || "",
+        descriptionHtml: node.descriptionHtml || "",
         image: node.images?.edges?.[0]?.node?.url || null,
         alt: node.images?.edges?.[0]?.node?.altText || null,
         variants:
@@ -138,12 +126,7 @@ export default async function handler(req, res) {
       })) || [];
 
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-    return res.status(200).json({
-      size: sizeTag || null,
-      type: typeTag || null,
-      count: products.length,
-      products,
-    });
+    return res.status(200).json({ size: sizeTag || null, type: typeTag || null, count: products.length, products });
   } catch (e) {
     console.error("API /products exception", e);
     return res.status(500).json({ error: "Fallo de servidor", details: String(e) });
