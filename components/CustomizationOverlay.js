@@ -72,21 +72,21 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+// Forzar repintado tras aplicar snapshots
 const applyingRef = useRef(false);
 
 function forceRepaint() {
   const c = fabricCanvasRef.current; if (!c) return;
   try {
-    // marcar todo sucio y recalcular offsets
     (c.getObjects() || []).forEach(o => o.dirty = true);
     c.discardActiveObject();
   } catch {}
   c.calcOffset?.();
   c.renderAll?.();
   c.requestRenderAll?.();
-  // un frame extra por si el browser difiere el pintado
   setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
 }
+
 
   
   // touchAction del upper canvas cuando se edita texto
