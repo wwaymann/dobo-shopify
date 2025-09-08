@@ -2,9 +2,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
-import HistoryManager from '../lib/history';
-import { saveLocalDesign } from '../lib/designStore';
-
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -46,15 +43,6 @@ export default function CustomizationOverlay({
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
-
-  // Historial de cambios
-const historyRef = useRef(new HistoryManager({
-  limit: 200,
-  onChange: (current) => {
-    if (current) saveLocalDesign(current); // autosave en localStorage
-  }
-}));
-
 
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -159,7 +147,7 @@ useEffect(() => {
       originX: 'center', originY: 'center',
       selectable: false, evented: false,
       objectCaching: false, shadow: null, stroke: null,
-      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'source-over'
+      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
     });
     const shadow = new fabric.Textbox(text, {
       ...opts,
@@ -240,9 +228,8 @@ useEffect(() => {
     };
     applyElement(srcEl);
 
-    base.set({ globalCompositeOperation: 'source-over', opacity: 1 });
-    shadow.set({ globalCompositeOperation: 'multiply',    opacity: 1 });
-    highlight.set({ globalCompositeOperation: 'screen',   opacity: 1 });
+    shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
+    highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
 
     const normalizeImgOffsets = () => {
       const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
@@ -407,14 +394,9 @@ useEffect(() => {
       selection: true,
       perPixelTargetFind: true,
       targetFindTolerance: 8,
-     
     });
-  
     fabricCanvasRef.current = c;
 
-    try { c.lowerCanvasEl.style.background = '#fff'; } catch {}
-    c.renderAll();
-   
     // API mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
@@ -476,12 +458,6 @@ useEffect(() => {
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
-    // Snapshot al modificar objetos (mover, escalar, rotar, etc.)
-c.on('object:modified', () => {
-  const snap = exportDesignSnapshot();
-  if (snap) historyRef.current.push(JSON.parse(JSON.stringify(snap)));
-});
-    
     // Doble-click (desktop) → editar texto del grupo
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
@@ -761,7 +737,7 @@ useEffect(() => {
   return () => {
     target.removeEventListener('wheel', onWheel);
     target.removeEventListener('pointerdown', onPD);
-    target.removeEventListener('pointermove', onPM, true);
+    target.removeEventListener('pointermove', onPM, { capture: true });
     window.removeEventListener('pointerup', onPU);
     window.removeEventListener('pointercancel', onCancel);
     document.removeEventListener('visibilitychange', onCancel);
@@ -800,45 +776,7 @@ useEffect(() => {
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
   }, [editing, anchorRef, stageRef]);
 
-  function commitDesignSnapshot(nextDesignState) {
-  const snapshot = JSON.parse(JSON.stringify(nextDesignState));
-  historyRef.current.push(snapshot);
-}
-
-  
   // ===== Acciones =====
-
-  // ---- Snapshots de diseño (export / apply) ----
-function exportDesignSnapshot() {
-  const c = fabricCanvasRef.current; if (!c) return null;
-  return {
-    baseSize, // ya existe en tu estado
-    objects: c.toJSON(['_kind','_textChildren']).objects || []
-  };
-}
-
-async function applyDesignSnapshotToCanvas(snapshot) {
-  if (!snapshot) return;
-  const c = fabricCanvasRef.current; if (!c) return;
-
-  // Limpia lienzo (sin tocar tu stage/menu externo)
-  c.clear();
-
-  // Recrear objetos
-  await new Promise((resolve) => {
-    fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
-      objs.forEach(o => c.add(o));
-      c.renderAll();
-      resolve();
-    });
-  });
-
-  // Opcional: descartar selección y refrescar UI
-  try { c.discardActiveObject(); } catch {}
-  c.requestRenderAll?.();
-  setSelType('none');
-}
-
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const group = makeTextGroup('Nuevo párrafo', {
@@ -853,8 +791,6 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
-    commitDesignSnapshot(exportDesignSnapshot());
-
   };
 
   const addImageFromFile = (file) => {
@@ -872,16 +808,13 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       c.add(group);
       c.setActiveObject(group);
       setSelType('image');
-      c.requestRenderAll?.();
+      c.requestRenderAll();
       setEditing(true);
-      commitDesignSnapshot(exportDesignSnapshot());
-
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
-  
 
   const replaceActiveFromFile = (file) => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
@@ -902,15 +835,11 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      commitDesignSnapshot(exportDesignSnapshot());
-
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
-
-
 
   // Borrar selección (grupos)
   const onDelete = () => {
@@ -929,8 +858,6 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
-    commitDesignSnapshot(exportDesignSnapshot());
-
   };
 
   const clearSelectionHard = () => {
@@ -1041,372 +968,292 @@ async function applyDesignSnapshotToCanvas(snapshot) {
 
   if (!visible) return null;
 
-// ===== Overlay Canvas dentro de la maceta =====
-  function OverlayCanvas() {
+  // ===== Overlay Canvas dentro de la maceta =====
+  const OverlayCanvas = (
+    <div
+      ref={overlayRef}
+      style={{
+        position: "absolute",
+        left: overlayBox.left,
+        top: overlayBox.top,
+        width: overlayBox.w,
+        height: overlayBox.h,
+        zIndex: Z_CANVAS,
+        overflow: "hidden",
+        pointerEvents: editing ? "auto" : "none",
+        touchAction: editing ? "none" : "auto",
+        overscrollBehavior: "contain",
+      }}
+      // Evita que un toque en canvas active botones del menú
+      onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
+    >
+      <canvas
+        data-dobo-design="1"
+        ref={canvasRef}
+        width={overlayBox.w}
+        height={overlayBox.h}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          background: 'transparent',
+          touchAction: editing ? 'none' : 'auto'
+        }}
+      />
+    </div>
+  );
+
+  // ===== Menú fijo =====
+  function Menu() {
     return (
       <div
-        ref={overlayRef}
+        ref={menuRef}
         style={{
-          position: "absolute",
-          left: overlayBox.left,
-          top: overlayBox.top,
-          width: overlayBox.w,
-          height: overlayBox.h,
-          zIndex: Z_CANVAS,
-          overflow: "hidden",
-          pointerEvents: editing ? "auto" : "none",
-          touchAction: editing ? "none" : "auto",
-          overscrollBehavior: "contain",
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          background: 'rgba(253, 253, 253, 0.34)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          border: '1px solid #ddd',
+          borderRadius: 12,
+          padding: '10px 12px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          width: 'auto',
+          maxWidth: '94vw',
+          fontSize: 12,
+          userSelect: 'none'
         }}
-        onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
+        // Los eventos del menú nunca deben tocar el canvas
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
       >
-        <canvas
-          data-dobo-design="1"
-          ref={canvasRef}
-          width={overlayBox.w}
-          height={overlayBox.h}
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'block',
-            background: 'transparent',
-            touchAction: editing ? 'none' : 'auto'
-          }}
-        />
+        {/* LÍNEA 1: Zoom + modos */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {typeof setZoom === 'function' && (
+            <div className="input-group input-group-sm" style={{ width: 180 }}>
+              <span className="input-group-text">Zoom</span>
+              <button type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
+              <input type="text" readOnly className="form-control form-control-sm text-center"
+                value={`${Math.round((zoom || 1) * 100)}%`} />
+              <button type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={exitDesignMode}
+            style={{ minWidth: '16ch' }}
+          >
+            Seleccionar Maceta
+          </button>
+
+          <button
+            type="button"
+            className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={enterDesignMode}
+            style={{ minWidth: '12ch' }}
+          >
+            Diseñar
+          </button>
+        </div>
+
+        {/* LÍNEA 2: Acciones básicas */}
+        {editing && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button type="button" className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={addText}
+              disabled={!ready}
+            >
+              + Texto
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => addInputRef.current?.click()}
+              disabled={!ready}
+            >
+              + Imagen
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={onDelete}
+              disabled={!ready || selType === 'none'}
+              title="Eliminar seleccionado"
+            >
+              Borrar
+            </button>
+          </div>
+        )}
+
+        {/* LÍNEA 3: Propiedades por tipo */}
+        {editing && (
+          <>
+            {selType === 'text' && (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+                  <span className="input-group-text">Fuente</span>
+                  <select
+                    className="form-select form-select-sm"
+                    value={fontFamily}
+                    onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                  >
+                    {FONT_OPTIONS.map(f => (
+                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                  <button
+                    type="button"
+                    className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}
+                  >
+                    I
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
+                  >
+                    U
+                  </button>
+                </div>
+
+                <div className="input-group input-group-sm" style={{ width: 160 }}>
+                  <span className="input-group-text">Tamaño</span>
+                  <input
+                    type="number"
+                    className="form-control form-control-sm"
+                    min={8}
+                    max={200}
+                    step={1}
+                    value={fontSize}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onChange={(e) => {
+                      const v = clamp(parseInt(e.target.value || '0', 10), 8, 200);
+                      setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                    }}
+                  />
+                </div>
+
+                <div className="btn-group dropup">
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => setShowAlignMenu(v => !v)}
+                  >
+                    {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
+                  </button>
+                  {showAlignMenu && (
+                    <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
+                      {['left','center','right','justify'].map(a => (
+                        <li key={a}>
+                          <button
+                            type="button"
+                            className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
+                            onPointerDown={(e)=>e.stopPropagation()}
+                            onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
+                          >
+                            {a}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {selType === 'image' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div className="input-group input-group-sm" style={{ width: 230 }}>
+                  <span className="input-group-text">Detalles</span>
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
+                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
+                </div>
+
+                <div className="input-group input-group-sm" style={{ width: 190 }}>
+                  <span className="input-group-text">Profundidad</span>
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
+                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
+                </div>
+
+                <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
+                  <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
+                  <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Inputs ocultos */}
+        <input ref={addInputRef} type="file" accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }} />
+        <input ref={replaceInputRef} type="file" accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }} />
       </div>
     );
   }
 
-// ===== Menú fijo =====
-function Menu() {
+  // ===== Render =====
   return (
-    <div
-      ref={menuRef}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        background: 'rgba(253,253,253,0.34)',
-        backdropFilter: 'blur(4px)',
-        WebkitBackdropFilter: 'blur(4px)',
-        border: '1px solid #ddd',
-        borderRadius: 12,
-        padding: '10px 12px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        width: 'auto',
-        maxWidth: '94vw',
-        fontSize: 12,
-        userSelect: 'none'
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerMove={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
-    >
-      {/* LÍNEA 1: Zoom + modos + Undo/Redo */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        {typeof setZoom === 'function' && (
-          <div className="input-group input-group-sm" style={{ width: 180 }}>
-            <span className="input-group-text">Zoom</span>
-            <button type="button" className="btn btn-outline-secondary"
-              onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
-            <input type="text" readOnly className="form-control form-control-sm text-center"
-              value={`${Math.round((zoom || 1) * 100)}%`} />
-            <button type="button" className="btn btn-outline-secondary"
-              onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
-          </div>
-        )}
+    <>
+      {/* Overlay dentro de la maceta */}
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
-        <button
-          type="button"
-          className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()}
-          onPointerDown={(e)=>e.stopPropagation()}
-          onClick={exitDesignMode}
-          style={{ minWidth: '16ch' }}
+      {/* Menú fijo abajo */}
+      {typeof document !== 'undefined' ? createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
+            bottom: 8,
+            transform: 'translateX(-50%)',
+            zIndex: Z_MENU,
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'none'
+          }}
         >
-          Seleccionar Maceta
-        </button>
-
-        <button
-          type="button"
-          className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()}
-          onPointerDown={(e)=>e.stopPropagation()}
-          onClick={enterDesignMode}
-          style={{ minWidth: '12ch' }}
-        >
-          Diseñar
-        </button>
-
-        <div className="d-flex gap-2 ms-2">
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={() => { const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
-            disabled={!historyRef.current.canUndo()}
-            title="Deshacer (Ctrl+Z)"
-          >⟲</button>
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={() => { const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
-            disabled={!historyRef.current.canRedo()}
-            title="Rehacer (Ctrl+Y)"
-          >⟳</button>
-        </div>
-      </div>
-
-      {/* LÍNEA 2: Acciones básicas */}
-      {editing && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={addText}
-            title="Agregar texto"
-          >
-            + Texto
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => addInputRef.current?.click()}
-            title="Cargar imagen"
-          >
-            + Imagen
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => replaceInputRef.current?.click()}
-            disabled={selType !== 'image'}
-            title="Reemplazar imagen seleccionada"
-          >
-            Reemplazar
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={onDelete}
-            disabled={!ready || selType === 'none'}
-            title="Eliminar seleccionado"
-          >
-            Borrar
-          </button>
-
-          <div className="btn-group btn-group-sm ms-2" role="group" aria-label="Exportar">
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => {
-                const png = window.doboDesignAPI?.toPNG?.(3);
-                if (!png) return;
-                const a = document.createElement('a'); a.href = png; a.download = 'diseño.png'; a.click();
-              }}
-              title="Exportar PNG"
-            >
-              PNG
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => {
-                const svg = window.doboDesignAPI?.toSVG?.();
-                if (!svg) return;
-                const blob = new Blob([svg], { type: 'image/svg+xml' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = 'diseño.svg'; a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 0);
-              }}
-              title="Exportar SVG"
-            >
-              SVG
-            </button>
+          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
+            <Menu />
           </div>
-        </div>
-      )}
-
-      {/* LÍNEA 3: Propiedades por tipo */}
-      {editing && (
-        <>
-          {selType === 'text' && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-                <span className="input-group-text">Fuente</span>
-                <select
-                  className="form-select form-select-sm"
-                  value={fontFamily}
-                  onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                >
-                  {FONT_OPTIONS.map(f => (
-                    <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                <button type="button" className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                  onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}>
-                  B
-                </button>
-                <button type="button" className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                  onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}>
-                  I
-                </button>
-                <button type="button" className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                  onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}>
-                  U
-                </button>
-              </div>
-
-              <div className="input-group input-group-sm" style={{ width: 160 }}>
-                <span className="input-group-text">Tamaño</span>
-                <input
-                  type="number"
-                  className="form-control form-control-sm"
-                  min={8}
-                  max={200}
-                  step={1}
-                  value={fontSize}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                  onChange={(e) => {
-                    const v = clamp(parseInt(e.target.value || '0', 10), 8, 200);
-                    setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
-                  }}
-                />
-              </div>
-
-              <div className="btn-group dropup">
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  onPointerDown={(e)=>e.stopPropagation()}
-                  onClick={() => setShowAlignMenu(v => !v)}
-                >
-                  {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
-                </button>
-                {showAlignMenu && (
-                  <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
-                    {['left','center','right','justify'].map(a => (
-                      <li key={a}>
-                        <button
-                          type="button"
-                          className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
-                          onPointerDown={(e)=>e.stopPropagation()}
-                          onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
-                        >
-                          {a}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-
-          {selType === 'image' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <div className="input-group input-group-sm" style={{ width: 230 }}>
-                <span className="input-group-text">Detalles</span>
-                <button type="button" className="btn btn-outline-secondary"
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
-                <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-                <button type="button" className="btn btn-outline-secondary"
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
-              </div>
-
-              <div className="input-group input-group-sm" style={{ width: 190 }}>
-                <span className="input-group-text">Profundidad</span>
-                <button type="button" className="btn btn-outline-secondary"
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
-                <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
-                <button type="button" className="btn btn-outline-secondary"
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
-              </div>
-
-              <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-                <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`}
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
-                <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`}
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Inputs ocultos */}
-      <input
-        ref={addInputRef}
-        type="file"
-        accept="image/*"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) addImageFromFile(f);
-          e.target.value = '';
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{ display: 'none' }}
-      />
-      <input
-        ref={replaceInputRef}
-        type="file"
-        accept="image/*"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) replaceActiveFromFile(f);
-          e.target.value = '';
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{ display: 'none' }}
-      />
-    </div>
+        </div>,
+        document.body
+      ) : null}
+    </>
   );
 }
-
-/* ===== Render ===== */
-return (
-  <>
-    {/* Overlay dentro de la maceta */}
-    {stageRef?.current ? createPortal(<OverlayCanvas />, stageRef.current) : null}
-
-    {/* Menú fijo abajo */}
-    {typeof document !== 'undefined'
-      ? createPortal(
-          <div
-            style={{
-              position: 'fixed',
-              left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
-              bottom: 8,
-              transform: 'translateX(-50%)',
-              zIndex: Z_MENU,
-              width: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-            }}
-          >
-            <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
-              <Menu />
-            </div>
-          </div>,
-          document.body
-        )
-      : null}
-  </>
-);
-} // <- cierre de export default function CustomizationOverlay
