@@ -507,15 +507,15 @@ export default function CustomizationOverlay({
     setReady(true);
 
     // Cargar autosave al montar
-    const auto = loadLocalDesign();
-    if (auto?.objects?.length) {
-      applyDesignSnapshotToCanvas(auto);
-      // seed historial con el snapshot cargado
-      historyRef.current.push(auto);
-    } else {
-      // seed vacío
-      historyRef.current.push(exportDesignSnapshot());
-    }
+// Cargar autosave al montar
+const auto = loadLocalDesign();
+if (auto?.canvasJSON || (auto?.objects?.length)) {
+  applyDesignSnapshotToCanvas(auto);
+  historyRef.current.push(auto);
+} else {
+  historyRef.current.push(exportDesignSnapshot());
+}
+
 
     return () => {
       c.off('mouse:dblclick');
@@ -818,48 +818,49 @@ export default function CustomizationOverlay({
   }, [editing, anchorRef, stageRef]);
 
   // ===== Historial helpers =====
-  function exportDesignSnapshot() {
-    const c = fabricCanvasRef.current; if (!c) return null;
-    try {
-      const json = c.toJSON(['_kind']); // _textChildren/_imgChildren se reconstruyen
-      return { baseSize, objects: json.objects || [] };
-    } catch {
-      return null;
-    }
-  }
+function exportDesignSnapshot() {
+  const c = fabricCanvasRef.current; if (!c) return null;
+  try {
+    const canvasJSON = c.toJSON(['_kind']); // guarda todo el canvas
+    return { v: 2, baseSize, canvasJSON };
+  } catch { return null; }
+}
 
-  async function applyDesignSnapshotToCanvas(snapshot) {
-    if (!snapshot) return;
-    const c = fabricCanvasRef.current; if (!c) return;
-    applyingRef.current = true;
-    try {
-      c.clear();
 
-      await new Promise((resolve) => {
-        fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
-          // rehidratar metadatos de grupos
-          objs.forEach(o => {
-            if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-              o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-            }
-            if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-              o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-              if (typeof o._debossSync === 'function') o._debossSync();
-            }
-            c.add(o);
-          });
-          c.renderAll();
-          resolve();
+async function applyDesignSnapshotToCanvas(snapshot) {
+  if (!snapshot) return;
+  const c = fabricCanvasRef.current; if (!c) return;
+  applyingRef.current = true;
+  try {
+    const json = snapshot.canvasJSON
+      ? snapshot.canvasJSON
+      : { objects: snapshot.objects || [] }; // compat v1
+
+    await new Promise((resolve) => {
+      c.loadFromJSON(json, () => {
+        // reconstruir metadatos de grupos
+        (c.getObjects() || []).forEach(o => {
+          if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+            o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+          }
+          if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+            o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+            if (typeof o._debossSync === 'function') o._debossSync();
+          }
         });
+        c.renderAll();
+        resolve();
       });
+    });
 
-      try { c.discardActiveObject(); } catch {}
-      c.requestRenderAll?.();
-      setSelType('none');
-    } finally {
-      applyingRef.current = false;
-    }
+    try { c.discardActiveObject(); } catch {}
+    c.requestRenderAll?.();
+    setSelType('none');
+  } finally {
+    applyingRef.current = false;
   }
+}
+
 
   const commitSnapshot = () => {
     const snap = exportDesignSnapshot();
