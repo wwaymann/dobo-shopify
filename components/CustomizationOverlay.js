@@ -1036,7 +1036,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
   if (!visible) return null;
 
   // ===== Overlay Canvas dentro de la maceta =====
-  const OverlayCanvas = (
+  function OverlayCanvas = (
     <div
       ref={overlayRef}
       style={{
