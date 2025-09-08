@@ -72,6 +72,23 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+const applyingRef = useRef(false);
+
+function forceRepaint() {
+  const c = fabricCanvasRef.current; if (!c) return;
+  try {
+    // marcar todo sucio y recalcular offsets
+    (c.getObjects() || []).forEach(o => o.dirty = true);
+    c.discardActiveObject();
+  } catch {}
+  c.calcOffset?.();
+  c.renderAll?.();
+  c.requestRenderAll?.();
+  // un frame extra por si el browser difiere el pintado
+  setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+}
+
+  
   // touchAction del upper canvas cuando se edita texto
   useEffect(() => {
     const c = fabricCanvasRef.current;
@@ -413,7 +430,7 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
-
+c.renderOnAddRemove = true; // garantizar repintado tras loadFromJSON
     // API pública mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
@@ -834,11 +851,11 @@ async function applyDesignSnapshotToCanvas(snapshot) {
   try {
     const json = snapshot.canvasJSON
       ? snapshot.canvasJSON
-      : { objects: snapshot.objects || [] }; // compat v1
+      : { objects: snapshot.objects || [] }; // compatibilidad
 
     await new Promise((resolve) => {
       c.loadFromJSON(json, () => {
-        // reconstruir metadatos de grupos
+        // reconstruir punteros internos de grupos
         (c.getObjects() || []).forEach(o => {
           if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
             o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
@@ -853,13 +870,13 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       });
     });
 
-    try { c.discardActiveObject(); } catch {}
-    c.requestRenderAll?.();
     setSelType('none');
+    forceRepaint(); // evita el “desaparece hasta hacer clic”
   } finally {
     applyingRef.current = false;
   }
 }
+
 
 
   const commitSnapshot = () => {
