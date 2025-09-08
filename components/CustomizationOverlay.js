@@ -2,6 +2,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
+import HistoryManager from '../lib/history';
+import { saveLocalDesign } from '../lib/designStore';
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -44,6 +46,12 @@ export default function CustomizationOverlay({
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
+  // Historial
+  const historyRef = useRef(new HistoryManager({
+    limit: 200,
+    onChange: (snap) => { if (snap) saveLocalDesign(snap); }
+  }));
+
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
   const [fontSize, setFontSize] = useState(60);
@@ -63,14 +71,13 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  const upper = c?.upperCanvasEl;
-  if (!upper) return;
-  upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
-}, [textEditing, editing]);
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    const upper = c?.upperCanvasEl;
+    if (!upper) return;
+    upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
+  }, [textEditing, editing]);
 
-  
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
@@ -139,6 +146,80 @@ useEffect(() => {
       window.removeEventListener('resize', update);
     };
   }, [anchorRef]);
+
+  // ---- Snapshots de diseño (export / apply) ----
+  const exportDesignSnapshot = () => {
+    const c = fabricCanvasRef.current; if (!c) return null;
+    return {
+      baseSize,
+      objects: c.toJSON(['_kind','_textChildren','_imgChildren','_debossOffset']).objects || []
+    };
+  };
+
+  const rehydrateTextGroup = (g) => {
+    if (!g || g._kind !== 'textGroup') return;
+    const [shadow, highlight, base] = g._objects || [];
+    g._textChildren = { shadow, highlight, base };
+    const sync = () => {
+      const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+      const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+      const ox = 1 / sx, oy = 1 / sy;
+      shadow?.set({ left: -ox, top: -oy });
+      highlight?.set({ left: +ox, top: +oy });
+      g.setCoords();
+      g.canvas?.requestRenderAll?.();
+    };
+    g.on('scaling', sync);
+    g.on('modified', sync);
+    sync();
+  };
+
+  const rehydrateImgGroup = (g) => {
+    if (!g || g._kind !== 'imgGroup') return;
+    const [shadow, highlight, base] = g._objects || [];
+    g._imgChildren = { base, shadow, highlight };
+    g._debossOffset = Number.isFinite(g._debossOffset) ? g._debossOffset : 1;
+    const normalize = () => {
+      const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+      const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+      const ox = g._debossOffset / sx;
+      const oy = g._debossOffset / sy;
+      shadow?.set({ left: -ox, top: -oy });
+      highlight?.set({ left: +ox, top: +oy });
+      base?.set({ left: 0, top: 0 });
+      g.setCoords?.();
+      g.canvas?.requestRenderAll?.();
+    };
+    g._debossSync = normalize;
+    g.on('scaling', normalize);
+    g.on('modified', normalize);
+    normalize();
+  };
+
+  const applyDesignSnapshotToCanvas = async (snapshot) => {
+    if (!snapshot) return;
+    const c = fabricCanvasRef.current; if (!c) return;
+    c.clear();
+    await new Promise((resolve) => {
+      fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
+        objs.forEach(o => {
+          if (o?._kind === 'textGroup') rehydrateTextGroup(o);
+          if (o?._kind === 'imgGroup')  rehydrateImgGroup(o);
+          c.add(o);
+        });
+        c.renderAll();
+        resolve();
+      });
+    });
+    try { c.discardActiveObject(); } catch {}
+    c.requestRenderAll?.();
+    setSelType('none');
+  };
+
+  const commitSnapshot = () => {
+    const snap = exportDesignSnapshot();
+    if (snap) historyRef.current.push(JSON.parse(JSON.stringify(snap)));
+  };
 
   // ===== Helpers de relieve =====
   const makeTextGroup = (text, opts = {}) => {
@@ -272,7 +353,7 @@ useEffect(() => {
   // ===== Utils imagen/vectorizado =====
   const downscale = (imgEl) => {
     const w = imgEl.naturalWidth || imgEl.width;
-    const h = imgEl.naturalHeight || imgEl.height;
+       const h = imgEl.naturalHeight || imgEl.height;
     const r = Math.min(MAX_TEXTURE_DIM / w, MAX_TEXTURE_DIM / h, 1);
     if (!w || !h || r === 1) return imgEl;
     const cw = Math.round(w * r), ch = Math.round(h * r);
@@ -421,7 +502,7 @@ useEffect(() => {
       return 'none';
     };
 
-    const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
+    const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text'));
 
     const reflectTypo = () => {
       const a = c.getActiveObject();
@@ -468,6 +549,9 @@ useEffect(() => {
         c.requestRenderAll();
       }
     });
+
+    // Historial: snapshot al finalizar transformaciones
+    c.on('object:modified', () => { commitSnapshot(); });
 
     setReady(true);
 
@@ -551,76 +635,90 @@ useEffect(() => {
     window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
   }, [editing]);
 
-  // === Edición inline de texto (móvil/desktop) ===
-  // Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group.
-const startInlineTextEdit = (group) => {
-  const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
-  const base = group._textChildren?.base; if (!base) return;
-
-  const pose = {
-    left: group.left, top: group.top, originX: 'center', originY: 'center',
-    scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
-  };
-
-  try { c.remove(group); } catch {}
-
-  const tb = new fabric.Textbox(base.text || 'Texto', {
-    left: pose.left, top: pose.top, originX: 'center', originY: 'center',
-    width: Math.min(baseSize.w * 0.9, base.width || 220),
-    fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
-    fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
-    editable: true, selectable: true, evented: true, objectCaching: false
-  });
-
-  c.add(tb);
-  c.setActiveObject(tb);
-  c.requestRenderAll();
-
-  // Estamos editando: libera touch-action y desactiva pinch/zoom
-  setTextEditing(true);
-
-  // iOS: dar tiempo a crear el textarea y luego enfocar
-  setTimeout(() => {
-    try { tb.enterEditing?.(); } catch {}
-    try { tb.hiddenTextarea?.focus(); } catch {}
-    // reintento corto por si el primero no abre el teclado
-    setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
-  }, 0);
-
-  const finish = () => {
-    const newText = tb.text || '';
-    const finalPose = {
-      left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
-      scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
+  // Undo/Redo por teclado
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!editing) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        const prev = historyRef.current.undo();
+        if (prev) applyDesignSnapshotToCanvas(prev);
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        const next = historyRef.current.redo();
+        if (next) applyDesignSnapshotToCanvas(next);
+      }
     };
-    try { c.remove(tb); } catch {}
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editing]);
 
-    const group2 = makeTextGroup(newText, {
-      width: tb.width,
-      fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
-      fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
+  // === Edición inline de texto (móvil/desktop) ===
+  const startInlineTextEdit = (group) => {
+    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
+    const base = group._textChildren?.base; if (!base) return;
+
+    const pose = {
+      left: group.left, top: group.top, originX: 'center', originY: 'center',
+      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
+    };
+
+    try { c.remove(group); } catch {}
+
+    const tb = new fabric.Textbox(base.text || 'Texto', {
+      left: pose.left, top: pose.top, originX: 'center', originY: 'center',
+      width: Math.min(baseSize.w * 0.9, base.width || 220),
+      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
+      fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
+      editable: true, selectable: true, evented: true, objectCaching: false
     });
-    group2.set(finalPose);
-    c.add(group2);
-    c.setActiveObject(group2);
+
+    c.add(tb);
+    c.setActiveObject(tb);
     c.requestRenderAll();
-    setSelType('text');
 
-    // Salimos de edición: reactivar pinch/zoom y volver a touch-action previa
-    setTextEditing(false);
+    setTextEditing(true);
+
+    setTimeout(() => {
+      try { tb.enterEditing?.(); } catch {}
+      try { tb.hiddenTextarea?.focus(); } catch {}
+      setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
+    }, 0);
+
+    const finish = () => {
+      const newText = tb.text || '';
+      const finalPose = {
+        left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
+        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
+      };
+      try { c.remove(tb); } catch {}
+
+      const group2 = makeTextGroup(newText, {
+        width: tb.width,
+        fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
+        fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
+      });
+      group2.set(finalPose);
+      c.add(group2);
+      c.setActiveObject(group2);
+      c.requestRenderAll();
+      setSelType('text');
+      setTextEditing(false);
+      commitSnapshot();
+    };
+
+    const onExit = () => { tb.off('editing:exited', onExit); finish(); };
+    tb.on('editing:exited', onExit);
+
+    const safety = setTimeout(() => {
+      try { tb.off('editing:exited', onExit); } catch {}
+      finish();
+    }, 15000);
+    tb.on('removed', () => { clearTimeout(safety); });
   };
-
-  const onExit = () => { tb.off('editing:exited', onExit); finish(); };
-  tb.on('editing:exited', onExit);
-
-  // Safety net por si no dispara editing:exited (móvil raras veces)
-  const safety = setTimeout(() => {
-    try { tb.off('editing:exited', onExit); } catch {}
-    finish();
-  }, 15000);
-  tb.on('removed', () => { clearTimeout(safety); });
-};
-
 
   // Doble-tap móvil: detectar y abrir edición de texto
   useEffect(() => {
@@ -633,8 +731,6 @@ const startInlineTextEdit = (group) => {
       if (!editing || e.pointerType !== 'touch') return;
       const now = Date.now();
       if (now - lastTap < 320) {
-        // segundo tap: buscar target de Fabric y editar si es textGroup
-        // Nota: findTarget es método interno pero disponible en runtime.
         try {
           const target = c.findTarget?.(e, false);
           if (target && target._kind === 'textGroup') {
@@ -650,100 +746,97 @@ const startInlineTextEdit = (group) => {
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-// Zoom SIEMPRE activo (PC y móvil) sobre el stage.
-// Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  const target = stageRef?.current || c?.upperCanvasEl;
-  if (!target) return;
+  // Zoom global
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    const target = stageRef?.current || c?.upperCanvasEl;
+    if (!target) return;
 
-  const readZ = () => {
-    const el = stageRef?.current;
-    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
-    const n = parseFloat((v || '1').trim());
-    return Number.isFinite(n) && n > 0 ? n : 1;
-  };
-  const writeZ = (z) => {
-    const v = Math.max(0.8, Math.min(2.5, z));
-    stageRef?.current?.style.setProperty('--zoom', String(v));
-    if (typeof setZoom === 'function') setZoom(v);
-  };
+    const readZ = () => {
+      const el = stageRef?.current;
+      const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
+      const n = parseFloat((v || '1').trim());
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    };
+    const writeZ = (z) => {
+      const v = Math.max(0.8, Math.min(2.5, z));
+      stageRef?.current?.style.setProperty('--zoom', String(v));
+      if (typeof setZoom === 'function') setZoom(v);
+    };
 
-  // PC: rueda
-  const onWheel = (e) => {
-    if (textEditing) return;
-    e.preventDefault();
-    writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
-  };
-
-  // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
-  let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
-  const park = () => {
-    if (parked || !c) return;
-    saved = { selection: c.selection, skip: c.skipTargetFind };
-    c.selection = false;
-    c.skipTargetFind = true;
-    parked = true;
-  };
-  const unpark = () => {
-    if (!c) return;
-    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
-    parked = false;
-    c.requestRenderAll?.();
-  };
-
-  const onPD = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
-    if (!pB && e.pointerId !== pA.id) {
-      pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      startScale = readZ();
-      park();
-    }
-  };
-
-  const onPM = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-    if (pA && pB && startDist) {
+    const onWheel = (e) => {
+      if (textEditing) return;
       e.preventDefault();
-      const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      writeZ(startScale * Math.pow(d / startDist, 0.9));
-    }
-  };
+      writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
+    };
 
-  const onPU = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) pA = null;
-    if (pB && e.pointerId === pB.id) pB = null;
-    if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
-  };
+    let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
+    const park = () => {
+      if (parked || !c) return;
+      saved = { selection: c.selection, skip: c.skipTargetFind };
+      c.selection = false;
+      c.skipTargetFind = true;
+      parked = true;
+    };
+    const unpark = () => {
+      if (!c) return;
+      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
+      parked = false;
+      c.requestRenderAll?.();
+    };
 
-  const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
+    const onPD = (e) => {
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
+      if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+      if (!pB && e.pointerId !== pA.id) {
+        pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+        startScale = readZ();
+        park();
+      }
+    };
 
-  target.addEventListener('wheel', onWheel, { passive: false });
-  target.addEventListener('pointerdown', onPD, { passive: true });
-  target.addEventListener('pointermove', onPM, { passive: false, capture: true });
-  window.addEventListener('pointerup', onPU, { passive: true });
-  window.addEventListener('pointercancel', onCancel, { passive: true });
-  document.addEventListener('visibilitychange', onCancel);
-  window.addEventListener('blur', onCancel);
+    const onPM = (e) => {
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
+      if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
+      if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
+      if (pA && pB && startDist) {
+        e.preventDefault();
+        const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+        writeZ(startScale * Math.pow(d / startDist, 0.9));
+      }
+    };
 
-  return () => {
-    target.removeEventListener('wheel', onWheel);
-    target.removeEventListener('pointerdown', onPD);
-    target.removeEventListener('pointermove', onPM, { capture: true });
-    window.removeEventListener('pointerup', onPU);
-    window.removeEventListener('pointercancel', onCancel);
-    document.removeEventListener('visibilitychange', onCancel);
-    window.removeEventListener('blur', onCancel);
-  };
-}, [stageRef, setZoom, textEditing]);
+    const onPU = (e) => {
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
+      if (pA && e.pointerId === pA.id) pA = null;
+      if (pB && e.pointerId === pB.id) pB = null;
+      if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
+    };
+
+    const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
+
+    target.addEventListener('wheel', onWheel, { passive: false });
+    target.addEventListener('pointerdown', onPD, { passive: true });
+    target.addEventListener('pointermove', onPM, { passive: false, capture: true });
+    window.addEventListener('pointerup', onPU, { passive: true });
+    window.addEventListener('pointercancel', onCancel, { passive: true });
+    document.addEventListener('visibilitychange', onCancel);
+    window.addEventListener('blur', onCancel);
+
+    return () => {
+      target.removeEventListener('wheel', onWheel);
+      target.removeEventListener('pointerdown', onPD);
+      target.removeEventListener('pointermove', onPM, { capture: true });
+      window.removeEventListener('pointerup', onPU);
+      window.removeEventListener('pointercancel', onCancel);
+      document.removeEventListener('visibilitychange', onCancel);
+      window.removeEventListener('blur', onCancel);
+    };
+  }, [stageRef, setZoom, textEditing]);
 
   // Bloquear clicks externos mientras se diseña
   useEffect(() => {
@@ -791,6 +884,7 @@ useEffect(() => {
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
+    commitSnapshot();
   };
 
   const addImageFromFile = (file) => {
@@ -810,6 +904,7 @@ useEffect(() => {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
+      commitSnapshot();
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -835,6 +930,7 @@ useEffect(() => {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
+      commitSnapshot();
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -858,6 +954,7 @@ useEffect(() => {
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
+    commitSnapshot();
   };
 
   const clearSelectionHard = () => {
@@ -897,7 +994,6 @@ useEffect(() => {
       if (!g || g._kind !== 'textGroup') return;
       const { base, shadow, highlight } = g._textChildren || {};
       [base, shadow, highlight].forEach(o => o && mutator(o));
-      // re-sincronizar offsets del relieve
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
       const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
       const ox = 1 / sx, oy = 1 / sy;
@@ -955,6 +1051,7 @@ useEffect(() => {
     } else { rebuild(a); }
 
     c.requestRenderAll();
+    commitSnapshot();
   }, [vecBias, vecInvert]);
 
   // Offset de relieve en caliente
@@ -964,6 +1061,8 @@ useEffect(() => {
     const a = c.getActiveObject(); if (!a) return;
     const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
+    c.requestRenderAll?.();
+    commitSnapshot();
   }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
@@ -984,7 +1083,6 @@ useEffect(() => {
         touchAction: editing ? "none" : "auto",
         overscrollBehavior: "contain",
       }}
-      // Evita que un toque en canvas active botones del menú
       onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
     >
       <canvas
@@ -1024,7 +1122,6 @@ useEffect(() => {
           fontSize: 12,
           userSelect: 'none'
         }}
-        // Los eventos del menú nunca deben tocar el canvas
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
