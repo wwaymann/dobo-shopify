@@ -1137,37 +1137,35 @@ async function applyDesignSnapshotToCanvas(snapshot) {
           </button>
         </div>
 
-<div className="d-flex gap-2 mt-2">
-  <button
-    type="button"
-    className="btn btn-outline-secondary"
-    onClick={() => {
-      const prev = historyRef.current.undo();
-      if (prev) {
-        applyDesignSnapshotToCanvas(prev); // función que rehidrata el diseño en el canvas
-      }
-    }}
-    disabled={!historyRef.current.canUndo()}
-    title="Deshacer (Ctrl+Z)"
-  >
-    ⟲
-  </button>
+            {/* Undo / Redo */}
+            <div className="d-flex gap-2 ms-2">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => {
+                  const prev = historyRef.current.undo();
+                  if (prev) applyDesignSnapshotToCanvas(prev);
+                }}
+                disabled={!historyRef.current.canUndo()}
+                title="Deshacer (Ctrl+Z)"
+              >
+                ⟲
+              </button>
 
-  <button
-    type="button"
-    className="btn btn-outline-secondary"
-    onClick={() => {
-      const next = historyRef.current.redo();
-      if (next) {
-        applyDesignSnapshotToCanvas(next);
-      }
-    }}
-    disabled={!historyRef.current.canRedo()}
-    title="Rehacer (Ctrl+Y)"
-  >
-    ⟳
-  </button>
-</div>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => {
+                  const next = historyRef.current.redo();
+                  if (next) applyDesignSnapshotToCanvas(next);
+                }}
+                disabled={!historyRef.current.canRedo()}
+                title="Rehacer (Ctrl+Y)"
+              >
+                ⟳
+              </button>
+            </div>
+          </div>
 
 
         {/* LÍNEA 2: Acciones básicas */}
