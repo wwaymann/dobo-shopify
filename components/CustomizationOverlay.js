@@ -1105,22 +1105,9 @@ function Menu() {
         {typeof setZoom === 'function' && (
           <div className="input-group input-group-sm" style={{ width: 180 }}>
             <span className="input-group-text">Zoom</span>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
-            >−</button>
-            <input
-              type="text"
-              readOnly
-              className="form-control form-control-sm text-center"
-              value={`${Math.round((zoom || 1) * 100)}%`}
-            />
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
-            >+</button>
+            <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
+            <input type="text" readOnly className="form-control form-control-sm text-center" value={`${Math.round((zoom || 1) * 100)}%`} />
+            <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
           </div>
         )}
 
@@ -1158,7 +1145,6 @@ function Menu() {
             disabled={!historyRef.current.canUndo()}
             title="Deshacer (Ctrl+Z)"
           >⟲</button>
-
           <button
             type="button"
             className="btn btn-outline-secondary"
@@ -1200,74 +1186,7 @@ function Menu() {
   );
 }
 
-            {/* Undo / Redo */}
-            <div className="d-flex gap-2 ms-2">
-              <button
-                type="button"
-                className="btn btn-outline-secondary"
-                onClick={() => {
-                  const prev = historyRef.current.undo();
-                  if (prev) applyDesignSnapshotToCanvas(prev);
-                }}
-                disabled={!historyRef.current.canUndo()}
-                title="Deshacer (Ctrl+Z)"
-              >
-                ⟲
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline-secondary"
-                onClick={() => {
-                  const next = historyRef.current.redo();
-                  if (next) applyDesignSnapshotToCanvas(next);
-                }}
-                disabled={!historyRef.current.canRedo()}
-                title="Rehacer (Ctrl+Y)"
-              >
-                ⟳
-              </button>
-            </div>
-          </div>
-        ) : null}
-</div>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-danger"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={onDelete}
-              disabled={!ready || selType === 'none'}
-              title="Eliminar seleccionado"
-            >
-              Borrar
-            </button>
-          </div>
-<div className="d-flex gap-2">
-  <button
-    type="button"
-    className="btn btn-outline-secondary"
-    onClick={() => {
-      const prev = historyRef.current.undo();
-      if (prev) applyDesignSnapshotToCanvas(prev);
-    }}
-    disabled={!historyRef.current.canUndo()}
-    title="Deshacer (Ctrl+Z)"
-  >⟲</button>
-
-  <button
-    type="button"
-    className="btn btn-outline-secondary"
-    onClick={() => {
-      const next = historyRef.current.redo();
-      if (next) applyDesignSnapshotToCanvas(next);
-    }}
-    disabled={!historyRef.current.canRedo()}
-    title="Rehacer (Ctrl+Y)"
-  >⟳</button>
-</div>
-
-        )}
-
-</div>
+   
         {/* LÍNEA 3: Propiedades por tipo */}
         {editing && (
           <>
