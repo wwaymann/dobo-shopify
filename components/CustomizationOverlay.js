@@ -2,8 +2,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
-import HistoryManager from '../lib/history';
-import { saveLocalDesign } from '../lib/designStore';
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -23,6 +21,39 @@ const FONT_OPTIONS = [
   { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
   { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
 ];
+
+// ===== Historial mínimo en memoria =====
+function makeHistory(limit = 200) {
+  return {
+    stack: [],
+    idx: -1,
+    limit,
+    push(snap) {
+      if (!snap) return;
+      if (this.idx < this.stack.length - 1) this.stack.splice(this.idx + 1);
+      this.stack.push(snap);
+      if (this.stack.length > this.limit) this.stack.shift();
+      this.idx = this.stack.length - 1;
+    },
+    canUndo() { return this.idx > 0; },
+    canRedo() { return this.idx >= 0 && this.idx < this.stack.length - 1; },
+    undo() { if (!this.canUndo()) return null; this.idx -= 1; return this.stack[this.idx]; },
+    redo() { if (!this.canRedo()) return null; this.idx += 1; return this.stack[this.idx]; },
+    peek() { return this.stack[this.idx] || null; }
+  };
+}
+
+// ===== Helpers de snapshot =====
+const fixImagesInJSON = (root) => {
+  const walk = (o) => {
+    if (!o || typeof o !== 'object') return;
+    if (o.type === 'image' && !o.src && o._dataURL) o.src = o._dataURL;
+    const arr = o.objects || o._objects;
+    if (Array.isArray(arr)) arr.forEach(walk);
+  };
+  walk(root);
+  return root;
+};
 
 export default function CustomizationOverlay({
   stageRef,
@@ -46,12 +77,6 @@ export default function CustomizationOverlay({
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
-  // Historial (con autosave)
-  const historyRef = useRef(new HistoryManager({
-    limit: 200,
-    onChange: (snap) => { try { if (snap) saveLocalDesign?.(snap); } catch {} },
-  }));
-
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
   const [fontSize, setFontSize] = useState(60);
@@ -71,6 +96,41 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+  const historyRef = useRef(makeHistory(200));
+  const pushedInitialRef = useRef(false);
+
+  const pushSnap = () => {
+    const c = fabricCanvasRef.current; if (!c) return;
+    const json = c.toJSON(['_kind','_debossOffset','_dataURL']);
+    historyRef.current.push({ baseSize: { ...baseSize }, json });
+  };
+
+  const applyDesignSnapshotToCanvas = async (snapshot) => {
+    if (!snapshot) return;
+    const c = fabricCanvasRef.current; if (!c) return;
+
+    // ajustar tamaño del lienzo al snapshot para consistencia
+    const bs = snapshot.baseSize || {};
+    if (bs.w && bs.h) { c.setWidth(bs.w); c.setHeight(bs.h); c.calcOffset?.(); }
+
+    c.clear();
+
+    const json = JSON.parse(JSON.stringify(snapshot.json || {}));
+    fixImagesInJSON(json);
+
+    await new Promise((resolve) => {
+      fabric.util.enlivenObjects(json.objects || [], (objs) => {
+        objs.forEach((o) => { rebindHelpersIfNeeded(o, c); c.add(o); });
+        c.renderAll();
+        resolve();
+      });
+    });
+
+    try { c.discardActiveObject(); } catch {}
+    c.requestRenderAll?.();
+    setSelType('none');
+  };
+
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -78,7 +138,7 @@ export default function CustomizationOverlay({
     upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
   }, [textEditing, editing]);
 
-  // Mantén --zoom siempre actualizado para leerlo en tiempo real
+  // Mantén --zoom siempre actualizado
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
     stageRef?.current?.style.setProperty('--zoom', String(v));
@@ -130,7 +190,7 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, anchorRef]);
 
-  // Posiciona el menú dentro de la columna de carruseles
+  // Posiciona el menú
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -234,6 +294,12 @@ export default function CustomizationOverlay({
       base.setElement(img); shadow.setElement(img); highlight.setElement(img);
     };
     applyElement(srcEl);
+
+    // Propagar dataURL a clones para snapshots
+    const dataURL =
+      baseObj._dataURL ||
+      (srcEl && typeof srcEl.toDataURL === 'function' ? srcEl.toDataURL('image/png') : null);
+    base._dataURL = shadow._dataURL = highlight._dataURL = dataURL;
 
     shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
     highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
@@ -387,83 +453,9 @@ export default function CustomizationOverlay({
     });
     bm._vecSourceEl = element;
     bm._vecMeta = { w, h };
+    // crítico para snapshots (Undo/Redo)
+    try { bm._dataURL = cv.toDataURL('image/png'); } catch { /* noop */ }
     return bm;
-  };
-
-  // ===== Helpers de historial =====
-  const exportDesignSnapshot = () => {
-    const c = fabricCanvasRef.current; if (!c) return null;
-    // Guardamos el JSON de Fabric; incluir props necesarias
-    const json = c.toJSON(['_kind','_debossOffset']);
-    return { baseSize, json };
-  };
-
-  const rebindHelpersIfNeeded = (o) => {
-    if (!o) return;
-    if (o.type === 'group' && o._kind === 'textGroup') {
-      const [shadow, highlight, base] = o._objects || [];
-      o._textChildren = { shadow, highlight, base };
-      const sync = () => {
-        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
-        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
-        const ox = 1 / sx, oy = 1 / sy;
-        shadow?.set({ left: -ox, top: -oy });
-        highlight?.set({ left: +ox, top: +oy });
-        o.setCoords();
-        o.canvas?.requestRenderAll?.();
-      };
-      o.on('scaling', sync);
-      o.on('modified', sync);
-      sync();
-    }
-    if (o.type === 'group' && o._kind === 'imgGroup') {
-      const [shadow, highlight, base] = o._objects || [];
-      o._imgChildren = { base, shadow, highlight };
-      if (typeof o._debossOffset !== 'number') o._debossOffset = 1;
-      const normalize = () => {
-        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
-        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
-        const ox = o._debossOffset / sx;
-        const oy = o._debossOffset / sy;
-        shadow?.set({ left: -ox, top: -oy });
-        highlight?.set({ left: +ox, top: +oy });
-        base?.set({ left: 0, top: 0 });
-        o.setCoords?.();
-        o.canvas?.requestRenderAll?.();
-      };
-      o._debossSync = normalize;
-      o.on('scaling', normalize);
-      o.on('modified', normalize);
-      normalize();
-    }
-  };
-
-  const applyDesignSnapshotToCanvas = async (snapshot) => {
-    if (!snapshot) return;
-    const c = fabricCanvasRef.current; if (!c) return;
-
-    c.clear();
-
-    await new Promise((resolve) => {
-      const objsRaw = snapshot.json?.objects || [];
-      fabric.util.enlivenObjects(objsRaw, (objs) => {
-        objs.forEach((o) => {
-          rebindHelpersIfNeeded(o);
-          c.add(o);
-        });
-        c.renderAll();
-        resolve();
-      });
-    });
-
-    try { c.discardActiveObject(); } catch {}
-    c.requestRenderAll?.();
-    setSelType('none');
-  };
-
-  const pushSnapshot = () => {
-    const snap = exportDesignSnapshot();
-    if (snap) historyRef.current.push(JSON.parse(JSON.stringify(snap)));
   };
 
   // ===== Inicializar Fabric =====
@@ -504,8 +496,7 @@ export default function CustomizationOverlay({
       return 'none';
     };
 
-    const isTextObj = (o) =>
-      o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
+    const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
 
     const reflectTypo = () => {
       const a = c.getActiveObject();
@@ -542,9 +533,6 @@ export default function CustomizationOverlay({
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
-    // Snapshot al modificar objetos
-    c.on('object:modified', () => { pushSnapshot(); });
-
     // Doble-click (desktop) → editar texto del grupo
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
@@ -556,37 +544,29 @@ export default function CustomizationOverlay({
       }
     });
 
-    // Atajos de teclado
-    const onKey = (e) => {
-      const meta = e.ctrlKey || e.metaKey;
-      if (!meta) return;
-      if (e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        const prev = historyRef.current.undo();
-        if (prev) applyDesignSnapshotToCanvas(prev);
-      } else if (e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        const next = historyRef.current.redo();
-        if (next) applyDesignSnapshotToCanvas(next);
-      }
-    };
-    window.addEventListener('keydown', onKey);
+    // Snapshot en transformaciones
+    c.on('object:modified', () => pushSnap());
 
     setReady(true);
 
-    // Primer snapshot vacío
-    pushSnapshot();
-
     return () => {
-      window.removeEventListener('keydown', onKey);
       c.off('mouse:dblclick');
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
+      c.off('object:modified');
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
   }, [visible]);
+
+  // Push snapshot inicial cuando ya hay tamaño real
+  useEffect(() => {
+    if (!ready) return;
+    if (pushedInitialRef.current) return;
+    pushedInitialRef.current = true;
+    pushSnap();
+  }, [ready]);
 
   // Ajusta tamaño de lienzo
   useEffect(() => {
@@ -708,9 +688,8 @@ export default function CustomizationOverlay({
       c.setActiveObject(group2);
       c.requestRenderAll();
       setSelType('text');
-
       setTextEditing(false);
-      pushSnapshot();
+      pushSnap(); // snapshot al finalizar edición inline
     };
 
     const onExit = () => { tb.off('editing:exited', onExit); finish(); };
@@ -723,7 +702,7 @@ export default function CustomizationOverlay({
     tb.on('removed', () => { clearTimeout(safety); });
   };
 
-  // Doble-tap móvil: detectar y abrir edición de texto
+  // Doble-tap móvil para editar texto
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -888,7 +867,7 @@ export default function CustomizationOverlay({
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
-    pushSnapshot();
+    pushSnap();
   };
 
   const addImageFromFile = (file) => {
@@ -908,7 +887,7 @@ export default function CustomizationOverlay({
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      pushSnapshot();
+      pushSnap();
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -934,7 +913,7 @@ export default function CustomizationOverlay({
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      pushSnapshot();
+      pushSnap();
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -958,7 +937,7 @@ export default function CustomizationOverlay({
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
-    pushSnapshot();
+    pushSnap();
   };
 
   const clearSelectionHard = () => {
@@ -1015,7 +994,7 @@ export default function CustomizationOverlay({
       mutator(a);
     }
     c.requestRenderAll();
-    pushSnapshot();
+    pushSnap(); // snapshot en cambios de estilo
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
@@ -1048,7 +1027,6 @@ export default function CustomizationOverlay({
 
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
-      rebindHelpersIfNeeded(group);
       c.add(group);
       c.setActiveObject(group);
     };
@@ -1058,7 +1036,7 @@ export default function CustomizationOverlay({
     } else { rebuild(a); }
 
     c.requestRenderAll();
-    pushSnapshot();
+    pushSnap();
   }, [vecBias, vecInvert]);
 
   // Offset de relieve en caliente
@@ -1068,7 +1046,54 @@ export default function CustomizationOverlay({
     const a = c.getActiveObject(); if (!a) return;
     const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
-  }, [vecOffset, editing, selType]);
+    c.requestRenderAll();
+    pushSnap();
+  }, [vecOffset]);
+
+  // ===== Rebind helpers tras cargar desde JSON =====
+  const rebindHelpersIfNeeded = (o, c) => {
+    if (!o) return;
+    if (o.type === 'group' && o._kind === 'textGroup') {
+      const children = o._objects || o.getObjects?.() || [];
+      const [shadow, highlight, base] = children;
+      o._textChildren = { shadow, highlight, base };
+      const sync = () => {
+        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
+        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
+        const ox = 1 / sx, oy = 1 / sy;
+        shadow?.set({ left: -ox, top: -oy });
+        highlight?.set({ left: +ox, top: +oy });
+        o.setCoords(); o.canvas?.requestRenderAll?.();
+      };
+      o.off('scaling'); o.off('modified');
+      o.on('scaling', sync);
+      o.on('modified', sync);
+      sync();
+    }
+    if (o.type === 'group' && o._kind === 'imgGroup') {
+      const children = o._objects || o.getObjects?.() || [];
+      const [shadow, highlight, base] = children;
+      o._imgChildren = { base, shadow, highlight };
+      if (typeof o._debossOffset !== 'number') o._debossOffset = 1;
+      const normalize = () => {
+        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
+        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
+        const ox = o._debossOffset / sx;
+        const oy = o._debossOffset / sy;
+        shadow?.set({ left: -ox, top: -oy });
+        highlight?.set({ left: +ox, top: +oy });
+        base?.set({ left: 0, top: 0 });
+        o.setCoords(); o.canvas?.requestRenderAll?.();
+      };
+      o.off('scaling'); o.off('modified');
+      o.on('scaling', normalize);
+      o.on('modified', normalize);
+      normalize();
+    }
+    // profundiza
+    const kids = o._objects || o.getObjects?.() || [];
+    if (Array.isArray(kids)) kids.forEach(k => rebindHelpersIfNeeded(k, c));
+  };
 
   if (!visible) return null;
 
@@ -1177,7 +1202,7 @@ export default function CustomizationOverlay({
                 if (prev) applyDesignSnapshotToCanvas(prev);
               }}
               disabled={!historyRef.current.canUndo()}
-              title="Deshacer (Ctrl/Cmd+Z)"
+              title="Deshacer (Ctrl+Z)"
             >⟲</button>
             <button
               type="button"
@@ -1187,7 +1212,7 @@ export default function CustomizationOverlay({
                 if (next) applyDesignSnapshotToCanvas(next);
               }}
               disabled={!historyRef.current.canRedo()}
-              title="Rehacer (Ctrl/Cmd+Y)"
+              title="Rehacer (Ctrl+Y)"
             >⟳</button>
           </div>
         </div>
@@ -1210,6 +1235,16 @@ export default function CustomizationOverlay({
               disabled={!ready}
             >
               + Imagen
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => replaceInputRef.current?.click()}
+              disabled={!ready || selType === 'none'}
+              title="Reemplazar imagen seleccionada"
+            >
+              Reemplazar
             </button>
             <button
               type="button"
@@ -1342,14 +1377,22 @@ export default function CustomizationOverlay({
         )}
 
         {/* Inputs ocultos */}
-        <input ref={addInputRef} type="file" accept="image/*"
+        <input
+          ref={addInputRef}
+          type="file"
+          accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
-        <input ref={replaceInputRef} type="file" accept="image/*"
+          style={{ display: 'none' }}
+        />
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
+          style={{ display: 'none' }}
+        />
       </div>
     );
   }
