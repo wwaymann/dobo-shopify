@@ -755,7 +755,7 @@ useEffect(() => {
   return () => {
     target.removeEventListener('wheel', onWheel);
     target.removeEventListener('pointerdown', onPD);
-    target.removeEventListener('pointermove', onPM, { capture: true });
+    target.removeEventListener('pointermove', onPM, true);
     window.removeEventListener('pointerup', onPU);
     window.removeEventListener('pointercancel', onCancel);
     document.removeEventListener('visibilitychange', onCancel);
@@ -904,11 +904,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     imgEl.src = url;
   };
 
-  function commitDesignSnapshot(nextDesignState) {
-  // Clonamos para evitar referencias mutables
-  const snapshot = JSON.parse(JSON.stringify(nextDesignState));
-  historyRef.current.push(snapshot);
-}
+
 
   // Borrar selección (grupos)
   const onDelete = () => {
@@ -1329,7 +1325,7 @@ function Menu() {
   style={{ display: 'none' }}
 />
 
-
+</div>
 
   );
 }
