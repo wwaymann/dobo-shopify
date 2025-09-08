@@ -2,6 +2,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
+import HistoryManager from '../lib/history';
+import { saveLocalDesign } from '../lib/designStore';
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -21,39 +23,6 @@ const FONT_OPTIONS = [
   { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
   { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
 ];
-
-// ===== Historial mínimo en memoria =====
-function makeHistory(limit = 200) {
-  return {
-    stack: [],
-    idx: -1,
-    limit,
-    push(snap) {
-      if (!snap) return;
-      if (this.idx < this.stack.length - 1) this.stack.splice(this.idx + 1);
-      this.stack.push(snap);
-      if (this.stack.length > this.limit) this.stack.shift();
-      this.idx = this.stack.length - 1;
-    },
-    canUndo() { return this.idx > 0; },
-    canRedo() { return this.idx >= 0 && this.idx < this.stack.length - 1; },
-    undo() { if (!this.canUndo()) return null; this.idx -= 1; return this.stack[this.idx]; },
-    redo() { if (!this.canRedo()) return null; this.idx += 1; return this.stack[this.idx]; },
-    peek() { return this.stack[this.idx] || null; }
-  };
-}
-
-// ===== Helpers de snapshot =====
-const fixImagesInJSON = (root) => {
-  const walk = (o) => {
-    if (!o || typeof o !== 'object') return;
-    if (o.type === 'image' && !o.src && o._dataURL) o.src = o._dataURL;
-    const arr = o.objects || o._objects;
-    if (Array.isArray(arr)) arr.forEach(walk);
-  };
-  walk(root);
-  return root;
-};
 
 export default function CustomizationOverlay({
   stageRef,
@@ -77,6 +46,13 @@ export default function CustomizationOverlay({
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
+  // Historial
+  const historyRef = useRef(new HistoryManager({
+    limit: 200,
+    onChange: (current) => { if (current) saveLocalDesign(current); }
+  }));
+  const pushedInitialRef = useRef(false);
+
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
   const [fontSize, setFontSize] = useState(60);
@@ -95,77 +71,6 @@ export default function CustomizationOverlay({
   const [anchorRect, setAnchorRect] = useState(null);
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
-
-  const historyRef = useRef(makeHistory(200));
-  const pushedInitialRef = useRef(false);
-
-  const pushSnap = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const json = c.toJSON(['_kind','_debossOffset','_dataURL']);
-    historyRef.current.push({ baseSize: { ...baseSize }, json });
-  };
-
-  const rebindHelpersIfNeeded = (o) => {
-    if (!o) return;
-    if (o.type === 'group' && o._kind === 'textGroup') {
-      const kids = o._objects || o.getObjects?.() || [];
-      const [shadow, highlight, base] = kids;
-      o._textChildren = { shadow, highlight, base };
-      const sync = () => {
-        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
-        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
-        const ox = 1 / sx, oy = 1 / sy;
-        shadow?.set({ left: -ox, top: -oy });
-        highlight?.set({ left: +ox, top: +oy });
-        o.setCoords(); o.canvas?.requestRenderAll?.();
-      };
-      o.off('scaling'); o.off('modified');
-      o.on('scaling', sync);
-      o.on('modified', sync);
-      sync();
-    }
-    if (o.type === 'group' && o._kind === 'imgGroup') {
-      const kids = o._objects || o.getObjects?.() || [];
-      const [shadow, highlight, base] = kids;
-      o._imgChildren = { base, shadow, highlight };
-      if (typeof o._debossOffset !== 'number') o._debossOffset = 1;
-      const normalize = () => {
-        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
-        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
-        const ox = o._debossOffset / sx;
-        const oy = o._debossOffset / sy;
-        shadow?.set({ left: -ox, top: -oy });
-        highlight?.set({ left: +ox, top: +oy });
-        base?.set({ left: 0, top: 0 });
-        o.setCoords(); o.canvas?.requestRenderAll?.();
-      };
-      o.off('scaling'); o.off('modified');
-      o.on('scaling', normalize);
-      o.on('modified', normalize);
-      normalize();
-    }
-    const children = o._objects || o.getObjects?.() || [];
-    if (Array.isArray(children)) children.forEach(rebindHelpersIfNeeded);
-  };
-
-  const applyDesignSnapshotToCanvas = (snapshot) => {
-    if (!snapshot) return;
-    const c = fabricCanvasRef.current; if (!c) return;
-
-    const bs = snapshot.baseSize || {};
-    if (bs.w && bs.h) { c.setWidth(bs.w); c.setHeight(bs.h); c.calcOffset?.(); }
-
-    const json = JSON.parse(JSON.stringify(snapshot.json || {}));
-    fixImagesInJSON(json);
-
-    c.loadFromJSON(json, () => {
-      // Rebind de helpers en todos los objetos cargados
-      (c.getObjects?.() || []).forEach(rebindHelpersIfNeeded);
-      c.renderAll();
-      try { c.discardActiveObject(); } catch {}
-      setSelType('none');
-    });
-  };
 
   useEffect(() => {
     const c = fabricCanvasRef.current;
@@ -189,7 +94,7 @@ export default function CustomizationOverlay({
     return () => { try { el.style.position = prev; } catch {} };
   }, [anchorRef]);
 
-  // Medida exacta del área de la maceta en coords locales del stage
+  // Medida exacta del área en coords locales del stage
   useLayoutEffect(() => {
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
@@ -243,7 +148,7 @@ export default function CustomizationOverlay({
     };
   }, [anchorRef]);
 
-  // ===== Helpers de relieve =====
+  // ===== Helpers relieve =====
   const makeTextGroup = (text, opts = {}) => {
     const base = new fabric.Textbox(text, {
       ...opts,
@@ -318,7 +223,7 @@ export default function CustomizationOverlay({
     group._imgChildren = { base, shadow, highlight };
     group._debossOffset = offset;
 
-    // pose inicial desde baseObj
+    // pose inicial
     group.left    = baseObj.left ?? 0;
     group.top     = baseObj.top ?? 0;
     group.scaleX  = baseObj.scaleX ?? 1;
@@ -330,11 +235,6 @@ export default function CustomizationOverlay({
       base.setElement(img); shadow.setElement(img); highlight.setElement(img);
     };
     applyElement(srcEl);
-
-    const dataURL =
-      baseObj._dataURL ||
-      (srcEl && typeof srcEl.toDataURL === 'function' ? srcEl.toDataURL('image/png') : null);
-    base._dataURL = shadow._dataURL = highlight._dataURL = dataURL;
 
     shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
     highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
@@ -488,8 +388,49 @@ export default function CustomizationOverlay({
     });
     bm._vecSourceEl = element;
     bm._vecMeta = { w, h };
-    try { bm._dataURL = cv.toDataURL('image/png'); } catch {}
     return bm;
+  };
+
+  // ===== Snapshot helpers =====
+  const fixImagesInJSON = (obj) => JSON.parse(JSON.stringify(obj, (k, v) => {
+    if (v && v.type === 'image' && v.src && typeof v.src === 'object') {
+      // fabric export puede dejar Image.src como objeto; guardamos dataURL
+      if (v.src.src) return { ...v, src: v.src.src };
+    }
+    return v;
+  }));
+
+  const exportDesignSnapshot = () => {
+    const c = fabricCanvasRef.current; if (!c) return null;
+    const json = c.toJSON(['_kind','_imgChildren','_textChildren','_debossOffset','_vecSourceEl','_vecMeta']);
+    return { baseSize: { ...baseSize }, json };
+  };
+
+  const applyDesignSnapshotToCanvas = async (snapshot) => {
+    if (!snapshot) return;
+    const c = fabricCanvasRef.current; if (!c) return;
+
+    const snap = snapshot.json ? snapshot : { json: snapshot };
+    const safe = fixImagesInJSON(snap.json);
+
+    c.clear();
+    await new Promise((resolve) => {
+      fabric.util.enlivenObjects(safe.objects || [], (objs) => {
+        objs.forEach(o => c.add(o));
+        c.renderAll();
+        resolve();
+      });
+    });
+    try { c.discardActiveObject(); } catch {}
+    c.requestRenderAll?.();
+    setSelType('none');
+  };
+
+  const pushSnap = () => {
+    const snap = exportDesignSnapshot();
+    if (!snap) return;
+    // guardar en historial + autosave local
+    historyRef.current.push(JSON.parse(JSON.stringify(snap)));
   };
 
   // ===== Inicializar Fabric =====
@@ -506,14 +447,19 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
+    // API mínima pública
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
         toSVG: () => c.toSVG({ suppressPreamble: true }),
         getCanvas: () => c,
+        exportDesignSnapshot: () => exportDesignSnapshot(),
+        applyDesignSnapshot: (snap) => applyDesignSnapshotToCanvas(snap),
+        getBaseSize: () => ({ ...baseSize }),
       };
     }
 
+    // Helpers de tipo
     const classify = (a) => {
       if (!a) return 'none';
       if (a._kind === 'imgGroup')  return 'image';
@@ -565,6 +511,15 @@ export default function CustomizationOverlay({
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
+    // Transformaciones → snapshot
+    c.on('object:modified', () => pushSnap());
+
+    // Añadir → top + snapshot
+    c.on('object:added', (ev) => {
+      try { ev?.target && c.bringToFront(ev.target); } catch {}
+      c.requestRenderAll();
+    });
+
     // Doble-click (desktop) → editar texto del grupo
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
@@ -576,15 +531,6 @@ export default function CustomizationOverlay({
       }
     });
 
-    // Snapshot en transformaciones
-    c.on('object:modified', () => pushSnap());
-
-    // Al añadir, traer al frente y render
-    c.on('object:added', (ev) => {
-      try { ev?.target && c.bringToFront(ev.target); } catch {}
-      c.requestRenderAll();
-    });
-
     setReady(true);
 
     return () => {
@@ -592,14 +538,12 @@ export default function CustomizationOverlay({
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
-      c.off('object:modified');
-      c.off('object:added');
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
+  }, [visible, baseSize.w, baseSize.h]); // baseSize para getBaseSize estable
 
-  // Push snapshot inicial cuando ya hay tamaño real
+  // Snapshot inicial
   useEffect(() => {
     if (!ready) return;
     if (pushedInitialRef.current) return;
@@ -677,7 +621,7 @@ export default function CustomizationOverlay({
     window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
   }, [editing]);
 
-  // === Edición inline de texto (móvil/desktop) ===
+  // === Edición inline de texto ===
   const startInlineTextEdit = (group) => {
     const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
     const base = group._textChildren?.base; if (!base) return;
@@ -700,7 +644,6 @@ export default function CustomizationOverlay({
     c.add(tb);
     c.setActiveObject(tb);
     c.requestRenderAll();
-
     setTextEditing(true);
 
     setTimeout(() => {
@@ -728,20 +671,17 @@ export default function CustomizationOverlay({
       c.requestRenderAll();
       setSelType('text');
       setTextEditing(false);
-      pushSnap(); // snapshot al finalizar edición inline
+      pushSnap();
     };
 
     const onExit = () => { tb.off('editing:exited', onExit); finish(); };
     tb.on('editing:exited', onExit);
 
-    const safety = setTimeout(() => {
-      try { tb.off('editing:exited', onExit); } catch {}
-      finish();
-    }, 15000);
+    const safety = setTimeout(() => { try { tb.off('editing:exited', onExit); } catch {} finish(); }, 15000);
     tb.on('removed', () => { clearTimeout(safety); });
   };
 
-  // Doble-tap móvil para editar texto
+  // Doble-tap móvil → editar texto
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -767,7 +707,7 @@ export default function CustomizationOverlay({
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-  // Zoom global
+  // Zoom global PC + móvil
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const target = stageRef?.current || c?.upperCanvasEl;
@@ -791,18 +731,17 @@ export default function CustomizationOverlay({
       writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
     };
 
-    // Pinch 2 dedos
     let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
     const park = () => {
       if (parked || !c) return;
-      saved = { selection: c.selection, skipTargetFind: c.skipTargetFind };
+      saved = { selection: c.selection, skip: c.skipTargetFind };
       c.selection = false;
       c.skipTargetFind = true;
       parked = true;
     };
     const unpark = () => {
       if (!c) return;
-      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skipTargetFind; saved = null; }
+      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
       parked = false;
       c.requestRenderAll?.();
     };
@@ -892,6 +831,7 @@ export default function CustomizationOverlay({
   }, [editing, anchorRef, stageRef]);
 
   // ===== Acciones =====
+
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const group = makeTextGroup('Nuevo párrafo', {
@@ -1010,7 +950,7 @@ export default function CustomizationOverlay({
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
   };
 
-  // Aplicar cambios tipográficos a selección (grupos de texto)
+  // Aplicar cambios tipográficos a selección
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -1019,7 +959,6 @@ export default function CustomizationOverlay({
       if (!g || g._kind !== 'textGroup') return;
       const { base, shadow, highlight } = g._textChildren || {};
       [base, shadow, highlight].forEach(o => o && mutator(o));
-      // re-sincronizar offsets del relieve
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
       const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
       const ox = 1 / sx, oy = 1 / sy;
@@ -1036,7 +975,7 @@ export default function CustomizationOverlay({
       mutator(a);
     }
     c.requestRenderAll();
-    pushSnap(); // snapshot en cambios de estilo
+    pushSnap();
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
@@ -1070,7 +1009,6 @@ export default function CustomizationOverlay({
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
       c.add(group);
-      c.bringToFront(group);
       c.setActiveObject(group);
     };
 
@@ -1080,7 +1018,7 @@ export default function CustomizationOverlay({
 
     c.requestRenderAll();
     pushSnap();
-  }, [vecBias, vecInvert]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vecBias, vecInvert]);
 
   // Offset de relieve en caliente
   useEffect(() => {
@@ -1089,9 +1027,7 @@ export default function CustomizationOverlay({
     const a = c.getActiveObject(); if (!a) return;
     const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
-    c.requestRenderAll();
-    pushSnap();
-  }, [vecOffset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
 
@@ -1194,7 +1130,7 @@ export default function CustomizationOverlay({
           <div className="d-flex gap-2 ms-2">
             <button
               type="button"
-              className="btn btn-outline-secondary btn-sm"
+              className="btn btn-outline-secondary"
               onClick={() => {
                 const prev = historyRef.current.undo();
                 if (prev) applyDesignSnapshotToCanvas(prev);
@@ -1204,7 +1140,7 @@ export default function CustomizationOverlay({
             >⟲</button>
             <button
               type="button"
-              className="btn btn-outline-secondary btn-sm"
+              className="btn btn-outline-secondary"
               onClick={() => {
                 const next = historyRef.current.redo();
                 if (next) applyDesignSnapshotToCanvas(next);
@@ -1233,16 +1169,6 @@ export default function CustomizationOverlay({
               disabled={!ready}
             >
               + Imagen
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => replaceInputRef.current?.click()}
-              disabled={!ready || selType === 'none'}
-              title="Reemplazar imagen seleccionada"
-            >
-              Reemplazar
             </button>
             <button
               type="button"
