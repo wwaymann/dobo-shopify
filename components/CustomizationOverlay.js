@@ -411,8 +411,10 @@ useEffect(() => {
     });
   
     fabricCanvasRef.current = c;
- c.setBackgroundColor('rgba(255,255,255,1)', c.renderAll.bind(c)); // temporal para test
-      c.renderAll();
+
+    try { c.lowerCanvasEl.style.background = '#fff'; } catch {}
+    c.renderAll();
+   
     // API mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
