@@ -3,7 +3,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
-import { saveLocalDesign, loadLocalDesign } from '../lib/designStore';
+import { saveSessionDesign, loadSessionDesign } from '../lib/designStore';
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -30,6 +30,7 @@ export default function CustomizationOverlay({
   visible = true,
   zoom = 1,
   setZoom,
+  productHandle, // clave por producto para autosave de sesión
 }) {
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
@@ -45,13 +46,6 @@ export default function CustomizationOverlay({
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
-
-  // Historial
-  const historyRef = useRef(new HistoryManager({
-    limit: 200,
-    onChange: (snap) => { if (snap) saveLocalDesign(snap); }
-  }));
-  const applyingRef = useRef(false); // evita pushes durante apply
 
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -72,25 +66,25 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
-// Forzar repintado tras aplicar snapshots
-const isApplyingRef = useRef(false);
+  // Forzar repintado tras aplicar snapshots
+  const isApplyingRef = useRef(false);
+  function forceRepaint() {
+    const c = fabricCanvasRef.current; if (!c) return;
+    try { (c.getObjects() || []).forEach(o => o.dirty = true); c.discardActiveObject(); } catch {}
+    c.calcOffset?.(); c.renderAll?.(); c.requestRenderAll?.();
+    setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+  }
 
-function forceRepaint() {
-  const c = fabricCanvasRef.current; if (!c) return;
-  try {
-    (c.getObjects() || []).forEach(o => o.dirty = true);
-    c.discardActiveObject();
-  } catch {}
-  c.calcOffset?.();
-  c.renderAll?.();
-  c.requestRenderAll?.();
-  setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-}
+  // Historial con autosave a sesión por producto
+  const historyRef = useRef(new HistoryManager({
+    limit: 200,
+    onChange: (current) => {
+      if (!current) return;
+      if (isApplyingRef.current) return; // no guardes mientras aplicas undo/redo
+      saveSessionDesign(productHandle, current);
+    }
+  }));
 
-
-
-  
-  // touchAction del upper canvas cuando se edita texto
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -98,7 +92,7 @@ function forceRepaint() {
     upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
   }, [textEditing, editing]);
 
-  // Mantén --zoom
+  // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
     stageRef?.current?.style.setProperty('--zoom', String(v));
@@ -119,14 +113,6 @@ function forceRepaint() {
     const anchor = anchorRef?.current;
     if (!stage || !anchor) return;
 
-    const safeCalc = (c) => {
-      try {
-        if (!c || !c.upperCanvasEl || !c.lowerCanvasEl) return;
-        if (c.disposed) return;
-        c.calcOffset?.();
-      } catch {}
-    };
-
     const measure = () => {
       const w = Math.max(1, anchor.clientWidth);
       const h = Math.max(1, anchor.clientHeight);
@@ -141,7 +127,7 @@ function forceRepaint() {
       setOverlayBox({ left, top, w, h });
 
       const c = fabricCanvasRef.current;
-      if (c) { c.setWidth(w); c.setHeight(h); safeCalc(c); c.requestRenderAll?.(); }
+      if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
     };
 
     measure();
@@ -158,7 +144,7 @@ function forceRepaint() {
     };
   }, [stageRef, anchorRef]);
 
-  // Posiciona el menú
+  // Posiciona el menú dentro de la columna de carruseles
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -431,15 +417,14 @@ function forceRepaint() {
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
-c.renderOnAddRemove = true; // garantizar repintado tras loadFromJSON
-    // API pública mínima
+    c.renderOnAddRemove = true;
+
+    // API mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
         toSVG: () => c.toSVG({ suppressPreamble: true }),
         getCanvas: () => c,
-        exportDesignSnapshot,
-        applyDesignSnapshot: applyDesignSnapshotToCanvas,
       };
     }
 
@@ -464,18 +449,9 @@ c.renderOnAddRemove = true; // garantizar repintado tras loadFromJSON
       const a = c.getActiveObject();
       if (!a) return;
       let first = null;
-      if (a._kind === 'textGroup') {
-        if (!a._textChildren && Array.isArray(a._objects) && a._objects.length >= 3) {
-          a._textChildren = { shadow: a._objects[0], highlight: a._objects[1], base: a._objects[2] };
-        }
-        first = a._textChildren?.base || null;
-      } else if (a.type === 'activeSelection') {
-        const tg = a._objects?.find(x => x._kind === 'textGroup');
-        if (tg && !tg._textChildren && Array.isArray(tg._objects) && tg._objects.length >= 3) {
-          tg._textChildren = { shadow: tg._objects[0], highlight: tg._objects[1], base: tg._objects[2] };
-        }
-        first = tg?._textChildren?.base || null;
-      } else if (isTextObj(a)) first = a;
+      if (a._kind === 'textGroup') first = a._textChildren?.base || null;
+      else if (a.type === 'activeSelection') first = a._objects?.find(x => x._kind === 'textGroup')?._textChildren?.base || null;
+      else if (isTextObj(a)) first = a;
       if (first) {
         setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
         setFontSize(first.fontSize || 60);
@@ -504,9 +480,8 @@ c.renderOnAddRemove = true; // garantizar repintado tras loadFromJSON
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
-    // Historial: snapshot al modificar objetos
+    // Snapshot al modificar objetos (mover, escalar, rotar, etc.)
     c.on('object:modified', () => {
-      if (applyingRef.current) return;
       const snap = exportDesignSnapshot();
       if (snap) historyRef.current.push(snap);
     });
@@ -524,37 +499,50 @@ c.renderOnAddRemove = true; // garantizar repintado tras loadFromJSON
 
     setReady(true);
 
-    // Cargar autosave al montar
-// Cargar autosave al montar
-const auto = loadLocalDesign();
-if (auto?.canvasJSON || (auto?.objects?.length)) {
-  applyDesignSnapshotToCanvas(auto);
-  historyRef.current.push(auto);
-} else {
-  historyRef.current.push(exportDesignSnapshot());
-}
-
-
     return () => {
       c.off('mouse:dblclick');
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
+      c.off('object:modified');
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
   }, [visible]);
 
+  // Semilla de sesión/servidor una vez listo
+  useEffect(() => {
+    if (!ready || !productHandle) return;
+    const seed = loadSessionDesign(productHandle);
+    if (seed) {
+      applyDesignSnapshotToCanvas(seed);
+      if (historyRef.current.replaceAll) historyRef.current.replaceAll([seed]);
+      else { historyRef.current.clear?.(); historyRef.current.push(seed); }
+      return;
+    }
+    (async () => {
+      try {
+        const r = await fetch(`/api/design/load?handle=${encodeURIComponent(productHandle)}`);
+        if (r.ok) {
+          const data = await r.json(); // { snapshot }
+          if (data?.snapshot) {
+            applyDesignSnapshotToCanvas(data.snapshot);
+            if (historyRef.current.replaceAll) historyRef.current.replaceAll([data.snapshot]);
+            else { historyRef.current.clear?.(); historyRef.current.push(data.snapshot); }
+          }
+        }
+      } catch {}
+    })();
+  }, [ready, productHandle]);
+
   // Ajusta tamaño de lienzo
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
-    try {
-      c.setWidth(baseSize.w);
-      c.setHeight(baseSize.h);
-      if (c.upperCanvasEl && c.lowerCanvasEl) c.calcOffset?.();
-      c.requestRenderAll?.();
-    } catch {}
+    c.setWidth(baseSize.w);
+    c.setHeight(baseSize.h);
+    c.calcOffset?.();
+    c.requestRenderAll?.();
   }, [baseSize.w, baseSize.h]);
 
   // Interactividad según modo
@@ -588,8 +576,9 @@ if (auto?.canvasJSON || (auto?.objects?.length)) {
       if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
       c.defaultCursor = on ? 'move' : 'default';
       try { c.discardActiveObject(); } catch {}
-      if (c.upperCanvasEl && c.lowerCanvasEl) c.calcOffset?.();
+      c.calcOffset?.();
       c.requestRenderAll?.();
+      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
     };
 
     setAll(!!editing);
@@ -619,7 +608,7 @@ if (auto?.canvasJSON || (auto?.objects?.length)) {
   // === Edición inline de texto (móvil/desktop) ===
   const startInlineTextEdit = (group) => {
     const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
-    const base = group._textChildren?.base || group._objects?.[2]; if (!base) return;
+    const base = group._textChildren?.base; if (!base) return;
 
     const pose = {
       left: group.left, top: group.top, originX: 'center', originY: 'center',
@@ -667,11 +656,10 @@ if (auto?.canvasJSON || (auto?.objects?.length)) {
       c.requestRenderAll();
       setSelType('text');
 
-      // Snapshot por edición de texto
+      setTextEditing(false);
+
       const snap = exportDesignSnapshot();
       if (snap) historyRef.current.push(snap);
-
-      setTextEditing(false);
     };
 
     const onExit = () => { tb.off('editing:exited', onExit); finish(); };
@@ -710,7 +698,7 @@ if (auto?.canvasJSON || (auto?.objects?.length)) {
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-  // Zoom PC + móvil
+  // Zoom global PC y móvil
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const target = stageRef?.current || c?.upperCanvasEl;
@@ -728,14 +716,12 @@ if (auto?.canvasJSON || (auto?.objects?.length)) {
       if (typeof setZoom === 'function') setZoom(v);
     };
 
-    // PC: rueda
     const onWheel = (e) => {
       if (textEditing) return;
       e.preventDefault();
       writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
     };
 
-    // Móvil: 2 dedos = zoom
     let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
     const park = () => {
       if (parked || !c) return;
@@ -835,60 +821,43 @@ if (auto?.canvasJSON || (auto?.objects?.length)) {
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
   }, [editing, anchorRef, stageRef]);
 
-  // ===== Historial helpers =====
-function exportDesignSnapshot() {
-  const c = fabricCanvasRef.current; if (!c) return null;
-  try {
-    const canvasJSON = c.toJSON(['_kind']); // guarda todo el canvas
-    return { v: 2, baseSize, canvasJSON };
-  } catch { return null; }
-}
-
-
-async function applyDesignSnapshotToCanvas(snapshot) {
-  if (!snapshot) return;
-  const c = fabricCanvasRef.current; if (!c) return;
-
-  isApplyingRef.current = true;
-  suppressSelectionRef.current = true;   // evita eventos intermedios
-
-  try {
-    const json = snapshot.canvasJSON
-      ? snapshot.canvasJSON
-      : { objects: snapshot.objects || [] }; // compat
-
-    await new Promise((resolve) => {
-      c.loadFromJSON(json, () => {
-        // rearmar punteros internos de grupos
-        (c.getObjects() || []).forEach(o => {
-          if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-            o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-          }
-          if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-            o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-            if (typeof o._debossSync === 'function') o._debossSync();
-          }
-        });
-        c.renderAll();
-        resolve();
-      });
-    });
-
-    setSelType('none');
-    forceRepaint();     // elimina el “desaparece hasta hacer clic”
-  } finally {
-    suppressSelectionRef.current = false;
-    isApplyingRef.current = false;
+  // ===== Snapshots =====
+  function exportDesignSnapshot() {
+    const c = fabricCanvasRef.current; if (!c) return null;
+    return { v: 2, baseSize, canvasJSON: c.toJSON(['_kind']) };
   }
-}
 
+  async function applyDesignSnapshotToCanvas(snapshot) {
+    if (!snapshot) return;
+    const c = fabricCanvasRef.current; if (!c) return;
 
+    isApplyingRef.current = true;
+    try {
+      const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
 
+      await new Promise((resolve) => {
+        c.loadFromJSON(json, () => {
+          (c.getObjects() || []).forEach(o => {
+            if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+              o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+            }
+            if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+              o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+              if (typeof o._debossSync === 'function') o._debossSync();
+            }
+          });
+          c.renderAll();
+          resolve();
+        });
+      });
 
-  const commitSnapshot = () => {
-    const snap = exportDesignSnapshot();
-    if (snap) historyRef.current.push(snap);
-  };
+      try { c.discardActiveObject(); } catch {}
+      setSelType('none');
+      forceRepaint(); // evita “se vacía hasta clic”
+    } finally {
+      isApplyingRef.current = false;
+    }
+  }
 
   // ===== Acciones =====
   const addText = () => {
@@ -905,7 +874,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
-    commitSnapshot();
+    const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
   };
 
   const addImageFromFile = (file) => {
@@ -925,7 +894,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      commitSnapshot();
+      const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -951,14 +920,14 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      commitSnapshot();
+      const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
 
-  // Borrar selección
+  // Borrar selección (grupos)
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -975,7 +944,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
-    commitSnapshot();
+    const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
   };
 
   const clearSelectionHard = () => {
@@ -1006,16 +975,13 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
   };
 
-  // Aplicar cambios tipográficos a selección
+  // Aplicar cambios tipográficos a selección (grupos de texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
 
     const applyToGroup = (g) => {
       if (!g || g._kind !== 'textGroup') return;
-      if (!g._textChildren && Array.isArray(g._objects) && g._objects.length >= 3) {
-        g._textChildren = { shadow: g._objects[0], highlight: g._objects[1], base: g._objects[2] };
-      }
       const { base, shadow, highlight } = g._textChildren || {};
       [base, shadow, highlight].forEach(o => o && mutator(o));
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
@@ -1034,7 +1000,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       mutator(a);
     }
     c.requestRenderAll();
-    commitSnapshot();
+    const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
@@ -1048,7 +1014,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       let pose = null;
 
       if (obj?._kind === 'imgGroup') {
-        const base = obj._imgChildren?.base || obj._objects?.[2];
+        const base = obj._imgChildren?.base;
         if (!base) return;
         element = base._vecSourceEl || (typeof base.getElement === 'function' ? base.getElement() : base._element);
         pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
@@ -1076,8 +1042,8 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     } else { rebuild(a); }
 
     c.requestRenderAll();
-    commitSnapshot();
-  }, [vecBias, vecInvert]);
+    const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
+  }, [vecBias, vecInvert]); // vecOffset tiene su propio efecto
 
   // Offset de relieve en caliente
   useEffect(() => {
@@ -1086,8 +1052,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     const a = c.getActiveObject(); if (!a) return;
     const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
-    c.requestRenderAll();
-    commitSnapshot();
+    const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
   }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
@@ -1192,21 +1157,15 @@ async function applyDesignSnapshotToCanvas(snapshot) {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => {
-                const prev = historyRef.current.undo();
-                if (prev) applyDesignSnapshotToCanvas(prev);
-              }}
-              disabled={!historyRef.current.canUndo()}
+              onClick={() => { const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
+              disabled={!historyRef.current.canUndo?.()}
               title="Deshacer (Ctrl+Z)"
             >⟲</button>
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => {
-                const next = historyRef.current.redo();
-                if (next) applyDesignSnapshotToCanvas(next);
-              }}
-              disabled={!historyRef.current.canRedo()}
+              onClick={() => { const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
+              disabled={!historyRef.current.canRedo?.()}
               title="Rehacer (Ctrl+Y)"
             >⟳</button>
           </div>
@@ -1362,14 +1321,22 @@ async function applyDesignSnapshotToCanvas(snapshot) {
         )}
 
         {/* Inputs ocultos */}
-        <input ref={addInputRef} type="file" accept="image/*"
+        <input
+          ref={addInputRef}
+          type="file"
+          accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
-        <input ref={replaceInputRef} type="file" accept="image/*"
+          style={{ display: 'none' }}
+        />
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
+          style={{ display: 'none' }}
+        />
       </div>
     );
   }
