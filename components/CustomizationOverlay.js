@@ -975,6 +975,23 @@ export default function CustomizationOverlay({
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
   };
 
+// Editar el texto seleccionado (PC: botón/tecla)
+const startEditActiveText = () => {
+  const c = fabricCanvasRef.current; if (!c) return;
+  const a = c.getActiveObject(); if (!a) return;
+  // Si es nuestro grupo de relieve de texto, abrimos el editor inline
+  if (a._kind === 'textGroup') {
+    startInlineTextEdit(a);
+    return;
+  }
+  // Si fuera un Textbox suelto, editamos directo
+  if (typeof a.enterEditing === 'function') {
+    a.enterEditing();
+    c.requestRenderAll();
+  }
+};
+
+  
   // Aplicar cambios tipográficos a selección (grupos de texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
