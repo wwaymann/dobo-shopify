@@ -1166,7 +1166,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
               </button>
             </div>
               </div>
-
+</div>
         {/* LÍNEA 2: Acciones básicas */}
         {editing ? (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -1208,7 +1208,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
             </div>
           </div>
         ) : null}
-
+</div>
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
