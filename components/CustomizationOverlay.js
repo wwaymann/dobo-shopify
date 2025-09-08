@@ -407,10 +407,10 @@ useEffect(() => {
       selection: true,
       perPixelTargetFind: true,
       targetFindTolerance: 8,
-      c.setBackgroundColor('rgba(255,255,255,1)', c.renderAll.bind(c)); // temporal para test
-      c.renderAll();
+     
     });
-  
+   c.setBackgroundColor('rgba(255,255,255,1)', c.renderAll.bind(c)); // temporal para test
+      c.renderAll();
     fabricCanvasRef.current = c;
 
     // API mínima
