@@ -159,7 +159,7 @@ useEffect(() => {
       originX: 'center', originY: 'center',
       selectable: false, evented: false,
       objectCaching: false, shadow: null, stroke: null,
-      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
+      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'source-over'
     });
     const shadow = new fabric.Textbox(text, {
       ...opts,
@@ -240,8 +240,9 @@ useEffect(() => {
     };
     applyElement(srcEl);
 
-    shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
-    highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
+    base.set({ globalCompositeOperation: 'source-over', opacity: 1 });
+    shadow.set({ globalCompositeOperation: 'multiply',    opacity: 1 });
+    highlight.set({ globalCompositeOperation: 'screen',   opacity: 1 });
 
     const normalizeImgOffsets = () => {
       const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
@@ -407,6 +408,7 @@ useEffect(() => {
       perPixelTargetFind: true,
       targetFindTolerance: 8,
     });
+    c.setBackgroundColor('rgba(255,255,255,1)', c.renderAll.bind(c)); // temporal para test
     fabricCanvasRef.current = c;
 
     // API mínima
@@ -866,7 +868,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
       c.add(group);
       c.setActiveObject(group);
       setSelType('image');
-      c.requestRenderAll();
+      c.requestRenderAll?.();
       setEditing(true);
       commitDesignSnapshot(exportDesignSnapshot());
 
