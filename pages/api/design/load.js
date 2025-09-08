@@ -72,3 +72,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: String(err.message || err) });
   }
 }
+export default async function handler(req, res) {
+  const { handle } = req.query || {};
+  // TODO: aquí lee desde Shopify el JSON guardado para ese handle
+  // Por ahora devuelve 404 para que sepas conectarlo:
+  return res.status(404).json({ error: 'Falta implementar carga desde Shopify', handle });
+}
+
