@@ -1,81 +1,17 @@
-// /pages/api/design/load.js
-import { shopifyStorefront } from '../../../lib/shopify';
-
-const QUERY_BY_HANDLE = `
-  query($handle: String!) {
-    product(handle: $handle) {
-      id
-      title
-      handle
-      featuredImage { url }
-      metafield(namespace: "dobo", key: "design_json") {
-        value
-        type
-      }
-    }
-  }
-`;
-
-const QUERY_BY_ID = `
-  query($id: ID!) {
-    node(id: $id) {
-      ... on Product {
-        id
-        title
-        handle
-        featuredImage { url }
-        metafield(namespace: "dobo", key: "design_json") {
-          value
-          type
-        }
-      }
-    }
-  }
-`;
+// pages/api/design/load.js
 
 export default async function handler(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
   try {
-    const { handle, gid } = req.query || {};
-    if (!handle && !gid) {
-      return res.status(400).json({ ok: false, error: 'Debes pasar ?handle=... o ?gid=gid://shopify/Product/...' });
-    }
-    let data;
-    if (handle) {
-      data = await shopifyStorefront(QUERY_BY_HANDLE, { handle });
-      const p = data?.product;
-      if (!p) return res.status(404).json({ ok: false, error: 'Producto no encontrado' });
-      const json = p.metafield?.value ? JSON.parse(p.metafield.value) : null;
-      return res.status(200).json({
-        ok: true,
-        source: 'handle',
-        product: {
-          id: p.id, title: p.title, handle: p.handle, image: p.featuredImage?.url || null
-        },
-        designJSON: json
-      });
-    } else {
-      data = await shopifyStorefront(QUERY_BY_ID, { id: gid });
-      const n = data?.node;
-      if (!n) return res.status(404).json({ ok: false, error: 'Producto no encontrado' });
-      const json = n.metafield?.value ? JSON.parse(n.metafield.value) : null;
-      return res.status(200).json({
-        ok: true,
-        source: 'gid',
-        product: {
-          id: n.id, title: n.title, handle: n.handle, image: n.featuredImage?.url || null
-        },
-        designJSON: json
-      });
-    }
+    const { handle } = req.query || {};
+    if (!handle) return res.status(400).json({ error: 'handle requerido' });
+
+    // TODO: leer desde Shopify por `handle` el JSON previamente guardado.
+    // Mientras tanto, responde 404 para indicar que falta la implementación real.
+    return res.status(404).json({ error: 'no_implementado', handle });
   } catch (err) {
     console.error('load error', err);
-    return res.status(500).json({ ok: false, error: String(err.message || err) });
+    return res.status(500).json({ error: 'internal_error' });
   }
 }
-export default async function handler(req, res) {
-  const { handle } = req.query || {};
-  // TODO: aquí lee desde Shopify el JSON guardado para ese handle
-  // Por ahora devuelve 404 para que sepas conectarlo:
-  return res.status(404).json({ error: 'Falta implementar carga desde Shopify', handle });
-}
-
