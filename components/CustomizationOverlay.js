@@ -1095,240 +1095,179 @@ function Menu() {
       onPointerMove={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
     >
-      {/* LÍNEA 1: Zoom + modos + Undo/Redo */}
+      {/* LÍNEA 1 */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {typeof setZoom === 'function' && (
           <div className="input-group input-group-sm" style={{ width: 180 }}>
             <span className="input-group-text">Zoom</span>
-            <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
-            <input type="text" readOnly className="form-control form-control-sm text-center" value={`${Math.round((zoom || 1) * 100)}%`} />
-            <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
+            <button type="button" className="btn btn-outline-secondary"
+              onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
+            <input type="text" readOnly className="form-control form-control-sm text-center"
+              value={`${Math.round((zoom || 1) * 100)}%`} />
+            <button type="button" className="btn btn-outline-secondary"
+              onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
           </div>
         )}
 
-        <button
-          type="button"
-          className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()}
-          onPointerDown={(e)=>e.stopPropagation()}
-          onClick={exitDesignMode}
-          style={{ minWidth: '16ch' }}
-        >
+        <button type="button" className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+          onMouseDown={(e)=>e.preventDefault()} onPointerDown={(e)=>e.stopPropagation()}
+          onClick={exitDesignMode} style={{ minWidth: '16ch' }}>
           Seleccionar Maceta
         </button>
 
-        <button
-          type="button"
-          className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()}
-          onPointerDown={(e)=>e.stopPropagation()}
-          onClick={enterDesignMode}
-          style={{ minWidth: '12ch' }}
-        >
+        <button type="button" className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+          onMouseDown={(e)=>e.preventDefault()} onPointerDown={(e)=>e.stopPropagation()}
+          onClick={enterDesignMode} style={{ minWidth: '12ch' }}>
           Diseñar
         </button>
 
         {/* Undo / Redo */}
         <div className="d-flex gap-2 ms-2">
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={() => {
-              const prev = historyRef.current.undo();
-              if (prev) applyDesignSnapshotToCanvas(prev);
-            }}
-            disabled={!historyRef.current.canUndo()}
-            title="Deshacer (Ctrl+Z)"
-          >⟲</button>
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={() => {
-              const next = historyRef.current.redo();
-              if (next) applyDesignSnapshotToCanvas(next);
-            }}
-            disabled={!historyRef.current.canRedo()}
-            title="Rehacer (Ctrl+Y)"
-          >⟳</button>
+          <button type="button" className="btn btn-outline-secondary"
+            onClick={() => { const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
+            disabled={!historyRef.current.canUndo()} title="Deshacer (Ctrl+Z)">⟲</button>
+          <button type="button" className="btn btn-outline-secondary"
+            onClick={() => { const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
+            disabled={!historyRef.current.canRedo()} title="Rehacer (Ctrl+Y)">⟳</button>
         </div>
       </div>
 
-      {/* LÍNEA 2: Acciones básicas */}
-      {editing ? (
+      {/* LÍNEA 2 */}
+      {editing && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => { /* …acciones existentes… */ }}
-          >
+          <button type="button" className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()} onClick={() => { /* acciones */ }}>
             Accion 1
           </button>
-
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={onDelete}
-            disabled={!ready || selType === 'none'}
-            title="Eliminar seleccionado"
-          >
+          <button type="button" className="btn btn-sm btn-outline-danger"
+            onPointerDown={(e)=>e.stopPropagation()} onClick={onDelete}
+            disabled={!ready || selType === 'none'} title="Eliminar seleccionado">
             Borrar
           </button>
         </div>
-      ) : null}
+      )}
+
+      {/* LÍNEA 3: Propiedades por tipo */}
+      {editing && (
+        <>
+          {selType === 'text' && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+                <span className="input-group-text">Fuente</span>
+                <select className="form-select form-select-sm" value={fontFamily}
+                  onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
+                  onPointerDown={(e)=>e.stopPropagation()}>
+                  {FONT_OPTIONS.map(f => (<option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>))}
+                </select>
+              </div>
+
+              <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                <button type="button" className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`}
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}>
+                  B
+                </button>
+                <button type="button" className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`}
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}>
+                  I
+                </button>
+                <button type="button" className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`}
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}>
+                  U
+                </button>
+              </div>
+
+              <div className="input-group input-group-sm" style={{ width: 160 }}>
+                <span className="input-group-text">Tamaño</span>
+                <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onChange={(e) => { const v = clamp(parseInt(e.target.value || '0', 10), 8, 200); setFontSize(v); applyToSelection(o => o.set({ fontSize: v })); }} />
+              </div>
+
+              <div className="btn-group dropup">
+                <button type="button" className="btn btn-outline-secondary btn-sm"
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setShowAlignMenu(v => !v)}>
+                  {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
+                </button>
+                {showAlignMenu && (
+                  <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
+                    {['left','center','right','justify'].map(a => (
+                      <li key={a}>
+                        <button type="button" className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
+                          onPointerDown={(e)=>e.stopPropagation()}
+                          onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}>
+                          {a}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selType === 'image' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <div className="input-group input-group-sm" style={{ width: 230 }}>
+                <span className="input-group-text">Detalles</span>
+                <button type="button" className="btn btn-outline-secondary"
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
+                <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                <button type="button" className="btn btn-outline-secondary"
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
+              </div>
+
+              <div className="input-group input-group-sm" style={{ width: 190 }}>
+                <span className="input-group-text">Profundidad</span>
+                <button type="button" className="btn btn-outline-secondary"
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
+                <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
+                <button type="button" className="btn btn-outline-secondary"
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
+              </div>
+
+              <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
+                <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`}
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
+                <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`}
+                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Inputs ocultos */}
+      <input
+        ref={addInputRef}
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) addImageFromFile(f);
+          e.target.value = '';
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) replaceActiveFromFile(f);
+          e.target.value = '';
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
 
-   
-        {/* LÍNEA 3: Propiedades por tipo */}
-        {editing && (
-          <>
-            {selType === 'text' && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-                  <span className="input-group-text">Fuente</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={fontFamily}
-                    onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                  >
-                    {FONT_OPTIONS.map(f => (
-                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                  <button
-                    type="button"
-                    className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}
-                  >
-                    B
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}
-                  >
-                    I
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
-                  >
-                    U
-                  </button>
-                </div>
-
-                <div className="input-group input-group-sm" style={{ width: 160 }}>
-                  <span className="input-group-text">Tamaño</span>
-                  <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    min={8}
-                    max={200}
-                    step={1}
-                    value={fontSize}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onChange={(e) => {
-                      const v = clamp(parseInt(e.target.value || '0', 10), 8, 200);
-                      setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
-                    }}
-                  />
-                </div>
-
-                <div className="btn-group dropup">
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => setShowAlignMenu(v => !v)}
-                  >
-                    {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
-                  </button>
-                  {showAlignMenu && (
-                    <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
-                      {['left','center','right','justify'].map(a => (
-                        <li key={a}>
-                          <button
-                            type="button"
-                            className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
-                            onPointerDown={(e)=>e.stopPropagation()}
-                            onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
-                          >
-                            {a}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {selType === 'image' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <div className="input-group input-group-sm" style={{ width: 230 }}>
-                  <span className="input-group-text">Detalles</span>
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
-                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
-                </div>
-
-                <div className="input-group input-group-sm" style={{ width: 190 }}>
-                  <span className="input-group-text">Profundidad</span>
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
-                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
-                </div>
-
-                <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-                  <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
-                  <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-{/* Inputs ocultos */}
-<input
-  ref={addInputRef}
-  type="file"
-  accept="image/*"
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) addImageFromFile(f);
-    e.target.value = '';
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-  style={{ display: 'none' }}
-/>
-<input
-  ref={replaceInputRef}
-  type="file"
-  accept="image/*"
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) replaceActiveFromFile(f);
-    e.target.value = '';
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-  style={{ display: 'none' }}
-/>
-
-</div>
-
-  );
-}
 
   // ===== Render =====
   return (
