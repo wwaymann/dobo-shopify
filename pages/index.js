@@ -3,6 +3,34 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
+import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
+
+function ControlesPublicar() {
+  const onPublish = async () => {
+    const api = window.doboDesignAPI;
+    const snap = api?.exportDesignSnapshot?.();
+    if (!snap) { alert('No hay diseño'); return; }
+
+    const canvas = api.getCanvas();
+    const dataURL = exportPreviewDataURL(canvas, { multiplier: 2 });
+    const attachment = await dataURLtoBase64Attachment(dataURL);
+
+    const meta = { potHandle: 'maceta-x', plantHandle: 'planta-y', size: 'M' }; // ajusta con tus selecciones reales
+    const designJSON = { ...snap, meta };
+
+    const r = await fetch('/api/design/publish', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ designJSON, previewBase64: attachment, status: 'draft', tags: ['dobo','custom'] })
+    });
+    const out = await r.json();
+    if (!r.ok) { alert(out.error || 'Error al publicar'); return; }
+    console.log('Publicado:', out);
+  };
+
+  return <button className="btn btn-primary" onClick={onPublish}>Publicar diseño</button>;
+}
+
 
 /* ---------- tamaño: normalización de etiquetas ---------- */
 function normalizeSizeTag(raw) {
