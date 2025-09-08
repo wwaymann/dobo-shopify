@@ -2,6 +2,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
+import { useRef } from 'react';
+import HistoryManager from '../lib/history';
+import { saveLocalDesign } from '../lib/designStore';
+
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -43,6 +47,15 @@ export default function CustomizationOverlay({
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
+
+  // Historial de cambios
+const historyRef = useRef(new HistoryManager({
+  limit: 200,
+  onChange: (current) => {
+    if (current) saveLocalDesign(current); // autosave en localStorage
+  }
+}));
+
 
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -458,6 +471,12 @@ useEffect(() => {
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
+    // Snapshot al modificar objetos (mover, escalar, rotar, etc.)
+c.on('object:modified', () => {
+  const snap = exportDesignSnapshot();
+  if (snap) historyRef.current.push(JSON.parse(JSON.stringify(snap)));
+});
+    
     // Doble-click (desktop) → editar texto del grupo
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
@@ -776,7 +795,45 @@ useEffect(() => {
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
   }, [editing, anchorRef, stageRef]);
 
+  function commitDesignSnapshot(nextDesignState) {
+  const snapshot = JSON.parse(JSON.stringify(nextDesignState));
+  historyRef.current.push(snapshot);
+}
+
+  
   // ===== Acciones =====
+
+  // ---- Snapshots de diseño (export / apply) ----
+function exportDesignSnapshot() {
+  const c = fabricCanvasRef.current; if (!c) return null;
+  return {
+    baseSize, // ya existe en tu estado
+    objects: c.toJSON(['_kind','_textChildren']).objects || []
+  };
+}
+
+async function applyDesignSnapshotToCanvas(snapshot) {
+  if (!snapshot) return;
+  const c = fabricCanvasRef.current; if (!c) return;
+
+  // Limpia lienzo (sin tocar tu stage/menu externo)
+  c.clear();
+
+  // Recrear objetos
+  await new Promise((resolve) => {
+    fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
+      objs.forEach(o => c.add(o));
+      c.renderAll();
+      resolve();
+    });
+  });
+
+  // Opcional: descartar selección y refrescar UI
+  try { c.discardActiveObject(); } catch {}
+  c.requestRenderAll?.();
+  setSelType('none');
+}
+
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const group = makeTextGroup('Nuevo párrafo', {
@@ -791,6 +848,8 @@ useEffect(() => {
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
+    commitDesignSnapshot(exportDesignSnapshot());
+
   };
 
   const addImageFromFile = (file) => {
@@ -810,11 +869,14 @@ useEffect(() => {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
+      commitDesignSnapshot(exportDesignSnapshot());
+
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
+  
 
   const replaceActiveFromFile = (file) => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
@@ -835,11 +897,19 @@ useEffect(() => {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
+      commitDesignSnapshot(exportDesignSnapshot());
+
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
+
+  function commitDesignSnapshot(nextDesignState) {
+  // Clonamos para evitar referencias mutables
+  const snapshot = JSON.parse(JSON.stringify(nextDesignState));
+  historyRef.current.push(snapshot);
+}
 
   // Borrar selección (grupos)
   const onDelete = () => {
@@ -858,6 +928,8 @@ useEffect(() => {
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
+    commitDesignSnapshot(exportDesignSnapshot());
+
   };
 
   const clearSelectionHard = () => {
@@ -1065,6 +1137,39 @@ useEffect(() => {
           </button>
         </div>
 
+<div className="d-flex gap-2 mt-2">
+  <button
+    type="button"
+    className="btn btn-outline-secondary"
+    onClick={() => {
+      const prev = historyRef.current.undo();
+      if (prev) {
+        applyDesignSnapshotToCanvas(prev); // función que rehidrata el diseño en el canvas
+      }
+    }}
+    disabled={!historyRef.current.canUndo()}
+    title="Deshacer (Ctrl+Z)"
+  >
+    ⟲
+  </button>
+
+  <button
+    type="button"
+    className="btn btn-outline-secondary"
+    onClick={() => {
+      const next = historyRef.current.redo();
+      if (next) {
+        applyDesignSnapshotToCanvas(next);
+      }
+    }}
+    disabled={!historyRef.current.canRedo()}
+    title="Rehacer (Ctrl+Y)"
+  >
+    ⟳
+  </button>
+</div>
+
+
         {/* LÍNEA 2: Acciones básicas */}
         {editing && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -1095,7 +1200,32 @@ useEffect(() => {
               Borrar
             </button>
           </div>
+<div className="d-flex gap-2">
+  <button
+    type="button"
+    className="btn btn-outline-secondary"
+    onClick={() => {
+      const prev = historyRef.current.undo();
+      if (prev) applyDesignSnapshotToCanvas(prev);
+    }}
+    disabled={!historyRef.current.canUndo()}
+    title="Deshacer (Ctrl+Z)"
+  >⟲</button>
+
+  <button
+    type="button"
+    className="btn btn-outline-secondary"
+    onClick={() => {
+      const next = historyRef.current.redo();
+      if (next) applyDesignSnapshotToCanvas(next);
+    }}
+    disabled={!historyRef.current.canRedo()}
+    title="Rehacer (Ctrl+Y)"
+  >⟳</button>
+</div>
+
         )}
+
 
         {/* LÍNEA 3: Propiedades por tipo */}
         {editing && (
