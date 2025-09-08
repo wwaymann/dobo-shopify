@@ -2,7 +2,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
-import { useRef } from 'react';
 import HistoryManager from '../lib/history';
 import { saveLocalDesign } from '../lib/designStore';
 
