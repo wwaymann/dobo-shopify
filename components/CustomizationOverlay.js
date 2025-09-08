@@ -502,7 +502,8 @@ export default function CustomizationOverlay({
       return 'none';
     };
 
-    const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text'));
+   const isTextObj = (o) =>
+  o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
 
     const reflectTypo = () => {
       const a = c.getActiveObject();
