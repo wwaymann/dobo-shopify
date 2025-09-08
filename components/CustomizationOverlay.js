@@ -1035,40 +1035,41 @@ async function applyDesignSnapshotToCanvas(snapshot) {
 
   if (!visible) return null;
 
-  // ===== Overlay Canvas dentro de la maceta =====
-  function OverlayCanvas = (
-    <div
-      ref={overlayRef}
-      style={{
-        position: "absolute",
-        left: overlayBox.left,
-        top: overlayBox.top,
-        width: overlayBox.w,
-        height: overlayBox.h,
-        zIndex: Z_CANVAS,
-        overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain",
-      }}
-      // Evita que un toque en canvas active botones del menú
-      onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
-    >
-      <canvas
-        data-dobo-design="1"
-        ref={canvasRef}
-        width={overlayBox.w}
-        height={overlayBox.h}
+// ===== Overlay Canvas dentro de la maceta =====
+  function OverlayCanvas() {
+    return (
+      <div
+        ref={overlayRef}
         style={{
-          width: '100%',
-          height: '100%',
-          display: 'block',
-          background: 'transparent',
-          touchAction: editing ? 'none' : 'auto'
+          position: "absolute",
+          left: overlayBox.left,
+          top: overlayBox.top,
+          width: overlayBox.w,
+          height: overlayBox.h,
+          zIndex: Z_CANVAS,
+          overflow: "hidden",
+          pointerEvents: editing ? "auto" : "none",
+          touchAction: editing ? "none" : "auto",
+          overscrollBehavior: "contain",
         }}
-      />
-    </div>
-  );
+        onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
+      >
+        <canvas
+          data-dobo-design="1"
+          ref={canvasRef}
+          width={overlayBox.w}
+          height={overlayBox.h}
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            background: 'transparent',
+            touchAction: editing ? 'none' : 'auto'
+          }}
+        />
+      </div>
+    );
+  }
 
 // ===== Menú fijo =====
 function Menu() {
