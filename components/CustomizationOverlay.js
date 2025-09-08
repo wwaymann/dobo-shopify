@@ -1331,9 +1331,6 @@ function Menu() {
 />
 
 
-      </div>
-    );
-  }
 
   // ===== Render =====
   return (
