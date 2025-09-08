@@ -78,3 +78,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: String(err.message || err) });
   }
 }
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).end();
+  const { designJSON } = req.body || {};
+  // TODO: aquí guarda en Shopify y asocia al producto
+  return res.status(200).json({ ok: true, handle: 'demo-handle', productId: 'demo', onlineUrl: '#', designJSON });
+}
+
