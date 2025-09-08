@@ -1079,7 +1079,7 @@ function Menu() {
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
-        background: 'rgba(253, 253, 253, 0.34)',
+        background: 'rgba(253,253,253,0.34)',
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
         border: '1px solid #ddd',
@@ -1095,7 +1095,7 @@ function Menu() {
       onPointerMove={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
     >
-      {/* LÍNEA 1 */}
+      {/* LÍNEA 1: Zoom + modos + Undo/Redo */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {typeof setZoom === 'function' && (
           <div className="input-group input-group-sm" style={{ width: 180 }}>
@@ -1109,41 +1109,122 @@ function Menu() {
           </div>
         )}
 
-        <button type="button" className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()} onPointerDown={(e)=>e.stopPropagation()}
-          onClick={exitDesignMode} style={{ minWidth: '16ch' }}>
+        <button
+          type="button"
+          className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+          onMouseDown={(e)=>e.preventDefault()}
+          onPointerDown={(e)=>e.stopPropagation()}
+          onClick={exitDesignMode}
+          style={{ minWidth: '16ch' }}
+        >
           Seleccionar Maceta
         </button>
 
-        <button type="button" className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()} onPointerDown={(e)=>e.stopPropagation()}
-          onClick={enterDesignMode} style={{ minWidth: '12ch' }}>
+        <button
+          type="button"
+          className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+          onMouseDown={(e)=>e.preventDefault()}
+          onPointerDown={(e)=>e.stopPropagation()}
+          onClick={enterDesignMode}
+          style={{ minWidth: '12ch' }}
+        >
           Diseñar
         </button>
 
-        {/* Undo / Redo */}
         <div className="d-flex gap-2 ms-2">
-          <button type="button" className="btn btn-outline-secondary"
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
             onClick={() => { const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
-            disabled={!historyRef.current.canUndo()} title="Deshacer (Ctrl+Z)">⟲</button>
-          <button type="button" className="btn btn-outline-secondary"
+            disabled={!historyRef.current.canUndo()}
+            title="Deshacer (Ctrl+Z)"
+          >⟲</button>
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
             onClick={() => { const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
-            disabled={!historyRef.current.canRedo()} title="Rehacer (Ctrl+Y)">⟳</button>
+            disabled={!historyRef.current.canRedo()}
+            title="Rehacer (Ctrl+Y)"
+          >⟳</button>
         </div>
       </div>
 
-      {/* LÍNEA 2 */}
+      {/* LÍNEA 2: Acciones básicas */}
       {editing && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button type="button" className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()} onClick={() => { /* acciones */ }}>
-            Accion 1
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={addText}
+            title="Agregar texto"
+          >
+            + Texto
           </button>
-          <button type="button" className="btn btn-sm btn-outline-danger"
-            onPointerDown={(e)=>e.stopPropagation()} onClick={onDelete}
-            disabled={!ready || selType === 'none'} title="Eliminar seleccionado">
+
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => addInputRef.current?.click()}
+            title="Cargar imagen"
+          >
+            + Imagen
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => replaceInputRef.current?.click()}
+            disabled={selType !== 'image'}
+            title="Reemplazar imagen seleccionada"
+          >
+            Reemplazar
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-danger"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={onDelete}
+            disabled={!ready || selType === 'none'}
+            title="Eliminar seleccionado"
+          >
             Borrar
           </button>
+
+          <div className="btn-group btn-group-sm ms-2" role="group" aria-label="Exportar">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => {
+                const png = window.doboDesignAPI?.toPNG?.(3);
+                if (!png) return;
+                const a = document.createElement('a'); a.href = png; a.download = 'diseño.png'; a.click();
+              }}
+              title="Exportar PNG"
+            >
+              PNG
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => {
+                const svg = window.doboDesignAPI?.toSVG?.();
+                if (!svg) return;
+                const blob = new Blob([svg], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'diseño.svg'; a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 0);
+              }}
+              title="Exportar SVG"
+            >
+              SVG
+            </button>
+          </div>
         </div>
       )}
 
@@ -1154,10 +1235,15 @@ function Menu() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
               <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
                 <span className="input-group-text">Fuente</span>
-                <select className="form-select form-select-sm" value={fontFamily}
+                <select
+                  className="form-select form-select-sm"
+                  value={fontFamily}
                   onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                  onPointerDown={(e)=>e.stopPropagation()}>
-                  {FONT_OPTIONS.map(f => (<option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>))}
+                  onPointerDown={(e)=>e.stopPropagation()}
+                >
+                  {FONT_OPTIONS.map(f => (
+                    <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1181,23 +1267,40 @@ function Menu() {
 
               <div className="input-group input-group-sm" style={{ width: 160 }}>
                 <span className="input-group-text">Tamaño</span>
-                <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
+                <input
+                  type="number"
+                  className="form-control form-control-sm"
+                  min={8}
+                  max={200}
+                  step={1}
+                  value={fontSize}
                   onPointerDown={(e)=>e.stopPropagation()}
-                  onChange={(e) => { const v = clamp(parseInt(e.target.value || '0', 10), 8, 200); setFontSize(v); applyToSelection(o => o.set({ fontSize: v })); }} />
+                  onChange={(e) => {
+                    const v = clamp(parseInt(e.target.value || '0', 10), 8, 200);
+                    setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                  }}
+                />
               </div>
 
               <div className="btn-group dropup">
-                <button type="button" className="btn btn-outline-secondary btn-sm"
-                  onPointerDown={(e)=>e.stopPropagation()} onClick={() => setShowAlignMenu(v => !v)}>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  onPointerDown={(e)=>e.stopPropagation()}
+                  onClick={() => setShowAlignMenu(v => !v)}
+                >
                   {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
                 </button>
                 {showAlignMenu && (
                   <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
                     {['left','center','right','justify'].map(a => (
                       <li key={a}>
-                        <button type="button" className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
+                        <button
+                          type="button"
+                          className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
                           onPointerDown={(e)=>e.stopPropagation()}
-                          onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}>
+                          onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
+                        >
                           {a}
                         </button>
                       </li>
@@ -1265,38 +1368,5 @@ function Menu() {
         style={{ display: 'none' }}
       />
     </div>
-  );
-}
-
-
-  // ===== Render =====
-  return (
-    <>
-      {/* Overlay dentro de la maceta */}
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-
-
-      {/* Menú fijo abajo */}
-      {typeof document !== 'undefined' ? createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
-            bottom: 8,
-            transform: 'translateX(-50%)',
-            zIndex: Z_MENU,
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            pointerEvents: 'none'
-          }}
-        >
-          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
-            <Menu />
-          </div>
-        </div>,
-        document.body
-      ) : null}
-    </>
   );
 }
