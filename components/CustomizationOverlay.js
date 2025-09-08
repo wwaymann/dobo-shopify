@@ -1317,18 +1317,7 @@ function Menu() {
   onPointerDown={(e) => e.stopPropagation()}
   style={{ display: 'none' }}
 />
-<input
-  ref={replaceInputRef}
-  type="file"
-  accept="image/*"
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) replaceActiveFromFile(f);
-    e.target.value = '';
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-  style={{ display: 'none' }}
-/>
+
 
 
     </div>
