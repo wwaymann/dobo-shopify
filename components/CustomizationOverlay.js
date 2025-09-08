@@ -105,30 +105,66 @@ export default function CustomizationOverlay({
     historyRef.current.push({ baseSize: { ...baseSize }, json });
   };
 
-  const applyDesignSnapshotToCanvas = async (snapshot) => {
+  const rebindHelpersIfNeeded = (o) => {
+    if (!o) return;
+    if (o.type === 'group' && o._kind === 'textGroup') {
+      const kids = o._objects || o.getObjects?.() || [];
+      const [shadow, highlight, base] = kids;
+      o._textChildren = { shadow, highlight, base };
+      const sync = () => {
+        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
+        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
+        const ox = 1 / sx, oy = 1 / sy;
+        shadow?.set({ left: -ox, top: -oy });
+        highlight?.set({ left: +ox, top: +oy });
+        o.setCoords(); o.canvas?.requestRenderAll?.();
+      };
+      o.off('scaling'); o.off('modified');
+      o.on('scaling', sync);
+      o.on('modified', sync);
+      sync();
+    }
+    if (o.type === 'group' && o._kind === 'imgGroup') {
+      const kids = o._objects || o.getObjects?.() || [];
+      const [shadow, highlight, base] = kids;
+      o._imgChildren = { base, shadow, highlight };
+      if (typeof o._debossOffset !== 'number') o._debossOffset = 1;
+      const normalize = () => {
+        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
+        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
+        const ox = o._debossOffset / sx;
+        const oy = o._debossOffset / sy;
+        shadow?.set({ left: -ox, top: -oy });
+        highlight?.set({ left: +ox, top: +oy });
+        base?.set({ left: 0, top: 0 });
+        o.setCoords(); o.canvas?.requestRenderAll?.();
+      };
+      o.off('scaling'); o.off('modified');
+      o.on('scaling', normalize);
+      o.on('modified', normalize);
+      normalize();
+    }
+    const children = o._objects || o.getObjects?.() || [];
+    if (Array.isArray(children)) children.forEach(rebindHelpersIfNeeded);
+  };
+
+  const applyDesignSnapshotToCanvas = (snapshot) => {
     if (!snapshot) return;
     const c = fabricCanvasRef.current; if (!c) return;
 
-    // ajustar tamaño del lienzo al snapshot para consistencia
     const bs = snapshot.baseSize || {};
     if (bs.w && bs.h) { c.setWidth(bs.w); c.setHeight(bs.h); c.calcOffset?.(); }
-
-    c.clear();
 
     const json = JSON.parse(JSON.stringify(snapshot.json || {}));
     fixImagesInJSON(json);
 
-    await new Promise((resolve) => {
-      fabric.util.enlivenObjects(json.objects || [], (objs) => {
-        objs.forEach((o) => { rebindHelpersIfNeeded(o, c); c.add(o); });
-        c.renderAll();
-        resolve();
-      });
+    c.loadFromJSON(json, () => {
+      // Rebind de helpers en todos los objetos cargados
+      (c.getObjects?.() || []).forEach(rebindHelpersIfNeeded);
+      c.renderAll();
+      try { c.discardActiveObject(); } catch {}
+      setSelType('none');
     });
-
-    try { c.discardActiveObject(); } catch {}
-    c.requestRenderAll?.();
-    setSelType('none');
   };
 
   useEffect(() => {
@@ -295,7 +331,6 @@ export default function CustomizationOverlay({
     };
     applyElement(srcEl);
 
-    // Propagar dataURL a clones para snapshots
     const dataURL =
       baseObj._dataURL ||
       (srcEl && typeof srcEl.toDataURL === 'function' ? srcEl.toDataURL('image/png') : null);
@@ -453,8 +488,7 @@ export default function CustomizationOverlay({
     });
     bm._vecSourceEl = element;
     bm._vecMeta = { w, h };
-    // crítico para snapshots (Undo/Redo)
-    try { bm._dataURL = cv.toDataURL('image/png'); } catch { /* noop */ }
+    try { bm._dataURL = cv.toDataURL('image/png'); } catch {}
     return bm;
   };
 
@@ -472,7 +506,6 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-    // API mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
@@ -481,7 +514,6 @@ export default function CustomizationOverlay({
       };
     }
 
-    // Helpers de tipo
     const classify = (a) => {
       if (!a) return 'none';
       if (a._kind === 'imgGroup')  return 'image';
@@ -547,6 +579,12 @@ export default function CustomizationOverlay({
     // Snapshot en transformaciones
     c.on('object:modified', () => pushSnap());
 
+    // Al añadir, traer al frente y render
+    c.on('object:added', (ev) => {
+      try { ev?.target && c.bringToFront(ev.target); } catch {}
+      c.requestRenderAll();
+    });
+
     setReady(true);
 
     return () => {
@@ -555,6 +593,7 @@ export default function CustomizationOverlay({
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
       c.off('object:modified');
+      c.off('object:added');
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
@@ -756,14 +795,14 @@ export default function CustomizationOverlay({
     let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
     const park = () => {
       if (parked || !c) return;
-      saved = { selection: c.selection, skip: c.skipTargetFind };
+      saved = { selection: c.selection, skipTargetFind: c.skipTargetFind };
       c.selection = false;
       c.skipTargetFind = true;
       parked = true;
     };
     const unpark = () => {
       if (!c) return;
-      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
+      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skipTargetFind; saved = null; }
       parked = false;
       c.requestRenderAll?.();
     };
@@ -863,6 +902,7 @@ export default function CustomizationOverlay({
     });
     group.set({ left: baseSize.w/2, top: baseSize.h/2, originX: 'center', originY: 'center' });
     c.add(group);
+    c.bringToFront(group);
     c.setActiveObject(group);
     setSelType('text');
     c.requestRenderAll();
@@ -883,6 +923,7 @@ export default function CustomizationOverlay({
       baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: false, evented: false, objectCaching: false });
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       c.add(group);
+      c.bringToFront(group);
       c.setActiveObject(group);
       setSelType('image');
       c.requestRenderAll();
@@ -909,6 +950,7 @@ export default function CustomizationOverlay({
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
       c.add(group);
+      c.bringToFront(group);
       c.setActiveObject(group);
       setSelType('image');
       c.requestRenderAll();
@@ -1028,6 +1070,7 @@ export default function CustomizationOverlay({
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
       c.add(group);
+      c.bringToFront(group);
       c.setActiveObject(group);
     };
 
@@ -1037,7 +1080,7 @@ export default function CustomizationOverlay({
 
     c.requestRenderAll();
     pushSnap();
-  }, [vecBias, vecInvert]);
+  }, [vecBias, vecInvert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Offset de relieve en caliente
   useEffect(() => {
@@ -1048,52 +1091,7 @@ export default function CustomizationOverlay({
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
     c.requestRenderAll();
     pushSnap();
-  }, [vecOffset]);
-
-  // ===== Rebind helpers tras cargar desde JSON =====
-  const rebindHelpersIfNeeded = (o, c) => {
-    if (!o) return;
-    if (o.type === 'group' && o._kind === 'textGroup') {
-      const children = o._objects || o.getObjects?.() || [];
-      const [shadow, highlight, base] = children;
-      o._textChildren = { shadow, highlight, base };
-      const sync = () => {
-        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
-        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
-        const ox = 1 / sx, oy = 1 / sy;
-        shadow?.set({ left: -ox, top: -oy });
-        highlight?.set({ left: +ox, top: +oy });
-        o.setCoords(); o.canvas?.requestRenderAll?.();
-      };
-      o.off('scaling'); o.off('modified');
-      o.on('scaling', sync);
-      o.on('modified', sync);
-      sync();
-    }
-    if (o.type === 'group' && o._kind === 'imgGroup') {
-      const children = o._objects || o.getObjects?.() || [];
-      const [shadow, highlight, base] = children;
-      o._imgChildren = { base, shadow, highlight };
-      if (typeof o._debossOffset !== 'number') o._debossOffset = 1;
-      const normalize = () => {
-        const sx = Math.max(1e-6, Math.abs(o.scaleX || 1));
-        const sy = Math.max(1e-6, Math.abs(o.scaleY || 1));
-        const ox = o._debossOffset / sx;
-        const oy = o._debossOffset / sy;
-        shadow?.set({ left: -ox, top: -oy });
-        highlight?.set({ left: +ox, top: +oy });
-        base?.set({ left: 0, top: 0 });
-        o.setCoords(); o.canvas?.requestRenderAll?.();
-      };
-      o.off('scaling'); o.off('modified');
-      o.on('scaling', normalize);
-      o.on('modified', normalize);
-      normalize();
-    }
-    // profundiza
-    const kids = o._objects || o.getObjects?.() || [];
-    if (Array.isArray(kids)) kids.forEach(k => rebindHelpersIfNeeded(k, c));
-  };
+  }, [vecOffset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!visible) return null;
 
