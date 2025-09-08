@@ -1165,27 +1165,50 @@ async function applyDesignSnapshotToCanvas(snapshot) {
                 ⟳
               </button>
             </div>
-        </div>
-        <div>
-          {/* LÍNEA 2: Acciones básicas */}
-          {editing && (
-             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button type="button" className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={addText}
-              disabled={!ready}
-            >
-              + Texto
-            </button>
+              </div>
+
+        {/* LÍNEA 2: Acciones básicas */}
+        {editing ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
             <button
               type="button"
               className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => addInputRef.current?.click()}
-              disabled={!ready}
+              onClick={() => {/* …acciones existentes… */}}
             >
-              + Imagen
+              Accion 1
             </button>
+
+            {/* Undo / Redo */}
+            <div className="d-flex gap-2 ms-2">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => {
+                  const prev = historyRef.current.undo();
+                  if (prev) applyDesignSnapshotToCanvas(prev);
+                }}
+                disabled={!historyRef.current.canUndo()}
+                title="Deshacer (Ctrl+Z)"
+              >
+                ⟲
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => {
+                  const next = historyRef.current.redo();
+                  if (next) applyDesignSnapshotToCanvas(next);
+                }}
+                disabled={!historyRef.current.canRedo()}
+                title="Rehacer (Ctrl+Y)"
+              >
+                ⟳
+              </button>
+            </div>
+          </div>
+        ) : null}
+
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
