@@ -73,7 +73,7 @@ export default function CustomizationOverlay({
   const [textEditing, setTextEditing] = useState(false);
 
 // Forzar repintado tras aplicar snapshots
-const applyingRef = useRef(false);
+const isApplyingRef = useRef(false);
 
 function forceRepaint() {
   const c = fabricCanvasRef.current; if (!c) return;
@@ -86,6 +86,7 @@ function forceRepaint() {
   c.requestRenderAll?.();
   setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
 }
+
 
 
   
@@ -847,15 +848,18 @@ function exportDesignSnapshot() {
 async function applyDesignSnapshotToCanvas(snapshot) {
   if (!snapshot) return;
   const c = fabricCanvasRef.current; if (!c) return;
-  applyingRef.current = true;
+
+  isApplyingRef.current = true;
+  suppressSelectionRef.current = true;   // evita eventos intermedios
+
   try {
     const json = snapshot.canvasJSON
       ? snapshot.canvasJSON
-      : { objects: snapshot.objects || [] }; // compatibilidad
+      : { objects: snapshot.objects || [] }; // compat
 
     await new Promise((resolve) => {
       c.loadFromJSON(json, () => {
-        // reconstruir punteros internos de grupos
+        // rearmar punteros internos de grupos
         (c.getObjects() || []).forEach(o => {
           if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
             o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
@@ -871,11 +875,13 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     });
 
     setSelType('none');
-    forceRepaint(); // evita el “desaparece hasta hacer clic”
+    forceRepaint();     // elimina el “desaparece hasta hacer clic”
   } finally {
-    applyingRef.current = false;
+    suppressSelectionRef.current = false;
+    isApplyingRef.current = false;
   }
 }
+
 
 
 
