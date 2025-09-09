@@ -859,39 +859,53 @@ export default function CustomizationOverlay({
     return { v: 2, baseSize, canvasJSON: c.toJSON(['_kind']) };
   }
 
-  async function applyDesignSnapshotToCanvas(snapshot) {
-    if (!snapshot) return;
-    const c = fabricCanvasRef.current; if (!c) return;
-const wasEditing = !!editing;
-    isApplyingRef.current = true;
-    try {
-      const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
+async function applyDesignSnapshotToCanvas(snapshot) {
+  if (!snapshot) return;
+  const c = fabricCanvasRef.current; if (!c) return;
+  const wasEditing = !!editing;
 
-      await new Promise((resolve) => {
+  isApplyingRef.current = true;
+  try {
+    const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
+
+    await new Promise((resolve) => {
       c.loadFromJSON(json, () => {
-  (c.getObjects() || []).forEach(o => {
-    if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-      o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-    }
-    if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-      o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-      if (typeof o._debossSync === 'function') o._debossSync();
-    }
-    // Textos sueltos: respeta el modo actual
-    if (o && (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text')) {
-      const on = !!editing;
-      o.editable = on;
-      o.selectable = on;
-      o.evented = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      o.hasControls  = on;
-      o.hasBorders   = on;
-    }
-  });
-  c.renderAll();
-  resolve();
-});
+        (c.getObjects() || []).forEach(o => {
+          if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+            o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+          }
+          if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+            o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+            if (typeof o._debossSync === 'function') o._debossSync();
+          }
+          // Textos sueltos: flags según modo actual
+          if (o && (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text')) {
+            const on = wasEditing;
+            o.editable = on;
+            o.selectable = on;
+            o.evented = on;
+            o.lockMovementX = !on;
+            o.lockMovementY = !on;
+            o.hasControls  = on;
+            o.hasBorders   = on;
+          }
+        });
+        c.renderAll();
+        resolve();
+      });
+    });
+
+    try { c.discardActiveObject(); } catch {}
+    setSelType('none');
+    setTextEditing(false);
+    rearmInteractivity(wasEditing);
+    if (wasEditing) setEditing(true);
+    forceRepaint();
+  } finally {
+    isApplyingRef.current = false;
+  }
+}
+
 
 
 
