@@ -117,6 +117,19 @@ export default function CustomizationOverlay({
 
       const c = fabricCanvasRef.current;
       if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
+      // Si el canvas era diminuto y ahora tiene tamaño real, reubica y ajusta lo “casi invisible”
+    const wasTiny = (baseSize.w <= 2 || baseSize.h <= 2);
+    if (wasTiny && c) {
+      (c.getObjects() || []).forEach(o => {
+        if ((o.left || 0) <= 1 && (o.top || 0) <= 1) {
+          o.set({ left: w / 2, top: h / 2 });
+        }
+        if (o._kind === 'textGroup' && (o.width || 0) < 10) {
+          o.set({ width: Math.min(w * 0.9, 220) });
+        }
+      });
+      c.requestRenderAll?.();
+    }
     };
 
     measure();
@@ -440,6 +453,9 @@ export default function CustomizationOverlay({
       }
     });
 
+    c.calcOffset?.(); c.renderAll?.(); c.requestRenderAll?.();
+    setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+    
     setReady(true);
     return () => {
       c.off('mouse:dblclick'); c.off('mouse:up');
@@ -996,7 +1012,7 @@ export default function CustomizationOverlay({
             <button type="button" className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={addText}
-              disabled={!ready}
+              disabled={!ready || baseSize.w < 8 || baseSize.h < 8}
             >
               + Texto
             </button>
@@ -1005,7 +1021,7 @@ export default function CustomizationOverlay({
               className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={() => addInputRef.current?.click()}
-              disabled={!ready}
+              disabled={!ready || baseSize.w < 8 || baseSize.h < 8}y}
             >
               + Imagen
             </button>
