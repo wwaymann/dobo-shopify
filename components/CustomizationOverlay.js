@@ -129,7 +129,7 @@ export default function CustomizationOverlay({
         }
       });
       c.requestRenderAll?.();
-    }
+    
     };
 
     measure();
