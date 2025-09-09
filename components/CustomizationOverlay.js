@@ -740,6 +740,26 @@ export default function CustomizationOverlay({
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
+  // PC: teclear cualquier carácter, Enter o F2 inicia edición del texto seleccionado
+useEffect(() => {
+  const onTypeToEdit = (e) => {
+    if (!editing || textEditing) return;
+    const c = fabricCanvasRef.current; const a = c?.getActiveObject?.();
+    if (!a) return;
+    const isTextSel = a?._kind === 'textGroup' || a?.type === 'i-text' || a?.type === 'textbox';
+    if (!isTextSel) return;
+
+    const charKey = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (charKey || e.key === 'Enter' || e.key === 'F2') {
+      e.preventDefault();
+      startEditActiveText();
+    }
+  };
+  window.addEventListener('keydown', onTypeToEdit, true);
+  return () => window.removeEventListener('keydown', onTypeToEdit, true);
+}, [editing, textEditing]);
+
+
   // Zoom global PC y móvil
   useEffect(() => {
     const c = fabricCanvasRef.current;
@@ -1073,6 +1093,24 @@ export default function CustomizationOverlay({
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
   };
 
+  // Editar el texto seleccionado (PC)
+const startEditActiveText = () => {
+  const c = fabricCanvasRef.current; if (!c) return;
+  const a = c.getActiveObject?.();   if (!a) return;
+
+  if (a._kind === 'textGroup') {
+    // Nuestro grupo con relieve → editor inline
+    startInlineTextEdit(a);
+  } else if ((a.type === 'i-text' || a.type === 'textbox') && typeof a.enterEditing === 'function') {
+    a.enterEditing();
+    c.requestRenderAll();
+    // asegura foco para que el teclado funcione
+    try { a.hiddenTextarea?.focus(); } catch {}
+    try { c.upperCanvasEl?.focus(); } catch {}
+  }
+};
+
+  
   // Aplicar cambios tipográficos a selección (grupos de texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
