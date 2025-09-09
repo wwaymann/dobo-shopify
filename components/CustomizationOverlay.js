@@ -868,25 +868,31 @@ const wasEditing = !!editing;
       const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
 
       await new Promise((resolve) => {
-        c.loadFromJSON(json, () => {
-          (c.getObjects() || []).forEach(o => {
-            if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-              o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-            }
-            if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-              o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-              if (typeof o._debossSync === 'function') o._debossSync();
-              // Si viniera un textbox suelto desde snapshots antiguos, respeta edición según modo actual
-           if (o && (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text')) {
-             o.editable = !!editing;
-             o.selectable = !!editing;
-             o.evented = !!editing;
-           
-            }
-          });
-          c.renderAll();
-          resolve();
-        });
+      c.loadFromJSON(json, () => {
+  (c.getObjects() || []).forEach(o => {
+    if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+      o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+    }
+    if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+      o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+      if (typeof o._debossSync === 'function') o._debossSync();
+    }
+    // Textos sueltos: respeta el modo actual
+    if (o && (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text')) {
+      const on = !!editing;
+      o.editable = on;
+      o.selectable = on;
+      o.evented = on;
+      o.lockMovementX = !on;
+      o.lockMovementY = !on;
+      o.hasControls  = on;
+      o.hasBorders   = on;
+    }
+  });
+  c.renderAll();
+  resolve();
+});
+
 
 
       try { c.discardActiveObject(); } catch {}
