@@ -258,6 +258,15 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   const [mounted, setMounted] = useState(false);
 
+  // estados tipográficos (faltaban en la versión anterior)
+  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
+  const [fontSize, setFontSize] = useState(60);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+  const [isUnderline, setIsUnderline] = useState(false);
+  const [textAlign, setTextAlign] = useState('center');
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
+
   // ===== Historial simple =====
   const undoRef = useRef([]); const redoRef = useRef([]); const isRestoringRef = useRef(false); const lastSnapRef = useRef(null);
   const snapshotNow = () => { const c = fabricCanvasRef.current; if (!c) return null; try { return JSON.stringify(c.toJSON()); } catch { return null; } };
@@ -471,7 +480,7 @@ export default function CustomizationOverlay({
     let pA=null,pB=null,startDist=0,startScale=1,parked=false,saved=null;
     const park=()=>{ if(parked||!c) return; saved={selection:c.selection,skip:c.skipTargetFind}; c.selection=false; c.skipTargetFind=true; parked=true; };
     const unpark=()=>{ if(!c) return; if(saved){c.selection=saved.selection;c.skipTargetFind=saved.skip;saved=null;} parked=false; c.requestRenderAll?.(); };
-    const onPD=(e)=>{ if(textEditing) return; if(e.pointerType!=='touch') return; if(!pA){pA={id:e.pointerId,x:e.clientX,y:e.clientY}; return;} if(!pB&&e.pointerId!==pA.id){pB={id:e.pointerId,x:e.clientX,y:e.clientY}; startDist=Math.hypot(pA.x-pB.x,pA.y-pB.y); startScale=readZ(); park();}};
+    const onPD=(e)=>{ if(textEditing) return; if(e.pointerType!=='touch') return; if(!pA){pA={id:e.pointerId,x:e.clientX,y:e.clientY}; return;} if(!pB&&e.pointerId!==pA.id){pB={id:e.pointerId,x:e.clientX,y=e.clientY}; startDist=Math.hypot(pA.x-pB.x,pA.y-pB.y); startScale=readZ(); park();}};
     const onPM=(e)=>{ if(textEditing) return; if(e.pointerType!=='touch') return; if(pA&&e.pointerId===pA.id){pA.x=e.clientX;pA.y=e.clientY;} if(pB&&e.pointerId===pB.id){pB.x=e.clientX;pB.y=e.clientY;} if(pA&&pB&&startDist){ e.preventDefault(); const d=Math.hypot(pA.x-pB.x,pA.y-pB.y); writeZ(startScale*Math.pow(d/startDist,0.9)); } };
     const onPU=(e)=>{ if(textEditing) return; if(e.pointerType!=='touch') return; if(pA&&e.pointerId===pA.id) pA=null; if(pB&&e.pointerId===pB.id) pB=null; if(!(pA&&pB)){ startDist=0; startScale=1; unpark(); } };
     const onCancel=()=>{ pA=pB=null; startDist=0; startScale=1; unpark(); };
@@ -571,7 +580,7 @@ export default function CustomizationOverlay({
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const group = new fabric.TextRelief('Nuevo párrafo', {
-      width: Math.min(baseSize.w * 0.9, 220),
+      width: Math.min(c.getWidth() * 0.9, 220),
       fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal',
       fontStyle: isItalic ? 'italic' : 'normal', underline: isUnderline, textAlign,
     });
@@ -659,10 +668,8 @@ export default function CustomizationOverlay({
     c.requestRenderAll(); pushUndo();
   };
 
-  // ===== Overlay =====
-  if (!visible) return null;
-
-  const OverlayCanvas = (
+  // ===== Overlay (condicional por `visible`) =====
+  const OverlayCanvas = visible ? (
     <div
       ref={overlayRef}
       style={{
@@ -684,7 +691,7 @@ export default function CustomizationOverlay({
         style={{ width: '100%', height: '100%', display: 'block', background: 'transparent', touchAction: editing ? 'none' : 'auto' }}
       />
     </div>
-  );
+  ) : null;
 
   function Menu() {
     return (
@@ -735,53 +742,49 @@ export default function CustomizationOverlay({
         )}
 
         {/* Propiedades por tipo */}
-        {editing && (
-          <>
-            {selType === 'text' && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-                  <span className="input-group-text">Fuente</span>
-                  <select className="form-select form-select-sm" value={fontFamily}
-                          onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                          onPointerDown={(e)=>e.stopPropagation()}>
-                    {FONT_OPTIONS.map(f => (<option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>))}
-                  </select>
-                </div>
+        {editing && selType === 'text' && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+              <span className="input-group-text">Fuente</span>
+              <select className="form-select form-select-sm" value={fontFamily}
+                      onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
+                      onPointerDown={(e)=>e.stopPropagation()}>
+                {FONT_OPTIONS.map(f => (<option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>))}
+              </select>
+            </div>
 
-                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                  <button type="button" className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}>B</button>
-                  <button type="button" className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}>I</button>
-                  <button type="button" className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}>U</button>
-                </div>
+            <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+              <button type="button" className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}>B</button>
+              <button type="button" className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}>I</button>
+              <button type="button" className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}>U</button>
+            </div>
 
-                <div className="input-group input-group-sm" style={{ width: 160 }}>
-                  <span className="input-group-text">Tamaño</span>
-                  <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
-                         onPointerDown={(e)=>e.stopPropagation()}
-                         onChange={(e) => { const v = clamp(parseInt(e.target.value || '0', 10), 8, 200); setFontSize(v); applyToSelection(o => o.set({ fontSize: v })); }}/>
-                </div>
+            <div className="input-group input-group-sm" style={{ width: 160 }}>
+              <span className="input-group-text">Tamaño</span>
+              <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
+                     onPointerDown={(e)=>e.stopPropagation()}
+                     onChange={(e) => { const v = clamp(parseInt(e.target.value || '0', 10), 8, 200); setFontSize(v); applyToSelection(o => o.set({ fontSize: v })); }}/>
+            </div>
 
-                <div className="btn-group dropup">
-                  <button type="button" className="btn btn-outline-secondary btn-sm" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setShowAlignMenu(v => !v)}>
-                    {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
-                  </button>
-                  {showAlignMenu && (
-                    <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
-                      {['left','center','right','justify'].map(a => (
-                        <li key={a}>
-                          <button type="button" className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
-                                  onPointerDown={(e)=>e.stopPropagation()}
-                                  onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}>
-                            {a}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
+            <div className="btn-group dropup">
+              <button type="button" className="btn btn-outline-secondary btn-sm" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setShowAlignMenu(v => !v)}>
+                {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
+              </button>
+              {showAlignMenu && (
+                <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
+                  {['left','center','right','justify'].map(a => (
+                    <li key={a}>
+                      <button type="button" className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
+                              onPointerDown={(e)=>e.stopPropagation()}
+                              onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}>
+                        {a}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Inputs ocultos */}
@@ -806,7 +809,7 @@ export default function CustomizationOverlay({
             bottom: 12,
             transform: 'translateX(-50%)',
             zIndex: Z_MENU,
-            pointerEvents: 'auto',   // siempre interactivo
+            pointerEvents: 'auto',
           }}
         >
           <Menu />
