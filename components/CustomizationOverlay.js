@@ -1,4 +1,4 @@
-// components/CustomizationOverlay.js 
+// components/CustomizationOverlay.js
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
@@ -405,41 +405,6 @@ export default function CustomizationOverlay({
   };
 
   // ===== Inicializar Fabric =====
-  const isDesktopRef = useRef(false);
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      isDesktopRef.current = !!(window.matchMedia && window.matchMedia('(pointer:fine)').matches);
-    }
-  }, []);
-
-  // Helper: asegura foco en el textarea oculto cuando se edita (PC)
-  const focusHiddenTextareaIfAny = () => {
-    if (!isDesktopRef.current) return;
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject?.();
-    const isText = a && (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text');
-    if (!isText) return;
-    try { if (typeof a.enterEditing === 'function' && !a.isEditing) a.enterEditing(); } catch {}
-    try { a.hiddenTextarea?.focus(); } catch {}
-    try { c.upperCanvasEl?.focus?.(); } catch {}
-  };
-
-  // Previene ir atrás con Backspace si se pierde foco del textarea durante edición
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      const c = fabricCanvasRef.current; const a = c?.getActiveObject?.();
-      if (!c || !a) return;
-      if ((a.type === 'i-text' || a.type === 'textbox') && a.isEditing) {
-        if (e.key === 'Backspace' && e.target === document.body) {
-          e.preventDefault();
-        }
-        focusHiddenTextareaIfAny();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, []);
-
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
@@ -521,21 +486,21 @@ export default function CustomizationOverlay({
       if (snap) historyRef.current.push(snap);
     });
 
-    // Doble-click (desktop) → editar texto del grupo
+    // Doble-click (desktop) → editar texto del grupo (robusto tras undo/redo)
     c.on('mouse:dblclick', (e) => {
-      const t = e.target;
+      let t = e.target;
       if (!t) return;
-      if (t._kind === 'textGroup') startInlineTextEdit(t);
-      else if (isTextObj(t) && typeof t.enterEditing === 'function') {
+      if (t._kind !== 'textGroup' && t.group && t.group._kind === 'textGroup') {
+        t = t.group;
+      }
+      if (t._kind === 'textGroup') {
+        startInlineTextEdit(t);
+      } else if ((t.type === 'i-text' || t.type === 'textbox') && typeof t.enterEditing === 'function') {
         t.enterEditing();
         c.requestRenderAll();
-        focusHiddenTextareaIfAny();
+        try { t.hiddenTextarea?.focus(); } catch {}
       }
     });
-
-    // Al hacer click sobre el lienzo, si hay texto en foco reasegurar el foco (evita "no borra" en PC)
-    const onMouseDownRefocus = () => focusHiddenTextareaIfAny();
-    c.on('mouse:down', onMouseDownRefocus);
 
     setReady(true);
 
@@ -545,7 +510,6 @@ export default function CustomizationOverlay({
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
       c.off('object:modified');
-      c.off('mouse:down', onMouseDownRefocus);
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
@@ -575,6 +539,33 @@ export default function CustomizationOverlay({
       } catch {}
     })();
   }, [ready, productHandle]);
+
+  // === Rehidratar grupos de texto tras cargar JSON (para que el doble-click funcione siempre)
+  function rehydrateTextGroups(c) {
+    (c.getObjects() || []).forEach(g => {
+      if (g?._kind === 'textGroup' && Array.isArray(g._objects) && g._objects.length >= 3) {
+        g._textChildren = { shadow: g._objects[0], highlight: g._objects[1], base: g._objects[2] };
+        g.subTargetCheck = false;
+        g._objects.forEach(ch => {
+          ch.selectable = false;
+          ch.evented = false;
+          ch.objectCaching = false;
+        });
+        const sync = () => {
+          const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+          const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+          const ox = 1 / sx, oy = 1 / sy;
+          g._textChildren.shadow?.set({ left: -ox, top: -oy });
+          g._textChildren.highlight?.set({ left: +ox, top: +oy });
+          g.setCoords(); g.canvas?.requestRenderAll?.();
+        };
+        g.off('scaling'); g.off('modified');
+        g.on('scaling', sync);
+        g.on('modified', sync);
+        sync();
+      }
+    });
+  }
 
   // Ajusta tamaño de lienzo
   useEffect(() => {
@@ -675,7 +666,6 @@ export default function CustomizationOverlay({
     setTimeout(() => {
       try { tb.enterEditing?.(); } catch {}
       try { tb.hiddenTextarea?.focus(); } catch {}
-      try { c.upperCanvasEl?.focus(); } catch {}
       setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
     }, 0);
 
@@ -727,9 +717,13 @@ export default function CustomizationOverlay({
       if (now - lastTap < 320) {
         try {
           const target = c.findTarget?.(e, false);
-          if (target && target._kind === 'textGroup') {
+          let t = target;
+          if (t && t._kind !== 'textGroup' && t.group && t.group._kind === 'textGroup') {
+            t = t.group;
+          }
+          if (t && t._kind === 'textGroup') {
             e.preventDefault(); e.stopPropagation();
-            startInlineTextEdit(target);
+            startInlineTextEdit(t);
           }
         } catch {}
       }
@@ -739,26 +733,6 @@ export default function CustomizationOverlay({
     upper.addEventListener('pointerup', onTap, { passive: false, capture: true });
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
-
-  // PC: teclear cualquier carácter, Enter o F2 inicia edición del texto seleccionado
-useEffect(() => {
-  const onTypeToEdit = (e) => {
-    if (!editing || textEditing) return;
-    const c = fabricCanvasRef.current; const a = c?.getActiveObject?.();
-    if (!a) return;
-    const isTextSel = a?._kind === 'textGroup' || a?.type === 'i-text' || a?.type === 'textbox';
-    if (!isTextSel) return;
-
-    const charKey = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
-    if (charKey || e.key === 'Enter' || e.key === 'F2') {
-      e.preventDefault();
-      startEditActiveText();
-    }
-  };
-  window.addEventListener('keydown', onTypeToEdit, true);
-  return () => window.removeEventListener('keydown', onTypeToEdit, true);
-}, [editing, textEditing]);
-
 
   // Zoom global PC y móvil
   useEffect(() => {
@@ -889,39 +863,9 @@ useEffect(() => {
     return { v: 2, baseSize, canvasJSON: c.toJSON(['_kind']) };
   }
 
-  // Rehidrata grupos de texto y asegura sus flags
-  function rehydrateTextGroups(c) {
-    (c.getObjects?.() || []).forEach(g => {
-      if (g?._kind === 'textGroup' && Array.isArray(g._objects)) {
-        const shadow = g._objects[0], highlight = g._objects[1], base = g._objects[2];
-        g._textChildren = { shadow, highlight, base };
-        base?.set({ selectable:false, evented:false, objectCaching:false, shadow:null, stroke:null, fill: base.fill ?? 'rgba(35,35,35,1)', globalCompositeOperation:'multiply' });
-        shadow?.set({ selectable:false, evented:false, objectCaching:false, fill:'', stroke:'rgba(0,0,0,0.48)', strokeWidth:1, globalCompositeOperation:'multiply' });
-        highlight?.set({ selectable:false, evented:false, objectCaching:false, fill:'', stroke:'rgba(255,255,255,0.65)', strokeWidth:0.6, globalCompositeOperation:'screen' });
-
-        const sync = () => {
-          const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-          const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-          const ox = 1 / sx, oy = 1 / sy;
-          shadow?.set({ left: -ox, top: -oy });
-          highlight?.set({ left: +ox, top: +oy });
-          g.setCoords();
-          g.canvas?.requestRenderAll?.();
-        };
-        g.off('scaling'); g.off('modified');
-        g.on('scaling', sync);
-        g.on('modified', sync);
-        sync();
-      }
-    });
-  }
-
   async function applyDesignSnapshotToCanvas(snapshot) {
     if (!snapshot) return;
     const c = fabricCanvasRef.current; if (!c) return;
-
-    // Salir de cualquier edición activa antes de aplicar (evita bloqueos)
-    try { (c.getObjects?.() || []).forEach(o => { if (o?.isEditing && typeof o.exitEditing === 'function') o.exitEditing(); }); } catch {}
 
     isApplyingRef.current = true;
     try {
@@ -929,49 +873,21 @@ useEffect(() => {
 
       await new Promise((resolve) => {
         c.loadFromJSON(json, () => {
-          // Rehidratar relaciones y offsets
-          rehydrateTextGroups(c);
           (c.getObjects() || []).forEach(o => {
             if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
               o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
               if (typeof o._debossSync === 'function') o._debossSync();
             }
           });
+          rehydrateTextGroups(c);   // rearmar grupos de texto para doble-click
           c.renderAll();
           resolve();
         });
       });
 
-      // Reaplicar flags de interactividad según el modo actual (clave para que el texto vuelva a ser editable tras undo)
-      const enableNode = (o, on) => {
-        if (!o) return;
-        const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
-        o.selectable   = on;
-        o.evented      = on;
-        o.lockMovementX = !on;
-        o.lockMovementY = !on;
-        o.hasControls  = on;
-        o.hasBorders   = on;
-        if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
-        o.hoverCursor  = on ? 'move' : 'default';
-        const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
-        if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-      };
-      const on = editing;
-      c.skipTargetFind = !on;
-      c.selection = on;
-      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
-      if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
-      if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
-
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
-
-      // Repintado completo
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+      forceRepaint(); // evita “se vacía hasta clic”
     } finally {
       isApplyingRef.current = false;
     }
@@ -1093,24 +1009,6 @@ useEffect(() => {
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
   };
 
-  // Editar el texto seleccionado (PC)
-const startEditActiveText = () => {
-  const c = fabricCanvasRef.current; if (!c) return;
-  const a = c.getActiveObject?.();   if (!a) return;
-
-  if (a._kind === 'textGroup') {
-    // Nuestro grupo con relieve → editor inline
-    startInlineTextEdit(a);
-  } else if ((a.type === 'i-text' || a.type === 'textbox') && typeof a.enterEditing === 'function') {
-    a.enterEditing();
-    c.requestRenderAll();
-    // asegura foco para que el teclado funcione
-    try { a.hiddenTextarea?.focus(); } catch {}
-    try { c.upperCanvasEl?.focus(); } catch {}
-  }
-};
-
-  
   // Aplicar cambios tipográficos a selección (grupos de texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
@@ -1137,9 +1035,6 @@ const startEditActiveText = () => {
     }
     c.requestRenderAll();
     const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
-
-    // Si se está editando texto en PC, re-enfocar para que Backspace/teclado funcionen siempre
-    focusHiddenTextareaIfAny();
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
