@@ -404,6 +404,37 @@ export default function CustomizationOverlay({
     return bm;
   };
 
+// ===== Utils imagen/vectorizado =====
+  // Rearma selectabilidad y punteros tras cargar snapshot
+  const rearmInteractivity = () => {
+    const c = fabricCanvasRef.current; if (!c) return;
+    const on = !!editing;
+    const enableNode = (o) => {
+      if (!o) return;
+      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+      o.selectable   = on;
+      o.evented      = on;
+      o.lockMovementX = !on;
+      o.lockMovementY = !on;
+      o.hasControls  = on;
+      o.hasBorders   = on;
+      if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
+      o.hoverCursor  = on ? 'move' : 'default';
+      const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
+      if (Array.isArray(children)) children.forEach(enableNode);
+    };
+    c.skipTargetFind = !on;
+    c.selection = on;
+    (c.getObjects?.() || []).forEach(enableNode);
+    const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
+    if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
+    if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+    c.defaultCursor = on ? 'move' : 'default';
+    try { c.discardActiveObject(); } catch {}
+    c.calcOffset?.(); c.requestRenderAll?.();
+    setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+  };
+  
   // ===== Inicializar Fabric =====
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -853,7 +884,9 @@ export default function CustomizationOverlay({
 
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
-      forceRepaint(); // evita “se vacía hasta clic”
+      setTextEditing(false);    // evita quedar bloqueado tras undo/redo
+      rearmInteractivity();     // recupera selectabilidad y cursores
+      forceRepaint();           // evita “se vacía hasta clic”
     } finally {
       isApplyingRef.current = false;
     }
@@ -1158,14 +1191,15 @@ export default function CustomizationOverlay({
               type="button"
               className="btn btn-outline-secondary btn-sm"
    
-onClick={async () => {
-    const wasEditing = editing;
-    const prev = historyRef.current.undo();
-    if (prev) {
-      await applyDesignSnapshotToCanvas(prev);
-      if (wasEditing) setEditing(true);
-    }
-  }}
+ onClick={async () => {
+   const wasEditing = editing;
+   const prev = historyRef.current.undo();
+   if (prev) {
+     await applyDesignSnapshotToCanvas(prev);
+     if (wasEditing) setEditing(true);
+     rearmInteractivity();
+   }
+ }}
 
               disabled={!historyRef.current.canUndo?.()}
               title="Deshacer (Ctrl+Z)"
@@ -1173,14 +1207,15 @@ onClick={async () => {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-           onClick={async () => {
-    const wasEditing = editing;
-    const next = historyRef.current.redo();
-    if (next) {
-      await applyDesignSnapshotToCanvas(next);
-      if (wasEditing) setEditing(true);
-    }
-  }}
+  onClick={async () => {
+   const wasEditing = editing;
+   const next = historyRef.current.redo();
+   if (next) {
+     await applyDesignSnapshotToCanvas(next);
+     if (wasEditing) setEditing(true);
+     rearmInteractivity();
+   }
+ }}
               disabled={!historyRef.current.canRedo?.()}
               title="Rehacer (Ctrl+Y)"
             >⟳</button>
