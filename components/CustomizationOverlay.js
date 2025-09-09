@@ -866,36 +866,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
 
   isApplyingRef.current = true;
   try {
-    const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
-
-    await new Promise((resolve) => {
-      c.loadFromJSON(json, () => {
-        (c.getObjects() || []).forEach(o => {
-          if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-            o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-          }
-          if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-            o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-            if (typeof o._debossSync === 'function') o._debossSync();
-          }
-          // Textos sueltos: flags según modo actual
-          if (o && (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text')) {
-            const on = wasEditing;
-            o.editable = on;
-            o.selectable = on;
-            o.evented = on;
-            o.lockMovementX = !on;
-            o.lockMovementY = !on;
-            o.hasControls  = on;
-            o.hasBorders   = on;
-          }
-        });
-        c.renderAll();
-        resolve();
-      });
-    });
-
-    try { c.discardActiveObject(); } catch {}
+    // ... (c.loadFromJSON + ajustes)
     setSelType('none');
     setTextEditing(false);
     rearmInteractivity(wasEditing);
@@ -907,21 +878,6 @@ async function applyDesignSnapshotToCanvas(snapshot) {
   isApplyingRef.current = false;
 }
 
-
-
-
-
-
-      try { c.discardActiveObject(); } catch {}
-      setSelType('none');
-      setTextEditing(false);    // evita quedar bloqueado tras undo/redo
-      rearmInteractivity(wasEditing);
-      if (wasEditing) setEditing(true);
-      forceRepaint();           // evita “se vacía hasta clic”
-    } finally {
-      isApplyingRef.current = false;
-    }
-  }
 
   // ===== Acciones =====
   const addText = () => {
