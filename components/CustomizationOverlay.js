@@ -70,7 +70,7 @@ export default function CustomizationOverlay({
   const isApplyingRef = useRef(false);
   function forceRepaint() {
     const c = fabricCanvasRef.current; if (!c) return;
-    try { (c.getObjects() || []).forEach(o => (o.dirty = true)); c.discardActiveObject(); } catch {}
+    try { (c.getObjects() || []).forEach(o => o.dirty = true); c.discardActiveObject(); } catch {}
     c.calcOffset?.(); c.renderAll?.(); c.requestRenderAll?.();
     setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
   }
@@ -198,10 +198,6 @@ export default function CustomizationOverlay({
     });
     group._kind = 'textGroup';
     group._textChildren = { shadow, highlight, base };
-
-    base._textRole = 'base';
-    shadow._textRole = 'shadow';
-    highlight._textRole = 'highlight';
 
     const sync = () => {
       const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
@@ -486,7 +482,6 @@ export default function CustomizationOverlay({
 
     // Snapshot al modificar objetos (mover, escalar, rotar, etc.)
     c.on('object:modified', () => {
-      if (isApplyingRef.current) return;
       const snap = exportDesignSnapshot();
       if (snap) historyRef.current.push(snap);
     });
@@ -539,36 +534,6 @@ export default function CustomizationOverlay({
       } catch {}
     })();
   }, [ready, productHandle]);
-
-  function rehydrateTextGroups(c) {
-    (c.getObjects() || []).forEach(g => {
-      if (g.type === 'group' && g._kind === 'textGroup' && Array.isArray(g._objects)) {
-        const map = {};
-        g._objects.forEach(ch => { if (ch && ch._textRole) map[ch._textRole] = ch; });
-        g._textChildren = { base: map.base, shadow: map.shadow, highlight: map.highlight };
-
-        // Restablecer modos y flags
-        map.base?.set({ selectable:false, evented:false, objectCaching:false, shadow:null, stroke:null, fill: map.base.fill ?? 'rgba(35,35,35,1)', globalCompositeOperation:'multiply' });
-        map.shadow?.set({ selectable:false, evented:false, objectCaching:false, fill:'', stroke:'rgba(0,0,0,0.48)', strokeWidth:1, globalCompositeOperation:'multiply' });
-        map.highlight?.set({ selectable:false, evented:false, objectCaching:false, fill:'', stroke:'rgba(255,255,255,0.65)', strokeWidth:0.6, globalCompositeOperation:'screen' });
-
-        // Re-sincroniza offsets del relieve
-        const sync = () => {
-          const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-          const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-          const ox = 1 / sx, oy = 1 / sy;
-          map.shadow?.set({ left: -ox, top: -oy });
-          map.highlight?.set({ left: +ox, top: +oy });
-          g.setCoords();
-          g.canvas?.requestRenderAll?.();
-        };
-        g.off('scaling'); g.off('modified');
-        g.on('scaling', sync);
-        g.on('modified', sync);
-        sync();
-      }
-    });
-  }
 
   // Ajusta tamaño de lienzo
   useEffect(() => {
@@ -859,10 +824,7 @@ export default function CustomizationOverlay({
   // ===== Snapshots =====
   function exportDesignSnapshot() {
     const c = fabricCanvasRef.current; if (!c) return null;
-    return {
-      baseSize,
-      objects: c.toJSON(['_kind','_textRole','_debossOffset','_vecMeta']).objects || []
-    };
+    return { v: 2, baseSize, canvasJSON: c.toJSON(['_kind']) };
   }
 
   async function applyDesignSnapshotToCanvas(snapshot) {
@@ -871,42 +833,27 @@ export default function CustomizationOverlay({
 
     isApplyingRef.current = true;
     try {
-      c.clear();
+      const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
 
       await new Promise((resolve) => {
-        fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
-          objs.forEach(o => c.add(o));
+        c.loadFromJSON(json, () => {
+          (c.getObjects() || []).forEach(o => {
+            if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+              o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+            }
+            if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+              o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+              if (typeof o._debossSync === 'function') o._debossSync();
+            }
+          });
           c.renderAll();
           resolve();
         });
       });
 
-      // Rehidratar grupos de texto
-      rehydrateTextGroups(c);
-
-      // Re-aplicar interactividad según el modo actual
-      const on = editing;
-      const enableNode = (o, on) => {
-        if (!o) return;
-        const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
-        o.selectable   = on;
-        o.evented      = on;
-        o.lockMovementX = !on;
-        o.lockMovementY = !on;
-        o.hasControls  = on;
-        o.hasBorders   = on;
-        if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
-        o.hoverCursor  = on ? 'move' : 'default';
-        const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
-        if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-      };
-      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
-
-      // Forzar repintado completo
-      forceRepaint();
+      forceRepaint(); // evita “se vacía hasta clic”
     } finally {
       isApplyingRef.current = false;
     }
@@ -1026,20 +973,6 @@ export default function CustomizationOverlay({
     clearSelectionHard();
     setEditing(false);
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
-  };
-
-  // Editar el texto seleccionado (PC: botón/tecla)
-  const startEditActiveText = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-    if (a._kind === 'textGroup') {
-      startInlineTextEdit(a);
-      return;
-    }
-    if (typeof a.enterEditing === 'function') {
-      a.enterEditing();
-      c.requestRenderAll();
-    }
   };
 
   // Aplicar cambios tipográficos a selección (grupos de texto)
