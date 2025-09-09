@@ -63,6 +63,118 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+  // ===== Historial (undo/redo) =====
+  const undoRef = useRef([]);          // array de snapshots JSON
+  const redoRef = useRef([]);          // array de snapshots JSON
+  const isRestoringRef = useRef(false);
+  const lastSnapRef = useRef(null);    // para deduplicar
+
+  const SNAP_PROPS = ['_kind','_textChildren','_imgChildren','_debossOffset','_vecMeta']; // _vecSourceEl se omite
+
+  const getCanvas = () => fabricCanvasRef.current;
+
+  const snapshotNow = () => {
+    const c = getCanvas(); if (!c) return null;
+    try {
+      const json = c.toJSON(SNAP_PROPS);
+      return JSON.stringify(json);
+    } catch { return null; }
+  };
+
+  const pushUndo = (reason = '') => {
+    if (isRestoringRef.current) return;
+    const snap = snapshotNow();
+    if (!snap) return;
+    if (snap === lastSnapRef.current) return; // evita duplicados inmediatos
+    undoRef.current.push(snap);
+    // limpiar redo cuando llega un cambio nuevo
+    redoRef.current = [];
+    lastSnapRef.current = snap;
+  };
+
+  const rehydrateGroups = (c) => {
+    const objs = c.getObjects?.() || [];
+    objs.forEach(g => {
+      if (g?.type === 'group' && Array.isArray(g._objects) && g._objects.length === 3) {
+        const [a,b,cx] = g._objects;
+        const isText = [a,b,cx].every(o => o.type === 'textbox' || o.type === 'i-text' || o.type === 'text');
+        const isImg  = [a,b,cx].every(o => o.type === 'image');
+        if (isText) {
+          g._kind = 'textGroup';
+          g._textChildren = { shadow: a, highlight: b, base: cx };
+          const sync = () => {
+            const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+            const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+            const ox = 1 / sx, oy = 1 / sy;
+            a.set({ left: -ox, top: -oy });
+            b.set({ left: +ox, top: +oy });
+            g.setCoords();
+            g.canvas?.requestRenderAll?.();
+          };
+          g.on('scaling',  sync);
+          g.on('modified', sync);
+          sync();
+        } else if (isImg) {
+          g._kind = 'imgGroup';
+          g._imgChildren = { shadow: a, highlight: b, base: cx };
+          if (typeof g._debossOffset !== 'number') g._debossOffset = 1;
+          const normalize = () => {
+            const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+            const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+            const ox = g._debossOffset / sx;
+            const oy = g._debossOffset / sy;
+            a.set({ left: -ox, top: -oy });
+            b.set({ left: +ox, top: +oy });
+            cx.set({ left: 0, top: 0 });
+            g.setCoords?.();
+            g.canvas?.requestRenderAll?.();
+          };
+          g._debossSync = normalize;
+          g.on('scaling',  normalize);
+          g.on('modified', normalize);
+          normalize();
+        }
+      }
+    });
+  };
+
+  const restoreSnapshot = (snap) => {
+    const c = getCanvas(); if (!c || !snap) return;
+    isRestoringRef.current = true;
+    try {
+      c.loadFromJSON(JSON.parse(snap), () => {
+        rehydrateGroups(c);
+        c.renderAll();
+        setSelType('none');
+        lastSnapRef.current = snapshotNow();
+      });
+    } catch {
+      // si falla el parse, no hacemos nada
+    } finally {
+      isRestoringRef.current = false;
+    }
+  };
+
+  const canUndo = () => undoRef.current.length > 0;
+  const canRedo = () => redoRef.current.length > 0;
+
+  const doUndo = () => {
+    const c = getCanvas(); if (!c || !canUndo()) return;
+    const current = snapshotNow();
+    const prev = undoRef.current.pop();
+    if (current) redoRef.current.push(current);
+    restoreSnapshot(prev);
+  };
+
+  const doRedo = () => {
+    const c = getCanvas(); if (!c || !canRedo()) return;
+    const current = snapshotNow();
+    const next = redoRef.current.pop();
+    if (current) undoRef.current.push(current);
+    restoreSnapshot(next);
+  };
+
+  // Bloquea scroll del lienzo al entrar en edición de texto
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
@@ -70,7 +182,6 @@ useEffect(() => {
   upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
 }, [textEditing, editing]);
 
-  
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
@@ -469,6 +580,28 @@ useEffect(() => {
       }
     });
 
+    // Eventos para historial: añadidos/modificados/eliminados
+    const onAdded = (e) => {
+      if (!e?.target) return;
+      // hereda flags de edición
+      const o = e.target;
+      o.selectable = editing; o.evented = editing;
+      o.lockMovementX = !editing; o.lockMovementY = !editing;
+      if (o.type === 'i-text' || typeof o.enterEditing === 'function') o.editable = editing;
+      o.hoverCursor = editing ? 'move' : 'default';
+      // snapshot tras añadir
+      pushUndo('add');
+    };
+    const onModified = () => pushUndo('modified');
+    const onRemoved  = () => pushUndo('removed');
+
+    c.on('object:added', onAdded);
+    c.on('object:modified', onModified);
+    c.on('object:removed', onRemoved);
+
+    // Snapshot inicial
+    pushUndo('init');
+
     setReady(true);
 
     return () => {
@@ -476,10 +609,13 @@ useEffect(() => {
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
+      c.off('object:added', onAdded);
+      c.off('object:modified', onModified);
+      c.off('object:removed', onRemoved);
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
+  }, [visible, editing]); // editing para heredar flags al crear
 
   // Ajusta tamaño de lienzo
   useEffect(() => {
@@ -553,74 +689,74 @@ useEffect(() => {
 
   // === Edición inline de texto (móvil/desktop) ===
   // Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group.
-const startInlineTextEdit = (group) => {
-  const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
-  const base = group._textChildren?.base; if (!base) return;
+  const startInlineTextEdit = (group) => {
+    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
+    const base = group._textChildren?.base; if (!base) return;
 
-  const pose = {
-    left: group.left, top: group.top, originX: 'center', originY: 'center',
-    scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
-  };
-
-  try { c.remove(group); } catch {}
-
-  const tb = new fabric.Textbox(base.text || 'Texto', {
-    left: pose.left, top: pose.top, originX: 'center', originY: 'center',
-    width: Math.min(baseSize.w * 0.9, base.width || 220),
-    fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
-    fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
-    editable: true, selectable: true, evented: true, objectCaching: false
-  });
-
-  c.add(tb);
-  c.setActiveObject(tb);
-  c.requestRenderAll();
-
-  // Estamos editando: libera touch-action y desactiva pinch/zoom
-  setTextEditing(true);
-
-  // iOS: dar tiempo a crear el textarea y luego enfocar
-  setTimeout(() => {
-    try { tb.enterEditing?.(); } catch {}
-    try { tb.hiddenTextarea?.focus(); } catch {}
-    // reintento corto por si el primero no abre el teclado
-    setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
-  }, 0);
-
-  const finish = () => {
-    const newText = tb.text || '';
-    const finalPose = {
-      left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
-      scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
+    const pose = {
+      left: group.left, top: group.top, originX: 'center', originY: 'center',
+      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
     };
-    try { c.remove(tb); } catch {}
 
-    const group2 = makeTextGroup(newText, {
-      width: tb.width,
-      fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
-      fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
+    try { c.remove(group); } catch {}
+
+    const tb = new fabric.Textbox(base.text || 'Texto', {
+      left: pose.left, top: pose.top, originX: 'center', originY: 'center',
+      width: Math.min(baseSize.w * 0.9, base.width || 220),
+      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
+      fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
+      editable: true, selectable: true, evented: true, objectCaching: false
     });
-    group2.set(finalPose);
-    c.add(group2);
-    c.setActiveObject(group2);
+
+    c.add(tb);
+    c.setActiveObject(tb);
     c.requestRenderAll();
-    setSelType('text');
 
-    // Salimos de edición: reactivar pinch/zoom y volver a touch-action previa
-    setTextEditing(false);
+    // Estamos editando: libera touch-action y desactiva pinch/zoom
+    setTextEditing(true);
+
+    // iOS: dar tiempo a crear el textarea y luego enfocar
+    setTimeout(() => {
+      try { tb.enterEditing?.(); } catch {}
+      try { tb.hiddenTextarea?.focus(); } catch {}
+      setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
+    }, 0);
+
+    const finish = () => {
+      const newText = tb.text || '';
+      const finalPose = {
+        left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
+        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
+      };
+      try { c.remove(tb); } catch {}
+
+      const group2 = makeTextGroup(newText, {
+        width: tb.width,
+        fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
+        fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
+      });
+      group2.set(finalPose);
+      c.add(group2);
+      c.setActiveObject(group2);
+      c.requestRenderAll();
+      setSelType('text');
+
+      // Snapshot por edición de texto
+      pushUndo('text-edit');
+
+      // Salimos de edición
+      setTextEditing(false);
+    };
+
+    const onExit = () => { tb.off('editing:exited', onExit); finish(); };
+    tb.on('editing:exited', onExit);
+
+    const safety = setTimeout(() => {
+      try { tb.off('editing:exited', onExit); } catch {}
+      finish();
+    }, 15000);
+    tb.on('removed', () => { clearTimeout(safety); });
   };
-
-  const onExit = () => { tb.off('editing:exited', onExit); finish(); };
-  tb.on('editing:exited', onExit);
-
-  // Safety net por si no dispara editing:exited (móvil raras veces)
-  const safety = setTimeout(() => {
-    try { tb.off('editing:exited', onExit); } catch {}
-    finish();
-  }, 15000);
-  tb.on('removed', () => { clearTimeout(safety); });
-};
-
 
   // Doble-tap móvil: detectar y abrir edición de texto
   useEffect(() => {
@@ -633,8 +769,6 @@ const startInlineTextEdit = (group) => {
       if (!editing || e.pointerType !== 'touch') return;
       const now = Date.now();
       if (now - lastTap < 320) {
-        // segundo tap: buscar target de Fabric y editar si es textGroup
-        // Nota: findTarget es método interno pero disponible en runtime.
         try {
           const target = c.findTarget?.(e, false);
           if (target && target._kind === 'textGroup') {
@@ -650,100 +784,127 @@ const startInlineTextEdit = (group) => {
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-// Zoom SIEMPRE activo (PC y móvil) sobre el stage.
-// Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  const target = stageRef?.current || c?.upperCanvasEl;
-  if (!target) return;
+  // Atajos de teclado: Undo/Redo
+  useEffect(() => {
+    const onKey = (e) => {
+      const isInput =
+        e.target?.tagName === 'INPUT' ||
+        e.target?.tagName === 'TEXTAREA' ||
+        e.target?.isContentEditable;
+      if (isInput || textEditing) return;
 
-  const readZ = () => {
-    const el = stageRef?.current;
-    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
-    const n = parseFloat((v || '1').trim());
-    return Number.isFinite(n) && n > 0 ? n : 1;
-  };
-  const writeZ = (z) => {
-    const v = Math.max(0.8, Math.min(2.5, z));
-    stageRef?.current?.style.setProperty('--zoom', String(v));
-    if (typeof setZoom === 'function') setZoom(v);
-  };
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
 
-  // PC: rueda
-  const onWheel = (e) => {
-    if (textEditing) return;
-    e.preventDefault();
-    writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
-  };
+      // Ctrl/Cmd+Shift+Z → Redo (y Ctrl/Cmd+Y)
+      if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        doRedo();
+        return;
+      }
+      // Ctrl/Cmd+Z → Undo
+      if (e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        doUndo();
+      }
+    };
+    window.addEventListener('keydown', onKey, { passive: false });
+    return () => window.removeEventListener('keydown', onKey);
+  }, [textEditing]);
 
-  // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
-  let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
-  const park = () => {
-    if (parked || !c) return;
-    saved = { selection: c.selection, skip: c.skipTargetFind };
-    c.selection = false;
-    c.skipTargetFind = true;
-    parked = true;
-  };
-  const unpark = () => {
-    if (!c) return;
-    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
-    parked = false;
-    c.requestRenderAll?.();
-  };
+  // Zoom SIEMPRE activo (PC y móvil) sobre el stage.
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    const target = stageRef?.current || c?.upperCanvasEl;
+    if (!target) return;
 
-  const onPD = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
-    if (!pB && e.pointerId !== pA.id) {
-      pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      startScale = readZ();
-      park();
-    }
-  };
+    const readZ = () => {
+      const el = stageRef?.current;
+      const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
+      const n = parseFloat((v || '1').trim());
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    };
+    const writeZ = (z) => {
+      const v = Math.max(0.8, Math.min(2.5, z));
+      stageRef?.current?.style.setProperty('--zoom', String(v));
+      if (typeof setZoom === 'function') setZoom(v);
+    };
 
-  const onPM = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-    if (pA && pB && startDist) {
+    // PC: rueda
+    const onWheel = (e) => {
+      if (textEditing) return;
       e.preventDefault();
-      const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      writeZ(startScale * Math.pow(d / startDist, 0.9));
-    }
-  };
+      writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
+    };
 
-  const onPU = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) pA = null;
-    if (pB && e.pointerId === pB.id) pB = null;
-    if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
-  };
+    // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
+    let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
+    const park = () => {
+      if (parked || !c) return;
+      saved = { selection: c.selection, skip: c.skipTargetFind };
+      c.selection = false;
+      c.skipTargetFind = true;
+      parked = true;
+    };
+    const unpark = () => {
+      if (!c) return;
+      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
+      parked = false;
+      c.requestRenderAll?.();
+    };
 
-  const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
+    const onPD = (e) => {
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
+      if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+      if (!pB && e.pointerId !== pA.id) {
+        pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+        startScale = readZ();
+        park();
+      }
+    };
 
-  target.addEventListener('wheel', onWheel, { passive: false });
-  target.addEventListener('pointerdown', onPD, { passive: true });
-  target.addEventListener('pointermove', onPM, { passive: false, capture: true });
-  window.addEventListener('pointerup', onPU, { passive: true });
-  window.addEventListener('pointercancel', onCancel, { passive: true });
-  document.addEventListener('visibilitychange', onCancel);
-  window.addEventListener('blur', onCancel);
+    const onPM = (e) => {
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
+      if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
+      if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
+      if (pA && pB && startDist) {
+        e.preventDefault();
+        const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
+        writeZ(startScale * Math.pow(d / startDist, 0.9));
+      }
+    };
 
-  return () => {
-    target.removeEventListener('wheel', onWheel);
-    target.removeEventListener('pointerdown', onPD);
-    target.removeEventListener('pointermove', onPM, { capture: true });
-    window.removeEventListener('pointerup', onPU);
-    window.removeEventListener('pointercancel', onCancel);
-    document.removeEventListener('visibilitychange', onCancel);
-    window.removeEventListener('blur', onCancel);
-  };
-}, [stageRef, setZoom, textEditing]);
+    const onPU = (e) => {
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
+      if (pA && e.pointerId === pA.id) pA = null;
+      if (pB && e.pointerId === pB.id) pB = null;
+      if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
+    };
+
+    const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
+
+    target.addEventListener('wheel', onWheel, { passive: false });
+    target.addEventListener('pointerdown', onPD, { passive: true });
+    target.addEventListener('pointermove', onPM, { passive: false, capture: true });
+    window.addEventListener('pointerup', onPU, { passive: true });
+    window.addEventListener('pointercancel', onCancel, { passive: true });
+    document.addEventListener('visibilitychange', onCancel);
+    window.addEventListener('blur', onCancel);
+
+    return () => {
+      target.removeEventListener('wheel', onWheel);
+      target.removeEventListener('pointerdown', onPD);
+      target.removeEventListener('pointermove', onPM, { capture: true });
+      window.removeEventListener('pointerup', onPU);
+      window.removeEventListener('pointercancel', onCancel);
+      document.removeEventListener('visibilitychange', onCancel);
+      window.removeEventListener('blur', onCancel);
+    };
+  }, [stageRef, setZoom, textEditing]);
 
   // Bloquear clicks externos mientras se diseña
   useEffect(() => {
@@ -791,6 +952,7 @@ useEffect(() => {
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
+    pushUndo('add-text');
   };
 
   const addImageFromFile = (file) => {
@@ -810,6 +972,7 @@ useEffect(() => {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
+      pushUndo('add-image');
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -835,6 +998,7 @@ useEffect(() => {
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
+      pushUndo('replace-image');
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -858,6 +1022,7 @@ useEffect(() => {
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
+    pushUndo('delete');
   };
 
   const clearSelectionHard = () => {
@@ -914,6 +1079,7 @@ useEffect(() => {
       mutator(a);
     }
     c.requestRenderAll();
+    pushUndo('typo');
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
@@ -955,6 +1121,7 @@ useEffect(() => {
     } else { rebuild(a); }
 
     c.requestRenderAll();
+    pushUndo('revectorize');
   }, [vecBias, vecInvert]);
 
   // Offset de relieve en caliente
@@ -964,6 +1131,7 @@ useEffect(() => {
     const a = c.getActiveObject(); if (!a) return;
     const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
+    pushUndo('offset');
   }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
@@ -1029,8 +1197,27 @@ useEffect(() => {
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* LÍNEA 1: Zoom + modos */}
+        {/* LÍNEA 1: Undo/Redo + Zoom + modos */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              title="Deshacer (Ctrl/Cmd+Z)"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={doUndo}
+              disabled={!canUndo()}
+            >↶</button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              title="Rehacer (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={doRedo}
+              disabled={!canRedo()}
+            >↷</button>
+          </div>
+
           {typeof setZoom === 'function' && (
             <div className="input-group input-group-sm" style={{ width: 180 }}>
               <span className="input-group-text">Zoom</span>
