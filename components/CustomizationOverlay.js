@@ -901,10 +901,12 @@ async function applyDesignSnapshotToCanvas(snapshot) {
     rearmInteractivity(wasEditing);
     if (wasEditing) setEditing(true);
     forceRepaint();
-  } finally {
-    isApplyingRef.current = false;
+  } catch (err) {
+    console.error('applyDesignSnapshotToCanvas error:', err);
   }
+  isApplyingRef.current = false;
 }
+
 
 
 
