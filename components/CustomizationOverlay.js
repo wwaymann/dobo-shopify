@@ -1115,98 +1115,98 @@ async function applyDesignSnapshotToCanvas(snapshot) {
   );
 
   // ===== Menú fijo =====
-  function Menu() {
-    return (
-      <div
-        ref={menuRef}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          background: 'rgba(253, 253, 253, 0.34)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
-          border: '1px solid #ddd',
-          borderRadius: 12,
-          padding: '10px 12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          width: 'auto',
-          maxWidth: '94vw',
-          fontSize: 12,
-          userSelect: 'none'
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-      >
-        {/* LÍNEA 1: Zoom + modos + Undo/Redo */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {typeof setZoom === 'function' && (
-            <div className="input-group input-group-sm" style={{ width: 180 }}>
-              <span className="input-group-text">Zoom</span>
-              <button type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center"
-                value={`${Math.round((zoom || 1) * 100)}%`} />
-              <button type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
-            </div>
-          )}
+function Menu() {
+  const doUndo = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const prev = historyRef.current?.undo?.();
+    if (prev) applyDesignSnapshotToCanvas(prev);
+  };
+  const doRedo = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const next = historyRef.current?.redo?.();
+    if (next) applyDesignSnapshotToCanvas(next);
+  };
 
-          <button
-            type="button"
-            className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={exitDesignMode}
-            style={{ minWidth: '16ch' }}
-          >
-            Seleccionar Maceta
-          </button>
-
-          <button
-            type="button"
-            className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={enterDesignMode}
-            style={{ minWidth: '12ch' }}
-          >
-            Diseñar
-          </button>
-
-          {/* Undo / Redo */}
-          <div className="d-flex gap-2 ms-2">
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-onMouseDown={(e)=>e.stopPropagation()}
-onClick={(e)=>{ e.stopPropagation(); const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
-onPointerDown={(e)=>e.stopPropagation()}
-   
-onClick={async () => {
-   const prev = historyRef.current.undo();
-   if (prev) await applyDesignSnapshotToCanvas(prev);
- }}
-
-              disabled={!historyRef.current.canUndo?.()}
-              title="Deshacer (Ctrl+Z)"
-            >⟲</button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-onMouseDown={(e)=>e.stopPropagation()}
-onClick={(e)=>{ e.stopPropagation(); const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
-onPointerDown={(e)=>e.stopPropagation()}
- onClick={async () => {
-   const next = historyRef.current.redo();
-   if (next) await applyDesignSnapshotToCanvas(next);
- }}
-              disabled={!historyRef.current.canRedo?.()}
-              title="Rehacer (Ctrl+Y)"
-            >⟳</button>
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 8,
+        background: 'rgba(253, 253, 253, 0.34)',
+        backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+        border: '1px solid #ddd', borderRadius: 12,
+        padding: '10px 12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        width: 'auto', maxWidth: '94vw', fontSize: 12, userSelect: 'none'
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+    >
+      {/* LÍNEA 1: Zoom + modos + Undo/Redo */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {typeof setZoom === 'function' && (
+          <div className="input-group input-group-sm" style={{ width: 180 }}>
+            <span className="input-group-text">Zoom</span>
+            <button type="button" className="btn btn-outline-secondary"
+              onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
+            <input type="text" readOnly className="form-control form-control-sm text-center"
+              value={`${Math.round((zoom || 1) * 100)}%`} />
+            <button type="button" className="btn btn-outline-secondary"
+              onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
           </div>
+        )}
+
+        <button
+          type="button"
+          className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+          onMouseDown={(e)=>e.preventDefault()}
+          onPointerDown={(e)=>e.stopPropagation()}
+          onClick={exitDesignMode}
+          style={{ minWidth: '16ch' }}
+        >
+          Seleccionar Maceta
+        </button>
+
+        <button
+          type="button"
+          className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+          onMouseDown={(e)=>e.preventDefault()}
+          onPointerDown={(e)=>e.stopPropagation()}
+          onClick={enterDesignMode}
+          style={{ minWidth: '12ch' }}
+        >
+          Diseñar
+        </button>
+
+        {/* Undo / Redo */}
+        <div className="d-flex gap-2 ms-2">
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            onMouseDown={(e)=>e.stopPropagation()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={doUndo}
+            disabled={!historyRef.current?.canUndo?.()}
+            title="Deshacer (Ctrl+Z)"
+          >⟲</button>
+
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            onMouseDown={(e)=>e.stopPropagation()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={doRedo}
+            disabled={!historyRef.current?.canRedo?.()}
+            title="Rehacer (Ctrl+Y)"
+          >⟳</button>
         </div>
+      </div>
+
+      {/* LÍNEA 2 y 3 se mantienen iguales */}
+    </div>
+  );
+}
+
 
         {/* LÍNEA 2: Acciones básicas */}
         {editing && (
