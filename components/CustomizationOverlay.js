@@ -1,4 +1,4 @@
-// components/CustomizationOverlay.js
+// components/CustomizationOverlay.js 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
@@ -433,7 +433,6 @@ export default function CustomizationOverlay({
         if (e.key === 'Backspace' && e.target === document.body) {
           e.preventDefault();
         }
-        // reforzar foco para que borre correctamente
         focusHiddenTextareaIfAny();
       }
     };
@@ -870,9 +869,39 @@ export default function CustomizationOverlay({
     return { v: 2, baseSize, canvasJSON: c.toJSON(['_kind']) };
   }
 
+  // Rehidrata grupos de texto y asegura sus flags
+  function rehydrateTextGroups(c) {
+    (c.getObjects?.() || []).forEach(g => {
+      if (g?._kind === 'textGroup' && Array.isArray(g._objects)) {
+        const shadow = g._objects[0], highlight = g._objects[1], base = g._objects[2];
+        g._textChildren = { shadow, highlight, base };
+        base?.set({ selectable:false, evented:false, objectCaching:false, shadow:null, stroke:null, fill: base.fill ?? 'rgba(35,35,35,1)', globalCompositeOperation:'multiply' });
+        shadow?.set({ selectable:false, evented:false, objectCaching:false, fill:'', stroke:'rgba(0,0,0,0.48)', strokeWidth:1, globalCompositeOperation:'multiply' });
+        highlight?.set({ selectable:false, evented:false, objectCaching:false, fill:'', stroke:'rgba(255,255,255,0.65)', strokeWidth:0.6, globalCompositeOperation:'screen' });
+
+        const sync = () => {
+          const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
+          const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
+          const ox = 1 / sx, oy = 1 / sy;
+          shadow?.set({ left: -ox, top: -oy });
+          highlight?.set({ left: +ox, top: +oy });
+          g.setCoords();
+          g.canvas?.requestRenderAll?.();
+        };
+        g.off('scaling'); g.off('modified');
+        g.on('scaling', sync);
+        g.on('modified', sync);
+        sync();
+      }
+    });
+  }
+
   async function applyDesignSnapshotToCanvas(snapshot) {
     if (!snapshot) return;
     const c = fabricCanvasRef.current; if (!c) return;
+
+    // Salir de cualquier edición activa antes de aplicar (evita bloqueos)
+    try { (c.getObjects?.() || []).forEach(o => { if (o?.isEditing && typeof o.exitEditing === 'function') o.exitEditing(); }); } catch {}
 
     isApplyingRef.current = true;
     try {
@@ -880,10 +909,9 @@ export default function CustomizationOverlay({
 
       await new Promise((resolve) => {
         c.loadFromJSON(json, () => {
+          // Rehidratar relaciones y offsets
+          rehydrateTextGroups(c);
           (c.getObjects() || []).forEach(o => {
-            if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
-              o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
-            }
             if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
               o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
               if (typeof o._debossSync === 'function') o._debossSync();
@@ -894,9 +922,36 @@ export default function CustomizationOverlay({
         });
       });
 
+      // Reaplicar flags de interactividad según el modo actual (clave para que el texto vuelva a ser editable tras undo)
+      const enableNode = (o, on) => {
+        if (!o) return;
+        const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+        o.selectable   = on;
+        o.evented      = on;
+        o.lockMovementX = !on;
+        o.lockMovementY = !on;
+        o.hasControls  = on;
+        o.hasBorders   = on;
+        if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
+        o.hoverCursor  = on ? 'move' : 'default';
+        const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
+        if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
+      };
+      const on = editing;
+      c.skipTargetFind = !on;
+      c.selection = on;
+      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
+      const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
+      if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
+      if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
-      forceRepaint(); // evita “se vacía hasta clic”
+
+      // Repintado completo
+      c.calcOffset?.();
+      c.requestRenderAll?.();
+      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
     } finally {
       isApplyingRef.current = false;
     }
