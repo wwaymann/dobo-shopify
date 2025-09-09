@@ -1329,7 +1329,7 @@ const handleReplaceChange = (e) => {
                   >
                     U
                   </button>
-                </div>
+        
 
                 <div className="input-group input-group-sm" style={{ width: 160 }}>
                   <span className="input-group-text">Tamaño</span>
