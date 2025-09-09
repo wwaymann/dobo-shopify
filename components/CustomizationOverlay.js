@@ -486,7 +486,7 @@ export default function CustomizationOverlay({
       if (snap) historyRef.current.push(snap);
     });
 
-    // Doble-click (desktop) → editar texto del grupo (robusto tras undo/redo)
+    // Doble-click nativo de Fabric (cuando está disponible)
     c.on('mouse:dblclick', (e) => {
       let t = e.target;
       if (!t) return;
@@ -502,10 +502,33 @@ export default function CustomizationOverlay({
       }
     });
 
+    // Fallback robusto a doble-click por detail>=2 (tras undo/redo a veces Fabric no emite dblclick)
+    c.on('mouse:up', (e) => {
+      if (!editing || textEditing) return;
+      const ev = e?.e;
+      const isMouse = ev && (ev.pointerType === undefined || ev.pointerType === 'mouse');
+      if (!isMouse) return;
+      const detail = ev.detail || 0;
+      if (detail < 2) return;
+
+      let t = e.target || c.findTarget?.(ev, false);
+      if (t && t._kind !== 'textGroup' && t.group && t.group._kind === 'textGroup') t = t.group;
+      if (t && t._kind === 'textGroup') {
+        ev.preventDefault(); ev.stopPropagation();
+        startInlineTextEdit(t);
+      } else if (t && (t.type === 'i-text' || t.type === 'textbox') && typeof t.enterEditing === 'function') {
+        ev.preventDefault(); ev.stopPropagation();
+        t.enterEditing();
+        c.requestRenderAll();
+        try { t.hiddenTextarea?.focus(); } catch {}
+      }
+    });
+
     setReady(true);
 
     return () => {
       c.off('mouse:dblclick');
+      c.off('mouse:up');
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
@@ -513,7 +536,7 @@ export default function CustomizationOverlay({
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
+  }, [visible, editing, textEditing]);
 
   // Semilla de sesión/servidor una vez listo
   useEffect(() => {
@@ -546,6 +569,10 @@ export default function CustomizationOverlay({
       if (g?._kind === 'textGroup' && Array.isArray(g._objects) && g._objects.length >= 3) {
         g._textChildren = { shadow: g._objects[0], highlight: g._objects[1], base: g._objects[2] };
         g.subTargetCheck = false;
+        g.selectable = true;
+        g.evented = true;
+        g.hasControls = true;
+        g.hasBorders = true;
         g._objects.forEach(ch => {
           ch.selectable = false;
           ch.evented = false;
@@ -877,13 +904,14 @@ export default function CustomizationOverlay({
           });
           // Rehidratar grupos de texto para que el doble click siempre funcione
           rehydrateTextGroups(c);
-          // Reaplicar interactividad según el modo actual (evita grupos “muertos”)
+          // Reaplicar interactividad según el modo actual
           applyInteractivityForEditing(c, !!editing);
           c.renderAll();
           resolve();
         });
       });
 
+      setTextEditing(false); // por si se quedó en true
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
       forceRepaint(); // evita “se vacía hasta clic”
