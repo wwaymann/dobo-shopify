@@ -889,15 +889,21 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
+  
+  const targetEl = stageRef?.current || anchorRef?.current || null;
+  const dims = stageRef?.current
+    ? overlayBox
+    : { left: 0, top: 0, w: baseSize.w, h: baseSize.h };
+
   const OverlayCanvas = (
     <div
       ref={overlayRef}
       style={{
         position: "absolute",
-        left: overlayBox.left,
-        top: overlayBox.top,
-        width: overlayBox.w,
-        height: overlayBox.h,
+        left: dims.left,
+        top: dims.top,
+        width: dims.w,
+        height: dims.h,
         zIndex: Z_CANVAS,
         overflow: "hidden",
         pointerEvents: editing ? "auto" : "none",
@@ -909,15 +915,9 @@ export default function CustomizationOverlay({
       <canvas
         data-dobo-design="1"
         ref={canvasRef}
-        width={overlayBox.w}
-        height={overlayBox.h}
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'block',
-          background: 'transparent',
-          touchAction: editing ? 'none' : 'auto'
-        }}
+        width={dims.w}
+        height={dims.h}
+        style={{ width: '100%', height: '100%', display: 'block', background: 'transparent', touchAction: editing ? 'none' : 'auto' }}
       />
     </div>
   );
@@ -1154,7 +1154,7 @@ export default function CustomizationOverlay({
 
   return (
     <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+      {targetEl ? createPortal(OverlayCanvas, targetEl) : OverlayCanvas}
       {typeof document !== 'undefined' ? createPortal(
         <div
           style={{
