@@ -1136,6 +1136,16 @@ function Menu() {
     if (f) replaceActiveFromFile(f);
     e.target.value = '';
   };
+const handleAddChange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) addImageFromFile(f);
+  e.target.value = '';
+};
+const handleReplaceChange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) replaceActiveFromFile(f);
+  e.target.value = '';
+};
 
   return (
     <div
