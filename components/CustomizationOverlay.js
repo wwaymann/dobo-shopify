@@ -405,6 +405,42 @@ export default function CustomizationOverlay({
   };
 
   // ===== Inicializar Fabric =====
+  const isDesktopRef = useRef(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      isDesktopRef.current = !!(window.matchMedia && window.matchMedia('(pointer:fine)').matches);
+    }
+  }, []);
+
+  // Helper: asegura foco en el textarea oculto cuando se edita (PC)
+  const focusHiddenTextareaIfAny = () => {
+    if (!isDesktopRef.current) return;
+    const c = fabricCanvasRef.current; if (!c) return;
+    const a = c.getActiveObject?.();
+    const isText = a && (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text');
+    if (!isText) return;
+    try { if (typeof a.enterEditing === 'function' && !a.isEditing) a.enterEditing(); } catch {}
+    try { a.hiddenTextarea?.focus(); } catch {}
+    try { c.upperCanvasEl?.focus?.(); } catch {}
+  };
+
+  // Previene ir atrás con Backspace si se pierde foco del textarea durante edición
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const c = fabricCanvasRef.current; const a = c?.getActiveObject?.();
+      if (!c || !a) return;
+      if ((a.type === 'i-text' || a.type === 'textbox') && a.isEditing) {
+        if (e.key === 'Backspace' && e.target === document.body) {
+          e.preventDefault();
+        }
+        // reforzar foco para que borre correctamente
+        focusHiddenTextareaIfAny();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
+
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
@@ -494,8 +530,13 @@ export default function CustomizationOverlay({
       else if (isTextObj(t) && typeof t.enterEditing === 'function') {
         t.enterEditing();
         c.requestRenderAll();
+        focusHiddenTextareaIfAny();
       }
     });
+
+    // Al hacer click sobre el lienzo, si hay texto en foco reasegurar el foco (evita "no borra" en PC)
+    const onMouseDownRefocus = () => focusHiddenTextareaIfAny();
+    c.on('mouse:down', onMouseDownRefocus);
 
     setReady(true);
 
@@ -505,6 +546,7 @@ export default function CustomizationOverlay({
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
       c.off('object:modified');
+      c.off('mouse:down', onMouseDownRefocus);
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
@@ -634,6 +676,7 @@ export default function CustomizationOverlay({
     setTimeout(() => {
       try { tb.enterEditing?.(); } catch {}
       try { tb.hiddenTextarea?.focus(); } catch {}
+      try { c.upperCanvasEl?.focus(); } catch {}
       setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
     }, 0);
 
@@ -1001,6 +1044,9 @@ export default function CustomizationOverlay({
     }
     c.requestRenderAll();
     const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
+
+    // Si se está editando texto en PC, re-enfocar para que Backspace/teclado funcionen siempre
+    focusHiddenTextareaIfAny();
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
