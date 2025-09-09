@@ -1126,17 +1126,35 @@ function Menu() {
     const next = historyRef.current?.redo?.();
     if (next) applyDesignSnapshotToCanvas(next);
   };
+  const handleAddChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) addImageFromFile(f);
+    e.target.value = '';
+  };
+  const handleReplaceChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) replaceActiveFromFile(f);
+    e.target.value = '';
+  };
 
   return (
     <div
       ref={menuRef}
       style={{
-        display: 'flex', flexDirection: 'column', gap: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
         background: 'rgba(253, 253, 253, 0.34)',
-        backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-        border: '1px solid #ddd', borderRadius: 12,
-        padding: '10px 12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        width: 'auto', maxWidth: '94vw', fontSize: 12, userSelect: 'none'
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        border: '1px solid #ddd',
+        borderRadius: 12,
+        padding: '10px 12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        width: 'auto',
+        maxWidth: '94vw',
+        fontSize: 12,
+        userSelect: 'none'
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerMove={(e) => e.stopPropagation()}
@@ -1189,7 +1207,6 @@ function Menu() {
             disabled={!historyRef.current?.canUndo?.()}
             title="Deshacer (Ctrl+Z)"
           >⟲</button>
-
           <button
             type="button"
             className="btn btn-outline-secondary btn-sm"
@@ -1202,7 +1219,25 @@ function Menu() {
         </div>
       </div>
 
-      {/* LÍNEA 2 y 3 se mantienen iguales */}
+      {/* LÍNEA 2 y 3 igual… */}
+
+      {/* Inputs ocultos */}
+      <input
+        ref={addInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleAddChange}
+        onPointerDown={(e)=>e.stopPropagation()}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleReplaceChange}
+        onPointerDown={(e)=>e.stopPropagation()}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
