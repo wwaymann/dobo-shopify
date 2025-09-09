@@ -212,7 +212,7 @@ export default function CustomizationOverlay({
 
     // Fallback por detail>=2 (algunas builds)
     c.on('mouse:up', (e) => {
-      if (!editing || textEditing) return;
+     if (textEditing) return;
       const ev = e?.e;
       const isMouse = ev && (ev.pointerType === undefined || ev.pointerType === 'mouse');
       if (!isMouse || (ev.detail || 0) < 2) return;
@@ -483,8 +483,8 @@ export default function CustomizationOverlay({
         height: overlayBox.h,
         zIndex: Z_CANVAS,
         overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
+        pointerEvents: "auto",
+        touchAction: "none",
         overscrollBehavior: "contain",
       }}
       onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
