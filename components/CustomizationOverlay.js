@@ -163,12 +163,13 @@ export default function CustomizationOverlay({
 
   // ===== Helpers de relieve =====
   const makeTextGroup = (text, opts = {}) => {
+    // IMPORTANTE: sin globalCompositeOperation para que se vea sobre canvas transparente
     const base = new fabric.Textbox(text, {
       ...opts,
       originX: 'center', originY: 'center',
       selectable: false, evented: false,
       objectCaching: false, shadow: null, stroke: null,
-      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
+      fill: 'rgba(35,35,35,1)' // source-over (default)
     });
     const shadow = new fabric.Textbox(text, {
       ...opts,
@@ -176,8 +177,7 @@ export default function CustomizationOverlay({
       left: -1, top: -1,
       selectable: false, evented: false,
       objectCaching: false, fill: '',
-      stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
-      globalCompositeOperation: 'multiply'
+      stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1
     });
     const highlight = new fabric.Textbox(text, {
       ...opts,
@@ -185,8 +185,7 @@ export default function CustomizationOverlay({
       left: +1, top: +1,
       selectable: false, evented: false,
       objectCaching: false, fill: '',
-      stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
-      globalCompositeOperation: 'screen'
+      stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6
     });
 
     const group = new fabric.Group([shadow, highlight, base], {
@@ -249,8 +248,9 @@ export default function CustomizationOverlay({
     };
     applyElement(srcEl);
 
-    shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
-    highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
+    // Mantener por defecto 'source-over' en todos
+    shadow.set({ opacity: 1 });
+    highlight.set({ opacity: 1 });
 
     const normalizeImgOffsets = () => {
       const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
@@ -486,7 +486,7 @@ export default function CustomizationOverlay({
       if (snap) historyRef.current.push(snap);
     });
 
-    // Doble-click nativo de Fabric (cuando está disponible)
+    // Doble-click nativo
     c.on('mouse:dblclick', (e) => {
       let t = e.target;
       if (!t) return;
@@ -502,7 +502,7 @@ export default function CustomizationOverlay({
       }
     });
 
-    // Fallback robusto a doble-click por detail>=2 (tras undo/redo a veces Fabric no emite dblclick)
+    // Fallback por detail>=2
     c.on('mouse:up', (e) => {
       if (!editing || textEditing) return;
       const ev = e?.e;
@@ -563,7 +563,7 @@ export default function CustomizationOverlay({
     })();
   }, [ready, productHandle]);
 
-  // === Rehidratar grupos de texto tras cargar JSON (para que el doble-click funcione siempre)
+  // === Rehidratar grupos de texto tras cargar JSON
   function rehydrateTextGroups(c) {
     (c.getObjects() || []).forEach(g => {
       if (g?._kind === 'textGroup' && Array.isArray(g._objects) && g._objects.length >= 3) {
@@ -577,7 +577,12 @@ export default function CustomizationOverlay({
           ch.selectable = false;
           ch.evented = false;
           ch.objectCaching = false;
+          // asegurar modo normal (source-over)
+          ch.globalCompositeOperation = 'source-over';
         });
+        // asegurar base visible
+        g._textChildren.base && (g._textChildren.base.globalCompositeOperation = 'source-over');
+
         const sync = () => {
           const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
           const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
@@ -594,7 +599,7 @@ export default function CustomizationOverlay({
     });
   }
 
-  // Reaplicar interactividad (evita que, tras undo, queden objetos sin evented/selectable)
+  // Reaplicar interactividad
   function applyInteractivityForEditing(c, on) {
     const enableNode = (o, on) => {
       if (!o) return;
@@ -726,7 +731,7 @@ export default function CustomizationOverlay({
     tb.on('removed', () => { clearTimeout(safety); });
   };
 
-  // Doble-tap móvil: detectar y abrir edición de texto
+  // Doble-tap móvil
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -902,7 +907,7 @@ export default function CustomizationOverlay({
               if (typeof o._debossSync === 'function') o._debossSync();
             }
           });
-          // Rehidratar grupos de texto para que el doble click siempre funcione
+          // Rehidratar grupos de texto y asegurar 'source-over'
           rehydrateTextGroups(c);
           // Reaplicar interactividad según el modo actual
           applyInteractivityForEditing(c, !!editing);
@@ -911,10 +916,10 @@ export default function CustomizationOverlay({
         });
       });
 
-      setTextEditing(false); // por si se quedó en true
+      setTextEditing(false);
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
-      forceRepaint(); // evita “se vacía hasta clic”
+      forceRepaint();
     } finally {
       isApplyingRef.current = false;
     }
