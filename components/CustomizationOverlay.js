@@ -887,7 +887,7 @@ const wasEditing = !!editing;
           c.renderAll();
           resolve();
         });
-      });
+
 
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
