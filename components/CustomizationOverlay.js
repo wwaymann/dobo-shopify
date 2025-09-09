@@ -898,7 +898,7 @@ const wasEditing = !!editing;
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
       setTextEditing(false);    // evita quedar bloqueado tras undo/redo
-      rearmInteractivity(wasEditing)
+      rearmInteractivity(wasEditing);
       if (wasEditing) setEditing(true);
       forceRepaint();           // evita “se vacía hasta clic”
     } finally {
