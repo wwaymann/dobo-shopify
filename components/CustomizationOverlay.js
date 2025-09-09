@@ -833,7 +833,7 @@ export default function CustomizationOverlay({
 
     const getAllowed = () => {
       const c = fabricCanvasRef.current;
-      return [overlayRef.current, c?.upperCanvasEl].filter(Boolean);
+      return [overlayRef.current, c?.upperCanvasEl, menuRef.current].filter(Boolean);
     };
     const insideAllowed = (e) => {
       const allowed = getAllowed();
@@ -1179,6 +1179,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
+onPointerDown={(e)=>e.stopPropagation()}
    
 onClick={async () => {
    const prev = historyRef.current.undo();
@@ -1191,6 +1192,7 @@ onClick={async () => {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
+onPointerDown={(e)=>e.stopPropagation()}
  onClick={async () => {
    const next = historyRef.current.redo();
    if (next) await applyDesignSnapshotToCanvas(next);
