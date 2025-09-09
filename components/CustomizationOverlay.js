@@ -406,34 +406,35 @@ export default function CustomizationOverlay({
 
 // ===== Utils imagen/vectorizado =====
   // Rearma selectabilidad y punteros tras cargar snapshot
-  const rearmInteractivity = () => {
+ // Rearma selectabilidad y punteros tras cargar snapshot (según 'on')
+  const rearmInteractivity = (on) => {
     const c = fabricCanvasRef.current; if (!c) return;
-    const on = !!editing;
-    const enableNode = (o) => {
-      if (!o) return;
-      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
-      o.selectable   = on;
-      o.evented      = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      o.hasControls  = on;
-      o.hasBorders   = on;
-      if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
-      o.hoverCursor  = on ? 'move' : 'default';
-      const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
-      if (Array.isArray(children)) children.forEach(enableNode);
-    };
-    c.skipTargetFind = !on;
-    c.selection = on;
-    (c.getObjects?.() || []).forEach(enableNode);
-    const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
-    if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
-    if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
-    c.defaultCursor = on ? 'move' : 'default';
-    try { c.discardActiveObject(); } catch {}
-    c.calcOffset?.(); c.requestRenderAll?.();
-    setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-  };
+
+   const enableNode = (o) => {
+       if (!o) return;
+       const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+       o.selectable   = on;
+       o.evented      = on;
+       o.lockMovementX = !on;
+       o.lockMovementY = !on;
+       o.hasControls  = on;
+       o.hasBorders   = on;
+       if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
+       o.hoverCursor  = on ? 'move' : 'default';
+       const children = o._objects || (typeof o.getObjects() === 'function' ? o.getObjects() : null);
+       if (Array.isArray(children)) children.forEach(enableNode);
+     };
+     c.skipTargetFind = !on;
+     c.selection = on;
+     (c.getObjects?.() || []).forEach(enableNode);
+     const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
+     if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
+     if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+     c.defaultCursor = on ? 'move' : 'default';
+     try { c.discardActiveObject(); } catch {}
+     c.calcOffset?.(); c.requestRenderAll?.();
+     setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+   };
   
   // ===== Inicializar Fabric =====
   useEffect(() => {
@@ -861,7 +862,7 @@ export default function CustomizationOverlay({
   async function applyDesignSnapshotToCanvas(snapshot) {
     if (!snapshot) return;
     const c = fabricCanvasRef.current; if (!c) return;
-
+const wasEditing = !!editing;
     isApplyingRef.current = true;
     try {
       const json = snapshot.canvasJSON ? snapshot.canvasJSON : { objects: snapshot.objects || [] };
@@ -875,6 +876,12 @@ export default function CustomizationOverlay({
             if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
               o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
               if (typeof o._debossSync === 'function') o._debossSync();
+              // Si viniera un textbox suelto desde snapshots antiguos, respeta edición según modo actual
+           if (o && (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text')) {
+             o.editable = !!editing;
+             o.selectable = !!editing;
+             o.evented = !!editing;
+           
             }
           });
           c.renderAll();
@@ -885,7 +892,8 @@ export default function CustomizationOverlay({
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
       setTextEditing(false);    // evita quedar bloqueado tras undo/redo
-      rearmInteractivity();     // recupera selectabilidad y cursores
+      rearmInteractivity(wasEditing)
+      if (wasEditing) setEditing(true);
       forceRepaint();           // evita “se vacía hasta clic”
     } finally {
       isApplyingRef.current = false;
@@ -1191,14 +1199,9 @@ export default function CustomizationOverlay({
               type="button"
               className="btn btn-outline-secondary btn-sm"
    
- onClick={async () => {
-   const wasEditing = editing;
+onClick={async () => {
    const prev = historyRef.current.undo();
-   if (prev) {
-     await applyDesignSnapshotToCanvas(prev);
-     if (wasEditing) setEditing(true);
-     rearmInteractivity();
-   }
+   if (prev) await applyDesignSnapshotToCanvas(prev);
  }}
 
               disabled={!historyRef.current.canUndo?.()}
@@ -1207,14 +1210,9 @@ export default function CustomizationOverlay({
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-  onClick={async () => {
-   const wasEditing = editing;
+ onClick={async () => {
    const next = historyRef.current.redo();
-   if (next) {
-     await applyDesignSnapshotToCanvas(next);
-     if (wasEditing) setEditing(true);
-     rearmInteractivity();
-   }
+   if (next) await applyDesignSnapshotToCanvas(next);
  }}
               disabled={!historyRef.current.canRedo?.()}
               title="Rehacer (Ctrl+Y)"
