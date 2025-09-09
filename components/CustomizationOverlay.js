@@ -911,6 +911,7 @@ async function applyDesignSnapshotToCanvas(snapshot) {
 
 
 
+
       try { c.discardActiveObject(); } catch {}
       setSelType('none');
       setTextEditing(false);    // evita quedar bloqueado tras undo/redo
