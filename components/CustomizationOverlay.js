@@ -3,7 +3,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
-import { saveLocalDesign } from '../lib/designStore';
+import { saveLocalDesign, loadLocalDesign } from '../lib/designStore';
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -49,9 +49,9 @@ export default function CustomizationOverlay({
   // Historial
   const historyRef = useRef(new HistoryManager({
     limit: 200,
-    onChange: (current) => { if (current) saveLocalDesign(current); }
+    onChange: (snap) => { if (snap) saveLocalDesign(snap); }
   }));
-  const pushedInitialRef = useRef(false);
+  const applyingRef = useRef(false); // evita pushes durante apply
 
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -72,6 +72,7 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+  // touchAction del upper canvas cuando se edita texto
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -79,7 +80,7 @@ export default function CustomizationOverlay({
     upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
   }, [textEditing, editing]);
 
-  // Mantén --zoom siempre actualizado
+  // Mantén --zoom
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
     stageRef?.current?.style.setProperty('--zoom', String(v));
@@ -94,11 +95,19 @@ export default function CustomizationOverlay({
     return () => { try { el.style.position = prev; } catch {} };
   }, [anchorRef]);
 
-  // Medida exacta del área en coords locales del stage
+  // Medida exacta del área de la maceta en coords locales del stage
   useLayoutEffect(() => {
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
     if (!stage || !anchor) return;
+
+    const safeCalc = (c) => {
+      try {
+        if (!c || !c.upperCanvasEl || !c.lowerCanvasEl) return;
+        if (c.disposed) return;
+        c.calcOffset?.();
+      } catch {}
+    };
 
     const measure = () => {
       const w = Math.max(1, anchor.clientWidth);
@@ -114,7 +123,7 @@ export default function CustomizationOverlay({
       setOverlayBox({ left, top, w, h });
 
       const c = fabricCanvasRef.current;
-      if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
+      if (c) { c.setWidth(w); c.setHeight(h); safeCalc(c); c.requestRenderAll?.(); }
     };
 
     measure();
@@ -148,7 +157,7 @@ export default function CustomizationOverlay({
     };
   }, [anchorRef]);
 
-  // ===== Helpers relieve =====
+  // ===== Helpers de relieve =====
   const makeTextGroup = (text, opts = {}) => {
     const base = new fabric.Textbox(text, {
       ...opts,
@@ -223,7 +232,7 @@ export default function CustomizationOverlay({
     group._imgChildren = { base, shadow, highlight };
     group._debossOffset = offset;
 
-    // pose inicial
+    // pose inicial desde baseObj
     group.left    = baseObj.left ?? 0;
     group.top     = baseObj.top ?? 0;
     group.scaleX  = baseObj.scaleX ?? 1;
@@ -391,48 +400,6 @@ export default function CustomizationOverlay({
     return bm;
   };
 
-  // ===== Snapshot helpers =====
-  const fixImagesInJSON = (obj) => JSON.parse(JSON.stringify(obj, (k, v) => {
-    if (v && v.type === 'image' && v.src && typeof v.src === 'object') {
-      // fabric export puede dejar Image.src como objeto; guardamos dataURL
-      if (v.src.src) return { ...v, src: v.src.src };
-    }
-    return v;
-  }));
-
-  const exportDesignSnapshot = () => {
-    const c = fabricCanvasRef.current; if (!c) return null;
-    const json = c.toJSON(['_kind','_imgChildren','_textChildren','_debossOffset','_vecSourceEl','_vecMeta']);
-    return { baseSize: { ...baseSize }, json };
-  };
-
-  const applyDesignSnapshotToCanvas = async (snapshot) => {
-    if (!snapshot) return;
-    const c = fabricCanvasRef.current; if (!c) return;
-
-    const snap = snapshot.json ? snapshot : { json: snapshot };
-    const safe = fixImagesInJSON(snap.json);
-
-    c.clear();
-    await new Promise((resolve) => {
-      fabric.util.enlivenObjects(safe.objects || [], (objs) => {
-        objs.forEach(o => c.add(o));
-        c.renderAll();
-        resolve();
-      });
-    });
-    try { c.discardActiveObject(); } catch {}
-    c.requestRenderAll?.();
-    setSelType('none');
-  };
-
-  const pushSnap = () => {
-    const snap = exportDesignSnapshot();
-    if (!snap) return;
-    // guardar en historial + autosave local
-    historyRef.current.push(JSON.parse(JSON.stringify(snap)));
-  };
-
   // ===== Inicializar Fabric =====
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -447,15 +414,14 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-    // API mínima pública
+    // API pública mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
         toSVG: () => c.toSVG({ suppressPreamble: true }),
         getCanvas: () => c,
-        exportDesignSnapshot: () => exportDesignSnapshot(),
-        applyDesignSnapshot: (snap) => applyDesignSnapshotToCanvas(snap),
-        getBaseSize: () => ({ ...baseSize }),
+        exportDesignSnapshot,
+        applyDesignSnapshot: applyDesignSnapshotToCanvas,
       };
     }
 
@@ -480,9 +446,18 @@ export default function CustomizationOverlay({
       const a = c.getActiveObject();
       if (!a) return;
       let first = null;
-      if (a._kind === 'textGroup') first = a._textChildren?.base || null;
-      else if (a.type === 'activeSelection') first = a._objects?.find(x => x._kind === 'textGroup')?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
+      if (a._kind === 'textGroup') {
+        if (!a._textChildren && Array.isArray(a._objects) && a._objects.length >= 3) {
+          a._textChildren = { shadow: a._objects[0], highlight: a._objects[1], base: a._objects[2] };
+        }
+        first = a._textChildren?.base || null;
+      } else if (a.type === 'activeSelection') {
+        const tg = a._objects?.find(x => x._kind === 'textGroup');
+        if (tg && !tg._textChildren && Array.isArray(tg._objects) && tg._objects.length >= 3) {
+          tg._textChildren = { shadow: tg._objects[0], highlight: tg._objects[1], base: tg._objects[2] };
+        }
+        first = tg?._textChildren?.base || null;
+      } else if (isTextObj(a)) first = a;
       if (first) {
         setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
         setFontSize(first.fontSize || 60);
@@ -511,13 +486,11 @@ export default function CustomizationOverlay({
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
-    // Transformaciones → snapshot
-    c.on('object:modified', () => pushSnap());
-
-    // Añadir → top + snapshot
-    c.on('object:added', (ev) => {
-      try { ev?.target && c.bringToFront(ev.target); } catch {}
-      c.requestRenderAll();
+    // Historial: snapshot al modificar objetos
+    c.on('object:modified', () => {
+      if (applyingRef.current) return;
+      const snap = exportDesignSnapshot();
+      if (snap) historyRef.current.push(snap);
     });
 
     // Doble-click (desktop) → editar texto del grupo
@@ -533,6 +506,17 @@ export default function CustomizationOverlay({
 
     setReady(true);
 
+    // Cargar autosave al montar
+    const auto = loadLocalDesign();
+    if (auto?.objects?.length) {
+      applyDesignSnapshotToCanvas(auto);
+      // seed historial con el snapshot cargado
+      historyRef.current.push(auto);
+    } else {
+      // seed vacío
+      historyRef.current.push(exportDesignSnapshot());
+    }
+
     return () => {
       c.off('mouse:dblclick');
       c.off('selection:created', onSel);
@@ -541,24 +525,18 @@ export default function CustomizationOverlay({
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible, baseSize.w, baseSize.h]); // baseSize para getBaseSize estable
-
-  // Snapshot inicial
-  useEffect(() => {
-    if (!ready) return;
-    if (pushedInitialRef.current) return;
-    pushedInitialRef.current = true;
-    pushSnap();
-  }, [ready]);
+  }, [visible]);
 
   // Ajusta tamaño de lienzo
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
+    try {
+      c.setWidth(baseSize.w);
+      c.setHeight(baseSize.h);
+      if (c.upperCanvasEl && c.lowerCanvasEl) c.calcOffset?.();
+      c.requestRenderAll?.();
+    } catch {}
   }, [baseSize.w, baseSize.h]);
 
   // Interactividad según modo
@@ -592,9 +570,8 @@ export default function CustomizationOverlay({
       if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
       c.defaultCursor = on ? 'move' : 'default';
       try { c.discardActiveObject(); } catch {}
-      c.calcOffset?.();
+      if (c.upperCanvasEl && c.lowerCanvasEl) c.calcOffset?.();
       c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
     };
 
     setAll(!!editing);
@@ -621,10 +598,10 @@ export default function CustomizationOverlay({
     window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
   }, [editing]);
 
-  // === Edición inline de texto ===
+  // === Edición inline de texto (móvil/desktop) ===
   const startInlineTextEdit = (group) => {
     const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
-    const base = group._textChildren?.base; if (!base) return;
+    const base = group._textChildren?.base || group._objects?.[2]; if (!base) return;
 
     const pose = {
       left: group.left, top: group.top, originX: 'center', originY: 'center',
@@ -644,6 +621,7 @@ export default function CustomizationOverlay({
     c.add(tb);
     c.setActiveObject(tb);
     c.requestRenderAll();
+
     setTextEditing(true);
 
     setTimeout(() => {
@@ -670,18 +648,25 @@ export default function CustomizationOverlay({
       c.setActiveObject(group2);
       c.requestRenderAll();
       setSelType('text');
+
+      // Snapshot por edición de texto
+      const snap = exportDesignSnapshot();
+      if (snap) historyRef.current.push(snap);
+
       setTextEditing(false);
-      pushSnap();
     };
 
     const onExit = () => { tb.off('editing:exited', onExit); finish(); };
     tb.on('editing:exited', onExit);
 
-    const safety = setTimeout(() => { try { tb.off('editing:exited', onExit); } catch {} finish(); }, 15000);
+    const safety = setTimeout(() => {
+      try { tb.off('editing:exited', onExit); } catch {}
+      finish();
+    }, 15000);
     tb.on('removed', () => { clearTimeout(safety); });
   };
 
-  // Doble-tap móvil → editar texto
+  // Doble-tap móvil: detectar y abrir edición de texto
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -707,7 +692,7 @@ export default function CustomizationOverlay({
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-  // Zoom global PC + móvil
+  // Zoom PC + móvil
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const target = stageRef?.current || c?.upperCanvasEl;
@@ -725,12 +710,14 @@ export default function CustomizationOverlay({
       if (typeof setZoom === 'function') setZoom(v);
     };
 
+    // PC: rueda
     const onWheel = (e) => {
       if (textEditing) return;
       e.preventDefault();
       writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
     };
 
+    // Móvil: 2 dedos = zoom
     let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
     const park = () => {
       if (parked || !c) return;
@@ -830,8 +817,56 @@ export default function CustomizationOverlay({
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
   }, [editing, anchorRef, stageRef]);
 
-  // ===== Acciones =====
+  // ===== Historial helpers =====
+  function exportDesignSnapshot() {
+    const c = fabricCanvasRef.current; if (!c) return null;
+    try {
+      const json = c.toJSON(['_kind']); // _textChildren/_imgChildren se reconstruyen
+      return { baseSize, objects: json.objects || [] };
+    } catch {
+      return null;
+    }
+  }
 
+  async function applyDesignSnapshotToCanvas(snapshot) {
+    if (!snapshot) return;
+    const c = fabricCanvasRef.current; if (!c) return;
+    applyingRef.current = true;
+    try {
+      c.clear();
+
+      await new Promise((resolve) => {
+        fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
+          // rehidratar metadatos de grupos
+          objs.forEach(o => {
+            if (o?._kind === 'textGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+              o._textChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+            }
+            if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
+              o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
+              if (typeof o._debossSync === 'function') o._debossSync();
+            }
+            c.add(o);
+          });
+          c.renderAll();
+          resolve();
+        });
+      });
+
+      try { c.discardActiveObject(); } catch {}
+      c.requestRenderAll?.();
+      setSelType('none');
+    } finally {
+      applyingRef.current = false;
+    }
+  }
+
+  const commitSnapshot = () => {
+    const snap = exportDesignSnapshot();
+    if (snap) historyRef.current.push(snap);
+  };
+
+  // ===== Acciones =====
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const group = makeTextGroup('Nuevo párrafo', {
@@ -842,12 +877,11 @@ export default function CustomizationOverlay({
     });
     group.set({ left: baseSize.w/2, top: baseSize.h/2, originX: 'center', originY: 'center' });
     c.add(group);
-    c.bringToFront(group);
     c.setActiveObject(group);
     setSelType('text');
     c.requestRenderAll();
     setEditing(true);
-    pushSnap();
+    commitSnapshot();
   };
 
   const addImageFromFile = (file) => {
@@ -863,12 +897,11 @@ export default function CustomizationOverlay({
       baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: false, evented: false, objectCaching: false });
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       c.add(group);
-      c.bringToFront(group);
       c.setActiveObject(group);
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      pushSnap();
+      commitSnapshot();
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
@@ -890,19 +923,18 @@ export default function CustomizationOverlay({
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
       c.add(group);
-      c.bringToFront(group);
       c.setActiveObject(group);
       setSelType('image');
       c.requestRenderAll();
       setEditing(true);
-      pushSnap();
+      commitSnapshot();
       URL.revokeObjectURL(url);
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
 
-  // Borrar selección (grupos)
+  // Borrar selección
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -919,7 +951,7 @@ export default function CustomizationOverlay({
     c.discardActiveObject();
     c.requestRenderAll();
     setSelType('none');
-    pushSnap();
+    commitSnapshot();
   };
 
   const clearSelectionHard = () => {
@@ -957,6 +989,9 @@ export default function CustomizationOverlay({
 
     const applyToGroup = (g) => {
       if (!g || g._kind !== 'textGroup') return;
+      if (!g._textChildren && Array.isArray(g._objects) && g._objects.length >= 3) {
+        g._textChildren = { shadow: g._objects[0], highlight: g._objects[1], base: g._objects[2] };
+      }
       const { base, shadow, highlight } = g._textChildren || {};
       [base, shadow, highlight].forEach(o => o && mutator(o));
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
@@ -975,7 +1010,7 @@ export default function CustomizationOverlay({
       mutator(a);
     }
     c.requestRenderAll();
-    pushSnap();
+    commitSnapshot();
   };
 
   // Re-vectorizar imagen al cambiar Detalles/Invertir
@@ -989,7 +1024,7 @@ export default function CustomizationOverlay({
       let pose = null;
 
       if (obj?._kind === 'imgGroup') {
-        const base = obj._imgChildren?.base;
+        const base = obj._imgChildren?.base || obj._objects?.[2];
         if (!base) return;
         element = base._vecSourceEl || (typeof base.getElement === 'function' ? base.getElement() : base._element);
         pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
@@ -1017,7 +1052,7 @@ export default function CustomizationOverlay({
     } else { rebuild(a); }
 
     c.requestRenderAll();
-    pushSnap();
+    commitSnapshot();
   }, [vecBias, vecInvert]);
 
   // Offset de relieve en caliente
@@ -1027,6 +1062,8 @@ export default function CustomizationOverlay({
     const a = c.getActiveObject(); if (!a) return;
     const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
+    c.requestRenderAll();
+    commitSnapshot();
   }, [vecOffset, editing, selType]);
 
   if (!visible) return null;
@@ -1130,7 +1167,7 @@ export default function CustomizationOverlay({
           <div className="d-flex gap-2 ms-2">
             <button
               type="button"
-              className="btn btn-outline-secondary"
+              className="btn btn-outline-secondary btn-sm"
               onClick={() => {
                 const prev = historyRef.current.undo();
                 if (prev) applyDesignSnapshotToCanvas(prev);
@@ -1140,7 +1177,7 @@ export default function CustomizationOverlay({
             >⟲</button>
             <button
               type="button"
-              className="btn btn-outline-secondary"
+              className="btn btn-outline-secondary btn-sm"
               onClick={() => {
                 const next = historyRef.current.redo();
                 if (next) applyDesignSnapshotToCanvas(next);
@@ -1301,22 +1338,14 @@ export default function CustomizationOverlay({
         )}
 
         {/* Inputs ocultos */}
-        <input
-          ref={addInputRef}
-          type="file"
-          accept="image/*"
+        <input ref={addInputRef} type="file" accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }}
-        />
-        <input
-          ref={replaceInputRef}
-          type="file"
-          accept="image/*"
+          style={{ display: 'none' }} />
+        <input ref={replaceInputRef} type="file" accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }}
-        />
+          style={{ display: 'none' }} />
       </div>
     );
   }
