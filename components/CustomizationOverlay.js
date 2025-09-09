@@ -421,7 +421,7 @@ export default function CustomizationOverlay({
        o.hasBorders   = on;
        if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
        o.hoverCursor  = on ? 'move' : 'default';
-       const children = o._objects || (typeof o.getObjects() === 'function' ? o.getObjects() : null);
+       const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
        if (Array.isArray(children)) children.forEach(enableNode);
      };
      c.skipTargetFind = !on;
@@ -594,7 +594,9 @@ export default function CustomizationOverlay({
       if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
       o.hoverCursor  = on ? 'move' : 'default';
       if (isGroup) return;
-      const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
+      const children = Array.isArray(o._objects)
+   ? o._objects
+   : (typeof o.getObjects === 'function' ? o.getObjects() : null);
       if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
     };
 
