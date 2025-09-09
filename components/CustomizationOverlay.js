@@ -1157,14 +1157,30 @@ export default function CustomizationOverlay({
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => { const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
+   
+onClick={async () => {
+    const wasEditing = editing;
+    const prev = historyRef.current.undo();
+    if (prev) {
+      await applyDesignSnapshotToCanvas(prev);
+      if (wasEditing) setEditing(true);
+    }
+  }}
+
               disabled={!historyRef.current.canUndo?.()}
               title="Deshacer (Ctrl+Z)"
             >⟲</button>
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => { const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
+           onClick={async () => {
+    const wasEditing = editing;
+    const next = historyRef.current.redo();
+    if (next) {
+      await applyDesignSnapshotToCanvas(next);
+      if (wasEditing) setEditing(true);
+    }
+  }}
               disabled={!historyRef.current.canRedo?.()}
               title="Rehacer (Ctrl+Y)"
             >⟳</button>
