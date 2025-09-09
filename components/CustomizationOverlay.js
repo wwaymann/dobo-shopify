@@ -738,7 +738,7 @@ export default function CustomizationOverlay({
       underline: isUnderline, textAlign,
     });
     group.set({ left: baseSize.w / 2, top: baseSize.h / 2, originX: 'center', originY: 'center' });
-    c.add(group); c.setActiveObject(group); c.bringToFront(group);
+    c.add(group); c.setActiveObject(group); group.bringToFront?.();
     setSelType('text'); c.requestRenderAll(); setEditing(true); forceRepaint();
     const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
   };
@@ -755,7 +755,7 @@ export default function CustomizationOverlay({
       const s = Math.min(maxW / baseImg._vecMeta.w, maxH / baseImg._vecMeta.h);
       baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth() / 2, top: c.getHeight() / 2, scaleX: s, scaleY: s, selectable: false, evented: false, objectCaching: false });
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.add(group); c.setActiveObject(group); c.bringToFront(group);
+      c.add(group); c.setActiveObject(group); group.bringToFront?.();
       setSelType('image'); c.requestRenderAll(); setEditing(true); forceRepaint();
       const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
       URL.revokeObjectURL(url);
@@ -778,7 +778,7 @@ export default function CustomizationOverlay({
       baseImg.set({ selectable: false, evented: false, objectCaching: false });
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
-      c.add(group); c.setActiveObject(group); c.bringToFront(group);
+      c.add(group); c.setActiveObject(group); group.bringToFront?.();
       setSelType('image'); c.requestRenderAll(); setEditing(true); forceRepaint();
       const snap = exportDesignSnapshot(); if (snap) historyRef.current.push(snap);
       URL.revokeObjectURL(url);
