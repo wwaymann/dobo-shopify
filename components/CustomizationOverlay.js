@@ -831,9 +831,9 @@ export default function CustomizationOverlay({
     const host = hostA || hostS;
     if (!host) return;
 
-    const getAllowed = () => {
+   const getAllowed = () => {
       const c = fabricCanvasRef.current;
-      return [overlayRef.current, c?.upperCanvasEl, menuRef.current].filter(Boolean);
+     return [overlayRef.current, c?.upperCanvasEl, menuRef.current].filter(Boolean);
     };
     const insideAllowed = (e) => {
       const allowed = getAllowed();
@@ -848,8 +848,9 @@ export default function CustomizationOverlay({
       e.stopPropagation();
     };
 
-    const opts = { capture: true, passive: false };
-    const evs = ['pointerdown','mousedown','touchstart','click','wheel'];
+ const opts = { capture: true, passive: false };
+    // importante: no interceptar 'click'
+    const evs = ['pointerdown','mousedown','touchstart','wheel'];
     evs.forEach(ev => host.addEventListener(ev, stop, opts));
 
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
@@ -1179,6 +1180,8 @@ async function applyDesignSnapshotToCanvas(snapshot) {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
+onMouseDown={(e)=>e.stopPropagation()}
+onClick={(e)=>{ e.stopPropagation(); const prev = historyRef.current.undo(); if (prev) applyDesignSnapshotToCanvas(prev); }}
 onPointerDown={(e)=>e.stopPropagation()}
    
 onClick={async () => {
@@ -1192,6 +1195,8 @@ onClick={async () => {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
+onMouseDown={(e)=>e.stopPropagation()}
+onClick={(e)=>{ e.stopPropagation(); const next = historyRef.current.redo(); if (next) applyDesignSnapshotToCanvas(next); }}
 onPointerDown={(e)=>e.stopPropagation()}
  onClick={async () => {
    const next = historyRef.current.redo();
