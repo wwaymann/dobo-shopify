@@ -1021,7 +1021,7 @@ export default function CustomizationOverlay({
               className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={() => addInputRef.current?.click()}
-              disabled={!ready || baseSize.w < 8 || baseSize.h < 8}y}
+              disabled={!ready || baseSize.w < 8 || baseSize.h < 8}
             >
               + Imagen
             </button>
