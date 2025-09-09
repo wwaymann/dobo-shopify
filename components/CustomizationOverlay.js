@@ -567,6 +567,29 @@ export default function CustomizationOverlay({
     });
   }
 
+  // Reaplicar interactividad (evita que, tras undo, queden objetos sin evented/selectable)
+  function applyInteractivityForEditing(c, on) {
+    const enableNode = (o, on) => {
+      if (!o) return;
+      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
+      o.selectable   = on;
+      o.evented      = on;
+      o.lockMovementX = !on;
+      o.lockMovementY = !on;
+      o.hasControls  = on;
+      o.hasBorders   = on;
+      if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
+      o.hoverCursor  = on ? 'move' : 'default';
+      const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
+      if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
+    };
+    (c.getObjects?.() || []).forEach(o => enableNode(o, on));
+    const upper = c.upperCanvasEl, lower = c.lowerCanvasEl;
+    if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
+    if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
+    c.defaultCursor = on ? 'move' : 'default';
+  }
+
   // Ajusta tamaño de lienzo
   useEffect(() => {
     const c = fabricCanvasRef.current;
@@ -581,39 +604,11 @@ export default function CustomizationOverlay({
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
-
-    const enableNode = (o, on) => {
-      if (!o) return;
-      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
-      o.selectable   = on;
-      o.evented      = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      o.hasControls  = on;
-      o.hasBorders   = on;
-      if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
-      o.hoverCursor  = on ? 'move' : 'default';
-      if (isGroup) return;
-      const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
-      if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-    };
-
-    const setAll = (on) => {
-      c.skipTargetFind = !on;
-      c.selection = on;
-      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      const upper = c.upperCanvasEl;
-      const lower = c.lowerCanvasEl;
-      if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
-      if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
-      c.defaultCursor = on ? 'move' : 'default';
-      try { c.discardActiveObject(); } catch {}
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-    };
-
-    setAll(!!editing);
+    applyInteractivityForEditing(c, !!editing);
+    try { c.discardActiveObject(); } catch {}
+    c.calcOffset?.();
+    c.requestRenderAll?.();
+    setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
   }, [editing]);
 
   // Heredar flags al añadir objetos
@@ -873,13 +868,17 @@ export default function CustomizationOverlay({
 
       await new Promise((resolve) => {
         c.loadFromJSON(json, () => {
+          // Rehidratar imágenes con relieve si existen
           (c.getObjects() || []).forEach(o => {
             if (o?._kind === 'imgGroup' && Array.isArray(o._objects) && o._objects.length >= 3) {
               o._imgChildren = { shadow: o._objects[0], highlight: o._objects[1], base: o._objects[2] };
               if (typeof o._debossSync === 'function') o._debossSync();
             }
           });
-          rehydrateTextGroups(c);   // rearmar grupos de texto para doble-click
+          // Rehidratar grupos de texto para que el doble click siempre funcione
+          rehydrateTextGroups(c);
+          // Reaplicar interactividad según el modo actual (evita grupos “muertos”)
+          applyInteractivityForEditing(c, !!editing);
           c.renderAll();
           resolve();
         });
