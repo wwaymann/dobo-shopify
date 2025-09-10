@@ -445,7 +445,7 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
       perPixelTargetFind: true,
       targetFindTolerance: 8,
     });
-  
+    
     // ---- Historial ----
     historyRef.current = new HistoryManager({
       limit: 200,
@@ -810,7 +810,7 @@ useEffect(() => {
     document.removeEventListener('visibilitychange', onCancel);
     window.removeEventListener('blur', onCancel);
   };
-}, [stageRef, setZoom, textEditing]);
+ [stageRef, setZoom, textEditing]);  
 
   // Bloquear clicks externos mientras se diseña
   useEffect(() => {
@@ -864,7 +864,8 @@ useEffect(() => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    imgEl.\1 endAssetLoad(); 
+    
+    imgEl.onload = () => { endAssetLoad(); } 
       const src = downscale(imgEl);
       const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
       if (!baseImg) { URL.revokeObjectURL(url); return; }
@@ -888,7 +889,8 @@ useEffect(() => {
     const active = c.getActiveObject(); if (!active) return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    imgEl.\1 endAssetLoad(); 
+    
+    imgEl.onload = () => { endAssetLoad(); }
       const src = downscale(imgEl);
       const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
       try { c.remove(active); } catch {}
@@ -903,7 +905,7 @@ useEffect(() => {
       c.requestRenderAll();
       setEditing(true);
       URL.revokeObjectURL(url);
-    };
+    
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
   };
