@@ -40,9 +40,7 @@ export default function CustomizationOverlay({
   const menuRef = useRef(null);
 
   
-  
-  const loadingAssetRef = useRef(false);
-const historyRef = useRef(null);
+  const historyRef = useRef(null);
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
 const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
@@ -69,51 +67,7 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
-
-  // ======= HISTORIAL: helpers =======
-
-  // === Historial: banderas de carga para no interferir con importación de imagen/vector ===
-  const beginAssetLoad = () => { loadingAssetRef.current = true; };
-  const endAssetLoad = () => { loadingAssetRef.current = false; recordChange(); };
-
-  const getSnapshot = () => {
-    const c = fabricCanvasRef.current;
-    if (!c) return null;
-    return c.toJSON(['_kind', '_meta', '_textChildren']);
-  };
-
-  const applySnapshot = (snap) => {
-    const c = fabricCanvasRef.current;
-    if (!c || !snap) return;
-    c._skipHistory = true;
-    c.loadFromJSON(snap, () => {
-      c._skipHistory = false;
-      c.requestRenderAll();
-    });
-  };
-
-  const recordChange = (() => {
-    let t = null;
-    return () => {
-      if (fabricCanvasRef.current?._skipHistory || loadingAssetRef.current) return;
-      clearTimeout(t);
-      t = setTimeout(() => {
-        const s = getSnapshot();
-        if (s && historyRef.current) historyRef.current.push(s);
-        setHistCaps({
-          canUndo: !!historyRef.current?.canUndo(),
-          canRedo: !!historyRef.current?.canRedo(),
-        });
-      }, 180);
-    };
-  })();
-
-  const refreshCaps = () => setHistCaps({
-    canUndo: !!historyRef.current?.canUndo(),
-    canRedo: !!historyRef.current?.canRedo(),
-  });
-
-  useEffect(() => {
+useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
   if (!upper) return;
@@ -433,6 +387,42 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
     return bm;
   };
 
+  // ===== Historial: helpers seguros =====
+  const getSnapshot = () => {
+    const c = fabricCanvasRef.current;
+    if (!c) return null;
+    return c.toJSON(['_kind','_meta','_textChildren']);
+  };
+
+  const applySnapshot = (snap) => {
+    const c = fabricCanvasRef.current;
+    if (!c || !snap) return;
+    c._skipHistory = true;
+    c.loadFromJSON(snap, () => {
+      c._skipHistory = false;
+      c.requestRenderAll();
+    });
+  };
+
+  const refreshCaps = () => setHistCaps({
+    canUndo: !!historyRef.current?.canUndo(),
+    canRedo: !!historyRef.current?.canRedo(),
+  });
+
+  const recordChange = (() => {
+    let t = null;
+    return () => {
+      if (fabricCanvasRef.current?._skipHistory) return;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const s = getSnapshot();
+        if (s && historyRef.current) historyRef.current.push(s);
+        refreshCaps();
+      }, 160);
+    };
+  })();
+
+
   // ===== Inicializar Fabric =====
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -445,26 +435,25 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
       perPixelTargetFind: true,
       targetFindTolerance: 8,
     });
-    \1
-    // ---- Historial ----
-    historyRef.current = new HistoryManager({
-      limit: 200,
-      onChange: refreshCaps
-    });
+    fabricCanvasRef.current = c;
+
+    // Historial
+    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
+    // Primer snapshot luego del primer render estable
     c.once('after:render', () => {
-      const __firstSnap = getSnapshot();
-      if (__firstSnap) historyRef.current.push(__firstSnap);
+      const s = getSnapshot(); if (s) historyRef.current.push(s);
+      refreshCaps();
     });
-    // Eventos que alimentan historial
-    const __onAdded = (e) => { if (loadingAssetRef.current) return; recordChange(); };
-    const __onModified = () => recordChange();
-    const __onRemoved = () => recordChange();
-    const __onPath = () => recordChange();
-    c.on('object:added', __onAdded);
-    c.on('object:modified', __onModified);
-    c.on('object:removed', __onRemoved);
-    c.on('path:created', __onPath);
-// API mínima
+    const onAdded = () => recordChange();
+    const onModified = () => recordChange();
+    const onRemoved = () => recordChange();
+    const onPath = () => recordChange();
+    c.on('object:added', onAdded);
+    c.on('object:modified', onModified);
+    c.on('object:removed', onRemoved);
+    c.on('path:created', onPath);
+
+    // API mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
@@ -543,6 +532,10 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
+      c.off('object:added', onAdded);
+      c.off('object:modified', onModified);
+      c.off('object:removed', onRemoved);
+      c.off('path:created', onPath);
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
@@ -864,8 +857,7 @@ useEffect(() => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    
-    imgEl.onload = () => { endAssetLoad(); }imgEl.onload = () => { endAssetLoad(); } 
+    imgEl.onload = () => {
       const src = downscale(imgEl);
       const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
       if (!baseImg) { URL.revokeObjectURL(url); return; }
@@ -889,8 +881,7 @@ useEffect(() => {
     const active = c.getActiveObject(); if (!active) return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    
-    imgEl.onload = () => { endAssetLoad(); }imgEl.onload = () => { endAssetLoad(); } 
+    imgEl.onload = () => {
       const src = downscale(imgEl);
       const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
       try { c.remove(active); } catch {}
@@ -1098,42 +1089,27 @@ useEffect(() => {
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* LÍNEA 1: Zoom + modos */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-
-          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+                  <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
             <button
               type="button"
               className="btn btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => {
-                const s = historyRef.current?.undo();
-                if (s) applySnapshot(s);
-                refreshCaps();
-              }}
+              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
               disabled={!histCaps.canUndo}
               title="Atrás (Ctrl+Z)"
               aria-label="Atrás"
-            >
-              ←
-            </button>
+            >←</button>
             <button
               type="button"
               className="btn btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => {
-                const s = historyRef.current?.redo();
-                if (s) applySnapshot(s);
-                refreshCaps();
-              }}
+              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
               disabled={!histCaps.canRedo}
               title="Adelante (Ctrl+Shift+Z)"
               aria-label="Adelante"
-            >
-              →
-            </button>
+            >→</button>
           </div>
 
           {typeof setZoom === 'function' && (
