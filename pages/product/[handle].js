@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
-import { loadSessionDesign, saveSessionDesign } from '@/lib/designStore';
+import { loadSessionDesign, saveSessionDesign } from '../../lib/designStore';
 
 useEffect(() => {
   let cancelled = false;
