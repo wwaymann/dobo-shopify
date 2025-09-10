@@ -40,7 +40,9 @@ export default function CustomizationOverlay({
   const menuRef = useRef(null);
 
   
-  const historyRef = useRef(null);
+  
+  const loadingAssetRef = useRef(false);
+const historyRef = useRef(null);
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
 const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
@@ -69,6 +71,11 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
 
   // ======= HISTORIAL: helpers =======
+
+  // === Historial: banderas de carga para no interferir con importación de imagen/vector ===
+  const beginAssetLoad = () => { loadingAssetRef.current = true; };
+  const endAssetLoad = () => { loadingAssetRef.current = false; recordChange(); };
+
   const getSnapshot = () => {
     const c = fabricCanvasRef.current;
     if (!c) return null;
@@ -88,7 +95,7 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const recordChange = (() => {
     let t = null;
     return () => {
-      if (fabricCanvasRef.current?._skipHistory) return;
+      if (fabricCanvasRef.current?._skipHistory || loadingAssetRef.current) return;
       clearTimeout(t);
       t = setTimeout(() => {
         const s = getSnapshot();
@@ -438,16 +445,18 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
       perPixelTargetFind: true,
       targetFindTolerance: 8,
     });
-
+  
     // ---- Historial ----
     historyRef.current = new HistoryManager({
       limit: 200,
       onChange: refreshCaps
     });
-    const __firstSnap = getSnapshot();
-    if (__firstSnap) historyRef.current.push(__firstSnap);
+    c.once('after:render', () => {
+      const __firstSnap = getSnapshot();
+      if (__firstSnap) historyRef.current.push(__firstSnap);
+    });
     // Eventos que alimentan historial
-    const __onAdded = () => recordChange();
+    const __onAdded = (e) => { if (loadingAssetRef.current) return; recordChange(); };
     const __onModified = () => recordChange();
     const __onRemoved = () => recordChange();
     const __onPath = () => recordChange();
@@ -855,7 +864,7 @@ useEffect(() => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    imgEl.onload = () => {
+    imgEl.\1 endAssetLoad(); 
       const src = downscale(imgEl);
       const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
       if (!baseImg) { URL.revokeObjectURL(url); return; }
@@ -879,7 +888,7 @@ useEffect(() => {
     const active = c.getActiveObject(); if (!active) return;
     const url = URL.createObjectURL(file);
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    imgEl.onload = () => {
+    imgEl.\1 endAssetLoad(); 
       const src = downscale(imgEl);
       const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
       try { c.remove(active); } catch {}
