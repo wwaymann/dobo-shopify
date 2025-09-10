@@ -2,6 +2,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
+import HistoryManager from '../lib/history';
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -38,7 +39,10 @@ export default function CustomizationOverlay({
   const replaceInputRef = useRef(null);
   const menuRef = useRef(null);
 
-  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
+  
+  const historyRef = useRef(null);
+  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
+const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
@@ -63,7 +67,46 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
-useEffect(() => {
+
+  // ======= HISTORIAL: helpers =======
+  const getSnapshot = () => {
+    const c = fabricCanvasRef.current;
+    if (!c) return null;
+    return c.toJSON(['_kind', '_meta', '_textChildren']);
+  };
+
+  const applySnapshot = (snap) => {
+    const c = fabricCanvasRef.current;
+    if (!c || !snap) return;
+    c._skipHistory = true;
+    c.loadFromJSON(snap, () => {
+      c._skipHistory = false;
+      c.requestRenderAll();
+    });
+  };
+
+  const recordChange = (() => {
+    let t = null;
+    return () => {
+      if (fabricCanvasRef.current?._skipHistory) return;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const s = getSnapshot();
+        if (s && historyRef.current) historyRef.current.push(s);
+        setHistCaps({
+          canUndo: !!historyRef.current?.canUndo(),
+          canRedo: !!historyRef.current?.canRedo(),
+        });
+      }, 180);
+    };
+  })();
+
+  const refreshCaps = () => setHistCaps({
+    canUndo: !!historyRef.current?.canUndo(),
+    canRedo: !!historyRef.current?.canRedo(),
+  });
+
+  useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
   if (!upper) return;
@@ -396,6 +439,23 @@ useEffect(() => {
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
+    // ---- Historial ----
+    historyRef.current = new HistoryManager({
+      limit: 200,
+      onChange: refreshCaps
+    });
+    const __firstSnap = getSnapshot();
+    if (__firstSnap) historyRef.current.push(__firstSnap);
+    // Eventos que alimentan historial
+    const __onAdded = () => recordChange();
+    const __onModified = () => recordChange();
+    const __onRemoved = () => recordChange();
+    const __onPath = () => recordChange();
+    c.on('object:added', __onAdded);
+    c.on('object:modified', __onModified);
+    c.on('object:removed', __onRemoved);
+    c.on('path:created', __onPath);
+
 
     // API mínima
     if (typeof window !== 'undefined') {
@@ -1029,8 +1089,13 @@ useEffect(() => {
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* LÍNEA 1: Zoom + modos */}
+        {/* LÍNEA 1: Historial + : Zoom + modos */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className=\"btn-group btn-group-sm\" role=\"group\" aria-label=\"Historial\">
+            <button type=\"button\" className=\"btn btn-outline-secondary\" onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()} onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }} disabled={!histCaps.canUndo} title=\"Atrás (Ctrl+Z)\" aria-label=\"Atrás\">←</button>
+            <button type=\"button\" className=\"btn btn-outline-secondary\" onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()} onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }} disabled={!histCaps.canRedo} title=\"Adelante (Ctrl+Shift+Z)\" aria-label=\"Adelante\">→</button>
+          </div>
+
           {typeof setZoom === 'function' && (
             <div className="input-group input-group-sm" style={{ width: 180 }}>
               <span className="input-group-text">Zoom</span>
