@@ -174,4 +174,6 @@
 .chevTopLeft{ top:6px; left:8px; } .chevTopRight{ top:6px; right:8px; }
 .chevBottomLeft{ bottom:6px; left:8px; } .chevBottomRight{ bottom:6px; right:8px; }
 .chev svg{ width:18px; height:18px; }
+
+.shopify-section { overflow: visible; }
   
