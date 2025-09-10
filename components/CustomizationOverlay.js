@@ -37,7 +37,6 @@ export default function CustomizationOverlay({
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
   const menuRef = useRef(null);
-  const menuHostRef = useRef(null);
 
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
@@ -140,26 +139,6 @@ useEffect(() => {
       window.removeEventListener('resize', update);
     };
   }, [anchorRef]);
-
-  // Host del menú como hermano inmediato del anchor (sin fixed, sin body)
-  useEffect(() => {
-    const anchor = anchorRef?.current;
-    if (!anchor || menuHostRef.current) return;
-    const host = document.createElement('div');
-    host.setAttribute('data-dobo-menu-host', '1');
-    host.style.width = '100%';
-    host.style.marginTop = '8px';
-    // insertar después del anchor
-    if (anchor.parentNode) {
-      anchor.parentNode.insertBefore(host, anchor.nextSibling);
-      menuHostRef.current = host;
-    }
-    return () => {
-      try { host.remove(); } catch {}
-      menuHostRef.current = null;
-    };
-  }, [anchorRef]);
-
 
   // ===== Helpers de relieve =====
   const makeTextGroup = (text, opts = {}) => {
@@ -1254,14 +1233,26 @@ useEffect(() => {
       {/* Overlay dentro de la maceta */}
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
-      {/* Menú debajo del canvas, montado en el host hermano */}
-      {menuHostRef.current ? createPortal(
-        <div style={{ display:'flex', justifyContent:'center', width:'100%' }}>
-          <div style={{ display:'inline-flex' }}>
+      {/* Menú fijo abajo */}
+      {typeof document !== 'undefined' ? createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
+            bottom: 8,
+            transform: 'translateX(-50%)',
+            zIndex: Z_MENU,
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
             <Menu />
           </div>
         </div>,
-        menuHostRef.current
+        document.body
       ) : null}
     </>
   );
