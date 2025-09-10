@@ -60,6 +60,28 @@ export default function CustomizationOverlay({
 
   const suppressSelectionRef = useRef(false);
   const [anchorRect, setAnchorRect] = useState(null);
+
+  const menuMountRef = useRef(null);
+  const [menuHost, setMenuHost] = useState(null);
+
+  useEffect(() => {
+    const anchor = anchorRef?.current;
+    if (!anchor || menuHost) return;
+    const mount = document.createElement('div');
+    mount.setAttribute('data-dobo-menu','1');
+    // bloque en flujo, justo después del canvas
+    mount.style.width = '100%';
+    mount.style.marginTop = '8px';
+    mount.style.position = 'relative';
+    anchor.parentNode?.insertBefore(mount, anchor.nextSibling);
+    menuMountRef.current = mount;
+    setMenuHost(mount);
+    return () => {
+      try { mount.remove(); } catch {}
+      if (menuMountRef.current === mount) menuMountRef.current = null;
+      setMenuHost(null);
+    };
+  }, [anchorRef, menuHost]);
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
