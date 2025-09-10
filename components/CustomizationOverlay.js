@@ -1052,32 +1052,34 @@ export default function CustomizationOverlay({
   }
 
   /* ---------------- Render ---------------- */
-  return (
-    <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-      {createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
-            bottom: 12,
-            transform: 'translateX(-50%)',
-            zIndex: Z_MENU,
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            pointerEvents: 'none'
-          }}
-        >
-          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
-            <Menu />
-          </div>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
+{/* Render */}
+return (
+  <>
+    {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+
+    {createPortal(
+      <div
+        style={{
+          position: 'fixed',
+          left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
+          bottom: 12,
+          transform: 'translateX(-50%)',
+          zIndex: 2147483647,
+          width: '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          pointerEvents: 'none'
+        }}
+      >
+        <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
+          <Menu />
+        </div>
+      </div>,
+      typeof document !== 'undefined' ? document.body : (stageRef?.current || anchorRef?.current)
+    )}
+  </>
+);
+
 
 <CustomizationOverlay
   stageRef={stageRef}
