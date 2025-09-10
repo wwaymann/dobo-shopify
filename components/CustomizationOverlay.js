@@ -438,7 +438,7 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
       perPixelTargetFind: true,
       targetFindTolerance: 8,
     });
-    fabricCanvasRef.current = c;
+
     // ---- Historial ----
     historyRef.current = new HistoryManager({
       limit: 200,
@@ -455,9 +455,7 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
     c.on('object:modified', __onModified);
     c.on('object:removed', __onRemoved);
     c.on('path:created', __onPath);
-
-
-    // API mínima
+// API mínima
     if (typeof window !== 'undefined') {
       window.doboDesignAPI = {
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
@@ -1089,11 +1087,42 @@ useEffect(() => {
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* LÍNEA 1: Historial + : Zoom + modos */}
+        {/* LÍNEA 1: Zoom + modos */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className=\"btn-group btn-group-sm\" role=\"group\" aria-label=\"Historial\">
-            <button type=\"button\" className=\"btn btn-outline-secondary\" onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()} onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }} disabled={!histCaps.canUndo} title=\"Atrás (Ctrl+Z)\" aria-label=\"Atrás\">←</button>
-            <button type=\"button\" className=\"btn btn-outline-secondary\" onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()} onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }} disabled={!histCaps.canRedo} title=\"Adelante (Ctrl+Shift+Z)\" aria-label=\"Adelante\">→</button>
+
+          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => {
+                const s = historyRef.current?.undo();
+                if (s) applySnapshot(s);
+                refreshCaps();
+              }}
+              disabled={!histCaps.canUndo}
+              title="Atrás (Ctrl+Z)"
+              aria-label="Atrás"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => {
+                const s = historyRef.current?.redo();
+                if (s) applySnapshot(s);
+                refreshCaps();
+              }}
+              disabled={!histCaps.canRedo}
+              title="Adelante (Ctrl+Shift+Z)"
+              aria-label="Adelante"
+            >
+              →
+            </button>
           </div>
 
           {typeof setZoom === 'function' && (
