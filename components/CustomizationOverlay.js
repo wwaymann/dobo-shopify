@@ -3,24 +3,22 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 
-/* ================= Persistencia sesión (localStorage) ================ */
-function saveSessionDesign(productId, json) {
-  if (!productId || !json) return;
-  try { localStorage.setItem(`dobo:design:${productId}`, JSON.stringify(json)); } catch {}
-}
-function loadSessionDesign(productId) {
-  if (!productId) return null;
-  try {
-    const s = localStorage.getItem(`dobo:design:${productId}`);
-    return s ? JSON.parse(s) : null;
-  } catch { return null; }
-}
+/**
+ * ===========================================
+ * CustomizationOverlay
+ * - Doble click para editar texto (solo PC)
+ * - Historial undo/redo robusto (JSON snapshots)
+ * - Objetos “relief” 100% serializables (texto e imagen)
+ * - Sin parpadeos tras undo/redo (render forzado)
+ * - Menú fijo visible con zIndex alto
+ * ===========================================
+ */
 
 /* ================= Constantes ================ */
 const MAX_TEXTURE_DIM = 1600;
 const VECTOR_SAMPLE_DIM = 500;
 const Z_CANVAS = 4000;
-const Z_MENU = 2147483647;
+const Z_MENU = 2147483647; // muy alto para garantizar visibilidad
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
@@ -35,20 +33,22 @@ const FONT_OPTIONS = [
 ];
 
 /* ============== Clases Fabric personalizadas ============== */
+/** Texto con relieve (grupo de 3 Textbox) serializable nativamente */
 fabric.TextRelief = fabric.util.createClass(fabric.Group, {
   type: 'textRelief',
   initialize: function (text = 'Texto', opts = {}) {
     const base = new fabric.Textbox(text, {
       originX: 'center', originY: 'center',
-      shadow: null, stroke: null, objectCaching: false,
-      selectable: false, evented: false, fill: 'rgba(35,35,35,1)',
-      globalCompositeOperation: 'multiply',
+      shadow: null, stroke: null,
+      objectCaching: false, selectable: false, evented: false,
+      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply',
       fontFamily: opts.fontFamily, fontSize: opts.fontSize, fontWeight: opts.fontWeight,
       fontStyle: opts.fontStyle, underline: opts.underline, textAlign: opts.textAlign,
       width: opts.width || 220,
     });
     const shadow = new fabric.Textbox(text, {
-      originX: 'center', originY: 'center', left: -1, top: -1,
+      originX: 'center', originY: 'center',
+      left: -1, top: -1,
       objectCaching: false, selectable: false, evented: false,
       fill: '', stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
       fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
@@ -56,7 +56,8 @@ fabric.TextRelief = fabric.util.createClass(fabric.Group, {
       width: base.width, globalCompositeOperation: 'multiply'
     });
     const highlight = new fabric.Textbox(text, {
-      originX: 'center', originY: 'center', left: +1, top: +1,
+      originX: 'center', originY: 'center',
+      left: +1, top: +1,
       objectCaching: false, selectable: false, evented: false,
       fill: '', stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
       fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
@@ -72,6 +73,7 @@ fabric.TextRelief = fabric.util.createClass(fabric.Group, {
     });
 
     this._textChildren = { shadow, highlight, base };
+    this._kind = 'textGroup';
     this._reliefOffset = typeof opts.reliefOffset === 'number' ? opts.reliefOffset : 1;
 
     const sync = () => {
@@ -112,6 +114,7 @@ fabric.TextRelief.fromObject = function (obj, cb) {
   cb(inst);
 };
 
+/** Imagen vectorizada con relieve (grupo de 3 Image) serializable */
 fabric.ImageRelief = fabric.util.createClass(fabric.Group, {
   type: 'imageRelief',
   initialize: function (imgEl, opts = {}) {
@@ -120,12 +123,15 @@ fabric.ImageRelief = fabric.util.createClass(fabric.Group, {
       objectCaching: false, selectable: false, evented: false, noScaleCache: true
     });
     const base = make(), shadow = make(), highlight = make();
+
     this.callSuper('initialize', [shadow, highlight, base], {
       originX: 'center', originY: 'center',
       objectCaching: false, subTargetCheck: false,
       selectable: true, evented: true, ...opts
     });
+
     this._imgChildren = { base, shadow, highlight };
+    this._kind = 'imgGroup';
     this._reliefOffset = typeof opts.reliefOffset === 'number' ? opts.reliefOffset : 1;
     this._srcDataURL = opts.srcDataURL || null;
     this._thrBias = typeof opts.thrBias === 'number' ? opts.thrBias : 0;
@@ -143,6 +149,7 @@ fabric.ImageRelief = fabric.util.createClass(fabric.Group, {
       this.setCoords?.();
       this.canvas?.requestRenderAll?.();
     };
+    this._debossSync = normalize;
     this.on('scaling', normalize);
     this.on('modified', normalize);
     normalize();
@@ -172,7 +179,7 @@ fabric.ImageRelief.fromObject = function (obj, cb) {
 };
 fabric.ImageRelief.async = true;
 
-/* ============== Utilidades imagen/vectorización ============== */
+/* ============== Utilidades de imagen/vectorización ============== */
 const downscale = (imgEl) => {
   const w = imgEl.naturalWidth || imgEl.width;
   const h = imgEl.naturalHeight || imgEl.height;
@@ -244,16 +251,15 @@ export default function CustomizationOverlay({
   visible = true,
   zoom = 1,
   setZoom,
-  // NUEVO
-  productId = null,
-  initialDesign = null, // opcional: JSON ya cargado del servidor
 }) {
+  /* ------ Refs y estado ------ */
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
   const overlayRef = useRef(null);
 
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
+  const menuRef = useRef(null);
 
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
@@ -264,6 +270,7 @@ export default function CustomizationOverlay({
   const [selType, setSelType] = useState('none');
   const [textEditing, setTextEditing] = useState(false);
   const suppressSelectionRef = useRef(false);
+  const [mounted, setMounted] = useState(false);
 
   // Texto
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
@@ -275,17 +282,17 @@ export default function CustomizationOverlay({
   const [showAlignMenu, setShowAlignMenu] = useState(false);
 
   // Imagen / relieve
-  const [vecOffset, setVecOffset] = useState(1);
-  const [vecInvert, setVecInvert] = useState(false);
-  const [vecBias, setVecBias] = useState(0);
+  const [vecOffset, setVecOffset] = useState(1);     // 0..5
+  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
+  const [vecBias, setVecBias] = useState(0);         // -60..+60
 
-  // Historial
+  // Historial simple (stacks JSON)
   const undoRef = useRef([]);
   const redoRef = useRef([]);
   const isRestoringRef = useRef(false);
   const lastSnapRef = useRef(null);
 
-  /* ---------- helpers ---------- */
+  /* ------ Helpers historial ------ */
   const snapshotNow = () => {
     const c = fabricCanvasRef.current; if (!c) return null;
     try { return JSON.stringify(c.toJSON()); } catch { return null; }
@@ -295,12 +302,10 @@ export default function CustomizationOverlay({
     const s = snapshotNow();
     if (!s || s === lastSnapRef.current) return;
     undoRef.current.push(s);
-    if (undoRef.current.length > 80) undoRef.current.shift();
     redoRef.current = [];
     lastSnapRef.current = s;
-    if (productId) { try { saveSessionDesign(productId, JSON.parse(s)); } catch {} }
   };
-  const canUndo = () => undoRef.current.length > 1;
+  const canUndo = () => undoRef.current.length > 0;
   const canRedo = () => redoRef.current.length > 0;
 
   const applyInteractivityByMode = (on) => {
@@ -335,38 +340,54 @@ export default function CustomizationOverlay({
     const c = fabricCanvasRef.current; if (!c || !s) return;
     isRestoringRef.current = true;
     c.loadFromJSON(JSON.parse(s), () => {
+      // Asegura edición tras undo/redo
       applyInteractivityByMode(editing);
+      // Forzar repintado para evitar “vacío hasta clic”
       (c.getObjects() || []).forEach(o => o.dirty = true);
       c.discardActiveObject(); c.requestRenderAll(); c.calcOffset?.();
+      setTimeout(() => { c.requestRenderAll?.(); }, 0);
       setSelType('none');
       lastSnapRef.current = snapshotNow();
       isRestoringRef.current = false;
     });
   };
   const doUndo = () => {
-    if (!canUndo()) return;
+    const c = fabricCanvasRef.current; if (!c || !canUndo()) return;
     const curr = snapshotNow();
-    undoRef.current.pop();
-    const target = undoRef.current[undoRef.current.length - 1];
+    const prev = undoRef.current.pop();
     if (curr) redoRef.current.push(curr);
-    restoreSnapshot(target);
+    restoreSnapshot(prev);
   };
   const doRedo = () => {
-    if (!canRedo()) return;
+    const c = fabricCanvasRef.current; if (!c || !canRedo()) return;
     const curr = snapshotNow();
     const next = redoRef.current.pop();
     if (curr) undoRef.current.push(curr);
     restoreSnapshot(next);
   };
 
-  /* ------ Inicializar Fabric + hidratación ------ */
+  /* ------ Montaje/SSR ------ */
+  useEffect(() => { setMounted(true); }, []);
+
+  /* ------ Inicializar Fabric ------ */
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+
     const c = new fabric.Canvas(canvasRef.current, {
       width: 1, height: 1, preserveObjectStacking: true,
       selection: true, perPixelTargetFind: true, targetFindTolerance: 8, renderOnAddRemove: true
     });
     fabricCanvasRef.current = c;
+
+    if (typeof window !== 'undefined') {
+      window.doboDesignAPI = {
+        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+        toSVG: () => c.toSVG({ suppressPreamble: true }),
+        getCanvas: () => c,
+      };
+    }
+
+    const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text' || o.type === 'textRelief');
 
     const classify = (a) => {
       if (!a) return 'none';
@@ -378,12 +399,13 @@ export default function CustomizationOverlay({
       }
       return 'none';
     };
+
     const reflectTypo = () => {
       const a = c.getActiveObject(); if (!a) return;
       let first = null;
       if (a.type === 'textRelief') first = a._textChildren?.base || null;
       else if (a.type === 'activeSelection') first = a._objects?.find(x => x.type === 'textRelief')?._textChildren?.base || null;
-      else if (a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') first = a;
+      else if (isTextObj(a)) first = a;
       if (first) {
         setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
         setFontSize(first.fontSize || 60);
@@ -393,13 +415,24 @@ export default function CustomizationOverlay({
         setTextAlign(first.textAlign || 'center');
       }
     };
-    const onSel = () => { const a = c.getActiveObject(); if (suppressSelectionRef.current) { try { if (a?.type==='activeSelection') a.discard(); } catch {} try { c.discardActiveObject(); } catch {} setSelType('none'); c.requestRenderAll(); return; } setSelType(classify(a)); reflectTypo(); };
+
+    const onSel = () => {
+      const cobj = c.getActiveObject();
+      if (suppressSelectionRef.current) {
+        try { if (cobj?.type === 'activeSelection') cobj.discard(); } catch {}
+        try { c.discardActiveObject(); } catch {}
+        setSelType('none'); c.requestRenderAll(); return;
+      }
+      setSelType(classify(cobj));
+      reflectTypo();
+    };
     c.on('selection:created', onSel);
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
+    // Doble click (solo PC) para editar texto
     c.on('mouse:dblclick', (e) => {
-      if (!e || !e.e || e.e.pointerType === 'touch') return;
+      if (!e || !e.e || e.e.pointerType === 'touch') return; // evitar en táctil
       const t = e.target;
       if (t?.type === 'textRelief') startInlineTextEdit(t);
       else if ((t?.type === 'textbox' || t?.type === 'i-text' || t?.type === 'text') && typeof t.enterEditing === 'function') {
@@ -407,39 +440,17 @@ export default function CustomizationOverlay({
       }
     });
 
+    // Historial
     const onAdded = () => pushUndo();
     const onModified = () => pushUndo();
     const onRemoved = () => pushUndo();
     c.on('object:added', onAdded);
     c.on('object:modified', onModified);
     c.on('object:removed', onRemoved);
-
-    // Hidratación: 1) localStorage por productId, 2) initialDesign prop
-    const seed = productId ? loadSessionDesign(productId) : null;
-    const first = seed || initialDesign || null;
-    if (first) {
-      try {
-        isRestoringRef.current = true;
-        c.loadFromJSON(first, () => {
-          (c.getObjects()||[]).forEach(o => { if (o.type==='i-text'||o.type==='textbox') o.editable = true; });
-          c.renderAll();
-          const s = snapshotNow();
-          undoRef.current = s ? [s] : [];
-          redoRef.current = [];
-          lastSnapRef.current = s || null;
-          isRestoringRef.current = false;
-        });
-      } catch {
-        // no-op
-      }
-    } else {
-      const s = snapshotNow();
-      undoRef.current = s ? [s] : [];
-      redoRef.current = [];
-      lastSnapRef.current = s || null;
-    }
+    pushUndo();
 
     setReady(true);
+
     return () => {
       c.off('mouse:dblclick');
       c.off('selection:created', onSel);
@@ -451,7 +462,7 @@ export default function CustomizationOverlay({
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible, productId, initialDesign]);
+  }, [visible]);
 
   /* ------ TouchAction según edición de texto ------ */
   useEffect(() => {
@@ -461,13 +472,13 @@ export default function CustomizationOverlay({
     upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
   }, [textEditing, editing]);
 
-  /* ------ Zoom ------ */
+  /* ------ Mantener --zoom ------ */
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 1;
     stageRef?.current?.style.setProperty('--zoom', String(v));
   }, [zoom, stageRef]);
 
-  /* ------ Asegurar posicionamiento relativo del anchor ------ */
+  /* ------ Layout anchorRef dentro de stageRef ------ */
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el) return;
@@ -476,7 +487,6 @@ export default function CustomizationOverlay({
     return () => { try { el.style.position = prev; } catch {} };
   }, [anchorRef]);
 
-  /* ------ Medición y tamaño del canvas ------ */
   useLayoutEffect(() => {
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
@@ -513,7 +523,7 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, anchorRef]);
 
-  /* ------ Guardar centro para la botonera ------ */
+  /* ------ Posición del menú respecto al anchor (para info) ------ */
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -530,7 +540,7 @@ export default function CustomizationOverlay({
     };
   }, [anchorRef]);
 
-  /* ------ Activar/desactivar edición ------ */
+  /* ------ Activar/desactivar edición según modo ------ */
   useEffect(() => { applyInteractivityByMode(!!editing); }, [editing]);
 
   /* ------ Atajos undo/redo ------ */
@@ -547,7 +557,7 @@ export default function CustomizationOverlay({
     return () => window.removeEventListener('keydown', onKey);
   }, [textEditing]);
 
-  /* ------ Gestos de zoom ------ */
+  /* ------ Zoom PC y gestos pinch en móvil ------ */
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const target = stageRef?.current || c?.upperCanvasEl;
@@ -570,7 +580,8 @@ export default function CustomizationOverlay({
     const park = () => { if (parked || !c) return; saved = { selection: c.selection, skip: c.skipTargetFind }; c.selection = false; c.skipTargetFind = true; parked = true; };
     const unpark = () => { if (!c) return; if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; } parked = false; c.requestRenderAll?.(); };
     const onPD = (e) => {
-      if (textEditing || e.pointerType !== 'touch') return;
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
       if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
       if (!pB && e.pointerId !== pA.id) {
         pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -580,7 +591,8 @@ export default function CustomizationOverlay({
       }
     };
     const onPM = (e) => {
-      if (textEditing || e.pointerType !== 'touch') return;
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
       if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
       if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
       if (pA && pB && startDist) {
@@ -590,7 +602,8 @@ export default function CustomizationOverlay({
       }
     };
     const onPU = (e) => {
-      if (textEditing || e.pointerType !== 'touch') return;
+      if (textEditing) return;
+      if (e.pointerType !== 'touch') return;
       if (pA && e.pointerId === pA.id) pA = null;
       if (pB && e.pointerId === pB.id) pB = null;
       if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
@@ -615,30 +628,38 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, setZoom, textEditing]);
 
-  /* ------ Bloquear clics fuera cuando editing=true ------ */
+  /* ------ Bloquear clics externos mientras se diseña ------ */
   useEffect(() => {
-    const host = anchorRef?.current || stageRef?.current;
+    const hostA = anchorRef?.current;
+    const hostS = stageRef?.current;
+    const host = hostA || hostS;
     if (!host) return;
-    const allowed = () => {
+
+    const getAllowed = () => {
       const c = fabricCanvasRef.current;
       return [overlayRef.current, c?.upperCanvasEl].filter(Boolean);
     };
     const insideAllowed = (e) => {
+      const allowed = getAllowed();
       const path = e.composedPath ? e.composedPath() : [];
-      return path.some(n => allowed().includes(n));
+      return path.some(n => allowed.includes(n));
     };
+
     const stop = (e) => {
       if (!editing) return;
       if (insideAllowed(e)) return;
-      e.preventDefault(); e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
     };
+
     const opts = { capture: true, passive: false };
     const evs = ['pointerdown', 'mousedown', 'touchstart', 'click', 'wheel'];
     evs.forEach(ev => host.addEventListener(ev, stop, opts));
+
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
   }, [editing, anchorRef, stageRef]);
 
-  /* ------------- Edición inline de texto ------------- */
+  /* ------------- Edición inline de texto (doble click PC) ------------- */
   const startInlineTextEdit = (textRelief) => {
     const c = fabricCanvasRef.current; if (!c || !textRelief || textRelief.type !== 'textRelief') return;
     const base = textRelief._textChildren?.base; if (!base) return;
@@ -662,7 +683,9 @@ export default function CustomizationOverlay({
     setTextEditing(true);
 
     setTimeout(() => {
-      try { tb.enterEditing?.(); tb.hiddenTextarea?.focus(); } catch {}
+      try { tb.enterEditing?.(); } catch {}
+      try { tb.hiddenTextarea?.focus(); } catch {}
+      setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
     }, 0);
 
     const finish = () => {
@@ -762,7 +785,7 @@ export default function CustomizationOverlay({
     c.discardActiveObject(); c.requestRenderAll(); setSelType('none'); pushUndo();
   };
 
-  /* ------ Texto: aplicar propiedades a selección ------ */
+  /* ------ Aplicar cambios tipográficos a selección ------ */
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -782,7 +805,7 @@ export default function CustomizationOverlay({
     c.requestRenderAll(); pushUndo();
   };
 
-  /* ------ Re-vectorizar imagen al cambiar Detalles/Invertir ------ */
+  /* ------ Re-vectorizar imagen al cambiar detalles/invertir ------ */
   useEffect(() => {
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -795,6 +818,7 @@ export default function CustomizationOverlay({
         if (!imgEl) return;
         const pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
         try { c.remove(obj); } catch {}
+        // Re-procesamos desde el DataURL base con nuevos parámetros
         const tmpImg = new Image(); tmpImg.crossOrigin = 'anonymous';
         tmpImg.onload = () => {
           const vecCanvas = vectorizeToCanvas(tmpImg, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
@@ -826,6 +850,7 @@ export default function CustomizationOverlay({
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
+
     const upd = (obj) => {
       if (obj.type !== 'imageRelief') return;
       obj._reliefOffset = vecOffset;
@@ -844,7 +869,7 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
-  /* ---------------- Overlay Canvas ---------------- */
+  /* ---------------- Overlay Canvas posicionada sobre anchor ---------------- */
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -860,14 +885,20 @@ export default function CustomizationOverlay({
         touchAction: editing ? "none" : "auto",
         overscrollBehavior: "contain",
       }}
-      onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
+      onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
     >
       <canvas
         data-dobo-design="1"
         ref={canvasRef}
         width={overlayBox.w}
         height={overlayBox.h}
-        style={{ width: '100%', height: '100%', display: 'block', background: 'transparent', touchAction: editing ? 'none' : 'auto' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          background: 'transparent',
+          touchAction: editing ? 'none' : 'auto'
+        }}
       />
     </div>
   );
@@ -876,133 +907,250 @@ export default function CustomizationOverlay({
   function Menu() {
     return (
       <div
+        ref={menuRef}
         style={{
-          display: 'flex', flexDirection: 'column', gap: 8,
-          background: 'rgba(253,253,253,0.96)', backdropFilter: 'blur(4px)',
-          border: '1px solid #ddd', borderRadius: 12, padding: '10px 12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)', width: 'auto', maxWidth: '94vw', fontSize: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          background: 'rgba(253, 253, 253, 0.92)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          border: '1px solid #ddd',
+          borderRadius: 12,
+          padding: '10px 12px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          width: 'auto',
+          maxWidth: '94vw',
+          fontSize: 12,
           userSelect: 'none'
         }}
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* Historial + Zoom + Modos */}
+        {/* LÍNEA 1: Historial + Zoom + Modos */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Undo / Redo */}
           <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
-            <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={doUndo} disabled={!canUndo()} title="Deshacer">↶</button>
-            <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={doRedo} disabled={!canRedo()} title="Rehacer">↷</button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={doUndo}
+              disabled={!canUndo()}
+              title="Deshacer (Ctrl/Cmd+Z)"
+            >↶</button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={doRedo}
+              disabled={!canRedo()}
+              title="Rehacer (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
+            >↷</button>
           </div>
 
           {typeof setZoom === 'function' && (
             <div className="input-group input-group-sm" style={{ width: 180 }}>
               <span className="input-group-text">Zoom</span>
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center" value={`${Math.round((zoom || 1) * 100)}%`} />
-              <button type="button" className="btn btn-outline-secondary" onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
+              <button type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
+              <input type="text" readOnly className="form-control form-control-sm text-center"
+                value={`${Math.round((zoom || 1) * 100)}%`} />
+              <button type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
             </div>
           )}
 
-          <button type="button" className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()} onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => { suppressSelectionRef.current = true; setEditing(false); setTimeout(()=>{ suppressSelectionRef.current = false; }, 120); }}
-            style={{ minWidth: '16ch' }}>
+          <button
+            type="button"
+            className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => { suppressSelectionRef.current = true; setEditing(false); setTimeout(()=>{ suppressSelectionRef.current = false; }, 150); }}
+            style={{ minWidth: '16ch' }}
+          >
             Seleccionar Maceta
           </button>
 
-          <button type="button" className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()} onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => { suppressSelectionRef.current = true; setEditing(true); setTimeout(()=>{ suppressSelectionRef.current = false; }, 120); }}
-            style={{ minWidth: '12ch' }}>
+          <button
+            type="button"
+            className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => { suppressSelectionRef.current = true; setEditing(true); setTimeout(()=>{ suppressSelectionRef.current = false; }, 150); }}
+            style={{ minWidth: '12ch' }}
+          >
             Diseñar
           </button>
         </div>
 
-        {/* Acciones */}
+        {/* LÍNEA 2: Acciones básicas */}
         {editing && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={addText} disabled={!ready}>+ Texto</button>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => addInputRef.current?.click()} disabled={!ready}>+ Imagen</button>
-            <button type="button" className="btn btn-sm btn-outline-danger" onPointerDown={(e)=>e.stopPropagation()} onClick={onDelete} disabled={!ready || selType === 'none'}>Borrar</button>
+            <button type="button" className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={addText}
+              disabled={!ready}
+            >
+              + Texto
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => addInputRef.current?.click()}
+              disabled={!ready}
+            >
+              + Imagen
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={onDelete}
+              disabled={!ready || selType === 'none'}
+              title="Eliminar seleccionado"
+            >
+              Borrar
+            </button>
           </div>
         )}
 
-        {/* Propiedades por tipo */}
-        {editing && selType === 'text' && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-              <span className="input-group-text">Fuente</span>
-              <select className="form-select form-select-sm" value={fontFamily}
-                onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                onPointerDown={(e)=>e.stopPropagation()}>
-                {FONT_OPTIONS.map(f => (<option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>))}
-              </select>
-            </div>
+        {/* LÍNEA 3: Propiedades por tipo */}
+        {editing && (
+          <>
+            {selType === 'text' && (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+                  <span className="input-group-text">Fuente</span>
+                  <select
+                    className="form-select form-select-sm"
+                    value={fontFamily}
+                    onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                  >
+                    {FONT_OPTIONS.map(f => (
+                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-              <button type="button" className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}>B</button>
-              <button type="button" className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}>I</button>
-              <button type="button" className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}>U</button>
-            </div>
+                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                  <button
+                    type="button"
+                    className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}
+                  >
+                    I
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
+                  >
+                    U
+                  </button>
+                </div>
 
-            <div className="input-group input-group-sm" style={{ width: 160 }}>
-              <span className="input-group-text">Tamaño</span>
-              <input type="number" className="form-control form-control-sm" min={8} max={200} step={1} value={fontSize}
-                onPointerDown={(e)=>e.stopPropagation()}
-                onChange={(e) => { const v = clamp(parseInt(e.target.value || '0', 10), 8, 200); setFontSize(v); applyToSelection(o => o.set({ fontSize: v })); }} />
-            </div>
+                <div className="input-group input-group-sm" style={{ width: 160 }}>
+                  <span className="input-group-text">Tamaño</span>
+                  <input
+                    type="number"
+                    className="form-control form-control-sm"
+                    min={8}
+                    max={200}
+                    step={1}
+                    value={fontSize}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onChange={(e) => {
+                      const v = clamp(parseInt(e.target.value || '0', 10), 8, 200);
+                      setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                    }}
+                  />
+                </div>
 
-            <div className="btn-group dropup">
-              <button type="button" className="btn btn-outline-secondary btn-sm" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setShowAlignMenu(v => !v)}>
-                {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
-              </button>
-              {showAlignMenu && (
-                <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
-                  {['left','center','right','justify'].map(a => (
-                    <li key={a}>
-                      <button type="button" className={`dropdown-item ${textAlign === a ? 'active' : ''}`} onPointerDown={(e)=>e.stopPropagation()}
-                        onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}>
-                        {a}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
+                <div className="btn-group dropup">
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    onClick={() => setShowAlignMenu(v => !v)}
+                  >
+                    {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
+                  </button>
+                  {showAlignMenu && (
+                    <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
+                      {['left','center','right','justify'].map(a => (
+                        <li key={a}>
+                          <button
+                            type="button"
+                            className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
+                            onPointerDown={(e)=>e.stopPropagation()}
+                            onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
+                          >
+                            {a}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
-        {editing && selType === 'image' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <div className="input-group input-group-sm" style={{ width: 230 }}>
-              <span className="input-group-text">Detalles</span>
-              <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-              <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
-            </div>
+            {selType === 'image' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div className="input-group input-group-sm" style={{ width: 230 }}>
+                  <span className="input-group-text">Detalles</span>
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
+                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
+                </div>
 
-            <div className="input-group input-group-sm" style={{ width: 190 }}>
-              <span className="input-group-text">Profundidad</span>
-              <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
-              <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
-            </div>
+                <div className="input-group input-group-sm" style={{ width: 190 }}>
+                  <span className="input-group-text">Profundidad</span>
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
+                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
+                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
+                </div>
 
-            <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-              <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
-              <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
-            </div>
-          </div>
+                <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
+                  <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
+                  <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Inputs ocultos */}
-        <input ref={addInputRef} type="file" accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }} style={{ display: 'none' }} />
-        <input ref={replaceInputRef} type="file" accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }} style={{ display: 'none' }} />
+        <input
+          ref={addInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }}
+        />
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }}
+        />
       </div>
     );
   }
@@ -1010,8 +1158,11 @@ export default function CustomizationOverlay({
   /* ---------------- Render ---------------- */
   return (
     <>
+      {/* Overlay dentro del stage, posicionado sobre anchor */}
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-      {createPortal(
+
+      {/* Menú fijo centrado abajo (zIndex altísimo) */}
+      {mounted ? createPortal(
         <div
           style={{
             position: 'fixed',
@@ -1029,17 +1180,8 @@ export default function CustomizationOverlay({
             <Menu />
           </div>
         </div>,
-        typeof document !== 'undefined' ? document.body : (stageRef?.current || anchorRef?.current)
-      )}
+        document.body
+      ) : null}
     </>
   );
 }
-<CustomizationOverlay
-  stageRef={stageRef}
-  anchorRef={anchorRef}
-  productId={product?.id}
-  initialDesign={null}   // o JSON desde tu backend si lo tienes
-  zoom={zoom}
-  setZoom={setZoom}
-/>
-
