@@ -1,16 +1,19 @@
 // components/CustomizationOverlay.js
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, {
+  useEffect, useLayoutEffect, useRef, useState,
+} from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
+import { saveSessionDesign } from '../lib/designStore';
 
 /**
  * ===========================================
  * CustomizationOverlay
  * - Doble click para editar texto (solo PC)
  * - Historial undo/redo robusto (JSON snapshots)
- * - Objetos “relief” 100% serializables (texto e imagen)
- * - Sin parpadeos tras undo/redo (render forzado)
- * - Menú fijo visible con zIndex alto
+ * - Objetos “relief” serializables (texto e imagen)
+ * - Menú fijo con zIndex alto
+ * - Persistencia opcional vía saveSessionDesign(productId, json, token)
  * ===========================================
  */
 
@@ -251,6 +254,11 @@ export default function CustomizationOverlay({
   visible = true,
   zoom = 1,
   setZoom,
+  // NUEVO: opcionales para persistencia externa e hidratación
+  initialDesign = null,
+  productId = null,
+  customerAccessToken = '',
+  onDesignChanged = null,
 }) {
   /* ------ Refs y estado ------ */
   const canvasRef = useRef(null);
@@ -286,26 +294,51 @@ export default function CustomizationOverlay({
   const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
   const [vecBias, setVecBias] = useState(0);         // -60..+60
 
-  // Historial simple (stacks JSON)
+  // Historial (stacks JSON)
   const undoRef = useRef([]);
   const redoRef = useRef([]);
   const isRestoringRef = useRef(false);
   const lastSnapRef = useRef(null);
+  const saveTimerRef = useRef(null);
 
   /* ------ Helpers historial ------ */
   const snapshotNow = () => {
     const c = fabricCanvasRef.current; if (!c) return null;
     try { return JSON.stringify(c.toJSON()); } catch { return null; }
   };
+
+  const persistIfConfigured = () => {
+    if (!productId) return;
+    const jsonStr = snapshotNow();
+    if (!jsonStr) return;
+    try {
+      const json = JSON.parse(jsonStr);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        saveSessionDesign(productId, json, customerAccessToken);
+      }, 600);
+    } catch {}
+  };
+
+  const notifyExternal = () => {
+    if (typeof onDesignChanged === 'function') {
+      try { onDesignChanged(); } catch {}
+    }
+  };
+
   const pushUndo = () => {
     if (isRestoringRef.current) return;
     const s = snapshotNow();
     if (!s || s === lastSnapRef.current) return;
     undoRef.current.push(s);
+    if (undoRef.current.length > 80) undoRef.current.shift();
     redoRef.current = [];
     lastSnapRef.current = s;
+    persistIfConfigured();
+    notifyExternal();
   };
-  const canUndo = () => undoRef.current.length > 0;
+
+  const canUndo = () => undoRef.current.length > 1; // al menos un estado previo real
   const canRedo = () => redoRef.current.length > 0;
 
   const applyInteractivityByMode = (on) => {
@@ -340,24 +373,30 @@ export default function CustomizationOverlay({
     const c = fabricCanvasRef.current; if (!c || !s) return;
     isRestoringRef.current = true;
     c.loadFromJSON(JSON.parse(s), () => {
-      // Asegura edición tras undo/redo
       applyInteractivityByMode(editing);
-      // Forzar repintado para evitar “vacío hasta clic”
-      (c.getObjects() || []).forEach(o => o.dirty = true);
+      (c.getObjects() || []).forEach(o => {
+        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+        o.dirty = true;
+      });
       c.discardActiveObject(); c.requestRenderAll(); c.calcOffset?.();
       setTimeout(() => { c.requestRenderAll?.(); }, 0);
       setSelType('none');
       lastSnapRef.current = snapshotNow();
       isRestoringRef.current = false;
+      notifyExternal();
     });
   };
+
   const doUndo = () => {
     const c = fabricCanvasRef.current; if (!c || !canUndo()) return;
     const curr = snapshotNow();
-    const prev = undoRef.current.pop();
+    // objetivo = penúltimo (tope después del pop del actual)
+    undoRef.current.pop(); // descarta el estado actual en tope
+    const target = undoRef.current[undoRef.current.length - 1];
     if (curr) redoRef.current.push(curr);
-    restoreSnapshot(prev);
+    restoreSnapshot(target);
   };
+
   const doRedo = () => {
     const c = fabricCanvasRef.current; if (!c || !canRedo()) return;
     const curr = snapshotNow();
@@ -432,7 +471,7 @@ export default function CustomizationOverlay({
 
     // Doble click (solo PC) para editar texto
     c.on('mouse:dblclick', (e) => {
-      if (!e || !e.e || e.e.pointerType === 'touch') return; // evitar en táctil
+      if (!e || !e.e || e.e.pointerType === 'touch') return;
       const t = e.target;
       if (t?.type === 'textRelief') startInlineTextEdit(t);
       else if ((t?.type === 'textbox' || t?.type === 'i-text' || t?.type === 'text') && typeof t.enterEditing === 'function') {
@@ -447,8 +486,34 @@ export default function CustomizationOverlay({
     c.on('object:added', onAdded);
     c.on('object:modified', onModified);
     c.on('object:removed', onRemoved);
-    pushUndo();
 
+    // Carga inicial si viene initialDesign
+    const initFirstState = () => {
+      if (initialDesign) {
+        try {
+          isRestoringRef.current = true;
+          c.loadFromJSON(initialDesign, () => {
+            (c.getObjects() || []).forEach(o => {
+              if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+            });
+            c.renderAll();
+            const s = snapshotNow();
+            undoRef.current = s ? [s] : [];
+            redoRef.current = [];
+            lastSnapRef.current = s || null;
+            isRestoringRef.current = false;
+            notifyExternal();
+          });
+          return;
+        } catch {}
+      }
+      const s = snapshotNow();
+      undoRef.current = s ? [s] : [];
+      redoRef.current = [];
+      lastSnapRef.current = s || null;
+      notifyExternal();
+    };
+    initFirstState();
     setReady(true);
 
     return () => {
@@ -462,7 +527,7 @@ export default function CustomizationOverlay({
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
+  }, [visible, initialDesign]);
 
   /* ------ TouchAction según edición de texto ------ */
   useEffect(() => {
@@ -523,7 +588,7 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, anchorRef]);
 
-  /* ------ Posición del menú respecto al anchor (para info) ------ */
+  /* ------ Posición del menú respecto al anchor ------ */
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -818,7 +883,6 @@ export default function CustomizationOverlay({
         if (!imgEl) return;
         const pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
         try { c.remove(obj); } catch {}
-        // Re-procesamos desde el DataURL base con nuevos parámetros
         const tmpImg = new Image(); tmpImg.crossOrigin = 'anonymous';
         tmpImg.onload = () => {
           const vecCanvas = vectorizeToCanvas(tmpImg, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
