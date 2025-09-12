@@ -611,7 +611,10 @@ function Home() {
             style={{
               width: "500px",
               height: "650px",
-              background: "linear-gradient(135deg, #f8f9fa 0%, #ebefe9ff 100%)",
+              backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat"
               border: "3px dashed #6c757d",
               borderRadius: "20px",
               display: "flex",
