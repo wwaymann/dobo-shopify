@@ -1338,3 +1338,4 @@ return (
   </>
 );
 }
+export default CustomizationOverlay;
