@@ -409,18 +409,19 @@ useEffect(() => {
     canRedo: !!historyRef.current?.canRedo(),
   });
 
-  const recordChange = (() => {
-    let t = null;
-    return () => {
-      if (fabricCanvasRef.current?._skipHistory) return;
-      clearTimeout(t);
-      t = setTimeout(() => {
-        const s = getSnapshot();
-        if (s && historyRef.current) historyRef.current.push(s);
-        refreshCaps();
-      }, 160);
-    };
-  })();
+const recordChange = (() => {
+  let t = null;
+  return () => {
+    if (!ready || loadingAssetRef.current || fabricCanvasRef.current?._skipHistory) return;
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const s = getSnapshot();
+      if (s && historyRef.current) historyRef.current.push(s);
+      refreshCaps();
+    }, 160);
+  };
+})();
+
 
 
   // ===== Inicializar Fabric =====
@@ -439,8 +440,15 @@ useEffect(() => {
 
     // Historial
     historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
+
+  // Exponer flags opcionales para cargas de assets
+  if (typeof window !== 'undefined') {
+    window.__DOBO_BEGIN_ASSET__ = () => { loadingAssetRef.current = true; };
+    window.__DOBO_END_ASSET__ = () => { loadingAssetRef.current = false; };
+  }
+
     // Primer snapshot tras primer render estable
-    c.once('after:render', () => {
+    c.once('after:render', () => { setTimeout(() => {
       const s = getSnapshot(); if (s) historyRef.current.push(s);
       refreshCaps();
     });
@@ -1299,32 +1307,33 @@ useEffect(() => {
   }
 
   // ===== Render =====
-  return (
-    <>
-      {/* Overlay dentro de la maceta */}
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+return (
+  <>
+    {/* Overlay dentro de la maceta */}
+    {stageRef?.current ? createPortal(<OverlayCanvas />, stageRef.current) : null}
 
-      {/* Menú fijo abajo */}
-      {typeof document !== 'undefined' ? createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
-            bottom: 8,
-            transform: 'translateX(-50%)',
-            zIndex: Z_MENU,
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            pointerEvents: 'none'
-          }}
-        >
-          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
-            <Menu />
-          </div>
-        </div>,
-        document.body
-      ) : null}
-    </>
-  );
-}
+    {/* Menú fijo abajo */}
+    {typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: anchorRect ? anchorRect.left + anchorRect.width / 2 : '50%',
+              bottom: 8,
+              transform: 'translateX(-50%)',
+              zIndex: Z_MENU,
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
+              <Menu />
+            </div>
+          </div>,
+          document.body
+        )
+      : null}
+  </>
+);
