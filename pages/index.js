@@ -702,7 +702,8 @@ function Home() {
             </div>
           </div>
 
-        
+       
+        </div>
 
         {/* Overlay de edición (restaurado) */}
         <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
@@ -744,7 +745,7 @@ function Home() {
                 </div>
               )}
 
-    {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
+   {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
           {accessories && accessories.length > 0 && (
             <div className="mb-4 mt-4">
               <h5>Accesorios</h5>
@@ -804,7 +805,7 @@ function Home() {
                 })}
               </div>
             </div>
-)}
+          )}
 
               {/* Cantidad + botones */}
               <div className="d-flex flex-column align-items-center mb-5">
