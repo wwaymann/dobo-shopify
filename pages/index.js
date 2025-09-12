@@ -804,7 +804,7 @@ function Home() {
                 })}
               </div>
             </div>
-
+)}
 
               {/* Cantidad + botones */}
               <div className="d-flex flex-column align-items-center mb-5">
