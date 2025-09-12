@@ -702,7 +702,49 @@ function Home() {
             </div>
           </div>
 
-          {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
+        
+
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+
+        {/* Panel derecho */}
+        <div className="col-lg-5 col-md-8 col-12">
+          {pots.length > 0 && plants.length > 0 && (
+            <div className="text-center">
+              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
+                {totalBase > totalNow && (
+                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
+                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
+                  </p>
+                )}
+                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
+              </div>
+
+              {/* SOLO color */}
+              {colorOptions.length > 0 && (
+                <div className="mb-4">
+                  <h5>Color</h5>
+                  <div className="d-flex justify-content-center gap-3 flex-wrap">
+                    {colorOptions.map((color, index) => (
+                      <div
+                        key={index}
+                        onClick={() => setSelectedColor(color)}
+                        title={color}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: "50%",
+                          backgroundColor: "#ccc",
+                          border: selectedColor === color ? "3px solid black" : "1px solid #ccc",
+                          cursor: "pointer",
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+    {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
           {accessories && accessories.length > 0 && (
             <div className="mb-4 mt-4">
               <h5>Accesorios</h5>
@@ -764,46 +806,6 @@ function Home() {
             </div>
           )}
         </div>
-
-        {/* Overlay de edición (restaurado) */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
-
-        {/* Panel derecho */}
-        <div className="col-lg-5 col-md-8 col-12">
-          {pots.length > 0 && plants.length > 0 && (
-            <div className="text-center">
-              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
-                {totalBase > totalNow && (
-                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
-                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
-                  </p>
-                )}
-                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
-              </div>
-
-              {/* SOLO color */}
-              {colorOptions.length > 0 && (
-                <div className="mb-4">
-                  <h5>Color</h5>
-                  <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    {colorOptions.map((color, index) => (
-                      <div
-                        key={index}
-                        onClick={() => setSelectedColor(color)}
-                        title={color}
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: "50%",
-                          backgroundColor: "#ccc",
-                          border: selectedColor === color ? "3px solid black" : "1px solid #ccc",
-                          cursor: "pointer",
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Cantidad + botones */}
               <div className="d-flex flex-column align-items-center mb-5">
