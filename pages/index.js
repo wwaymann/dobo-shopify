@@ -4,6 +4,20 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
+import { useMemo } from "react"; // ya importaste useMemo? si no, agrégalo arriba
+
+const colorToVariant = useMemo(() => {
+  const pot = pots[selectedPotIndex];
+  const m = {};
+  if (pot && Array.isArray(pot.variants)) {
+    const lower = s => String(s||'').toLowerCase();
+    pot.variants.forEach(v => {
+      const o = (v.selectedOptions||[]).find(x => lower(x.name)==='color');
+      if (o) m[o.value] = v;
+    });
+  }
+  return m;
+}, [pots, selectedPotIndex]);
 
 function ControlesPublicar() {
   const onPublish = async () => {
@@ -218,19 +232,34 @@ function Home() {
   };
 
 const COLOR_MAP = {
-  negro: '#000000', blanco: '#ffffff', gris: '#808080',
-  plata: '#c0c0c0', dorado: '#d4af37',
-  rojo: '#ff0000', azul: '#0066ff', verde: '#00a65a',
-  amarillo: '#ffd400', naranjo: '#ff7a00', morado: '#7d3cff',
+  negro:"#000000", blanco:"#ffffff", gris:"#808080", "gris claro":"#bfbfbf", "gris oscuro":"#4a4a4a", plomo:"#9ea2a2",
+  plata:"#c0c0c0", dorado:"#d4af37", cobre:"#b87333",
+  rojo:"#ff0000", burdeo:"#6d071a", vino:"#7b001c", rosado:"#ff7aa2", rosa:"#ff7aa2",
+  naranjo:"#ff7a00", naranja:"#ff7a00", amarillo:"#ffd400",
+  verde:"#00a65a", "verde oliva":"#6b8e23", oliva:"#6b8e23", menta:"#3eb489",
+  azul:"#0066ff", celeste:"#4db8ff", turquesa:"#30d5c8",
+  morado:"#7d3cff", lila:"#b57edc", lavanda:"#b497bd",
+  café:"#6f4e37", marrón:"#6f4e37", cafe:"#6f4e37", chocolate:"#4e2a1e",
+  beige:"#d9c6a5", crema:"#f5f0e6", hueso:"#f2efe6",
 };
 
+const _stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+const _norm = raw => _stripAccents(String(raw||'').toLowerCase().trim())
+  .replace(/\s+/g,' ')
+  .replace(/(claro|oscuro|mate|brillante|satinado|metalico|metalic|pastel)\b/g,'$1') // conservar compuestos útiles
+  .trim();
+
 const resolveColor = (opt) => {
-  if (!opt) return '#ccc';
-  const raw = String(opt.hex || opt.color || opt.value || '').trim();
+  const raw = String((opt&&opt.hex) || opt || '').trim();
   if (/^#([0-9a-f]{3}){1,2}$/i.test(raw)) return raw;
-  const key = raw.toLowerCase();
-  return COLOR_MAP[key] || '#ccc';
+  const key = _norm(raw);
+  if (COLOR_MAP[key]) return COLOR_MAP[key];
+  // Intenta separar compuestos "verde oliva", "gris claro", etc.
+  const parts = key.split(/[\/,-]/).map(s=>s.trim());
+  for (const p of parts) if (COLOR_MAP[p]) return COLOR_MAP[p];
+  return '#ccc'; // fallback
 };
+
 
   
   useEffect(() => {
