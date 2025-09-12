@@ -1298,7 +1298,7 @@ useEffect(() => {
   return (
     <>
       {/* Overlay dentro de la maceta */}
-      {stageRef?.current ? createPortal(<OverlayCanvas />, stageRef.current) : null}
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
       {/* Menú fijo abajo */}
       {typeof document !== 'undefined' ? createPortal(
