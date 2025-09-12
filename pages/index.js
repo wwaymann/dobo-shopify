@@ -217,6 +217,22 @@ function Home() {
     (x > rect.width / 2 ? handlers.next : handlers.prev)();
   };
 
+const COLOR_MAP = {
+  negro: '#000000', blanco: '#ffffff', gris: '#808080',
+  plata: '#c0c0c0', dorado: '#d4af37',
+  rojo: '#ff0000', azul: '#0066ff', verde: '#00a65a',
+  amarillo: '#ffd400', naranjo: '#ff7a00', morado: '#7d3cff',
+};
+
+const resolveColor = (opt) => {
+  if (!opt) return '#ccc';
+  const raw = String(opt.hex || opt.color || opt.value || '').trim();
+  if (/^#([0-9a-f]{3}){1,2}$/i.test(raw)) return raw;
+  const key = raw.toLowerCase();
+  return COLOR_MAP[key] || '#ccc';
+};
+
+  
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
