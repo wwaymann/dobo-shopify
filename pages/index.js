@@ -614,7 +614,7 @@ function Home() {
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
-              backgroundRepeat: "no-repeat"
+              backgroundRepeat: "no-repeat",
               border: "3px dashed #6c757d",
               borderRadius: "20px",
               display: "flex",
