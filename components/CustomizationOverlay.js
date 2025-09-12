@@ -457,7 +457,7 @@ useEffect(() => {
     fabricCanvasRef.current = c;
 
     // ===== Delimitar área: margen 40 px por lado (ajustable) =====
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 80, h: c.getHeight() - 80 });
+    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
 
     // Overlay visual opcional
     const SHOW_BOUNDS = false;
