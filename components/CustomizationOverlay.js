@@ -486,7 +486,7 @@ useEffect(() => {
     // Reaccionar a cambios de tamaño
     const __bounds_ro = new ResizeObserver(() => {
       const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 100, w: cw - 10, h: ch - 10 });
+      setDesignBounds({ x: 10, y: 10, w: cw - 10, h: ch - 10 });
       if (__boundsOverlay && designBoundsRef.current) {
         const { x, y, w, h } = designBoundsRef.current;
         __boundsOverlay.set({ left: x, top: y, width: w, height: h });
