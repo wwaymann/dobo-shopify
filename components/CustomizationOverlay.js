@@ -40,7 +40,9 @@ export default function CustomizationOverlay({
   const menuRef = useRef(null);
 
   
-  const historyRef = useRef(null);
+  
+  const designBoundsRef = useRef(null);
+const historyRef = useRef(null);
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
 const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
@@ -420,6 +422,26 @@ useEffect(() => {
   })();
 
 
+  // ===== Área de trabajo (bounds) =====
+  const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
+
+  const clampObjectToBounds = (obj) => {
+    const b = designBoundsRef.current; if (!b || !obj) return;
+    obj.setCoords();
+    const r = obj.getBoundingRect(true);
+    let dx = 0, dy = 0;
+    if (r.left < b.x) dx = b.x - r.left;
+    if (r.top  < b.y) dy = b.y - r.top;
+    if (r.left + r.width  > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
+    if (r.top  + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top  + r.height);
+    if (dx || dy) {
+      obj.left = (obj.left ?? 0) + dx;
+      obj.top  = (obj.top  ?? 0) + dy;
+      obj.setCoords();
+    }
+  };
+
+
   // ===== Inicializar Fabric =====
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -433,6 +455,46 @@ useEffect(() => {
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
+
+    // ===== Delimitar área: margen 40 px por lado (ajustable) =====
+    setDesignBounds({ x: 40, y: 40, w: c.getWidth() - 80, h: c.getHeight() - 80 });
+
+    // Overlay visual opcional
+    const SHOW_BOUNDS = false;
+    let __boundsOverlay = null;
+    if (SHOW_BOUNDS && designBoundsRef.current) {
+      const { x, y, w, h } = designBoundsRef.current;
+      __boundsOverlay = new fabric.Rect({
+        left: x, top: y, width: w, height: h,
+        fill: 'rgba(0,0,0,0)',
+        stroke: '#999', strokeDashArray: [5,5],
+        selectable: false, evented: false, excludeFromExport: true
+      });
+      c.add(__boundsOverlay); __boundsOverlay.sendToBack();
+    }
+
+    // Enforcers
+    const __bounds_onMove   = (e) => clampObjectToBounds(e.target);
+    const __bounds_onScale  = (e) => clampObjectToBounds(e.target);
+    const __bounds_onRotate = (e) => clampObjectToBounds(e.target);
+    const __bounds_onAdded  = (e) => clampObjectToBounds(e.target);
+    c.on('object:moving',   __bounds_onMove);
+    c.on('object:scaling',  __bounds_onScale);
+    c.on('object:rotating', __bounds_onRotate);
+    c.on('object:added',    __bounds_onAdded);
+
+    // Reaccionar a cambios de tamaño
+    const __bounds_ro = new ResizeObserver(() => {
+      const cw = c.getWidth(), ch = c.getHeight();
+      setDesignBounds({ x: 40, y: 40, w: cw - 80, h: ch - 80 });
+      if (__boundsOverlay && designBoundsRef.current) {
+        const { x, y, w, h } = designBoundsRef.current;
+        __boundsOverlay.set({ left: x, top: y, width: w, height: h });
+        __boundsOverlay.setCoords(); c.requestRenderAll();
+      }
+      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
+    });
+    __bounds_ro.observe(c.upperCanvasEl);
 
     // Historial
     historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
@@ -533,6 +595,13 @@ useEffect(() => {
       c.off('object:modified', __hist_onModified);
       c.off('object:removed', __hist_onRemoved);
       c.off('path:created', __hist_onPath);
+      
+      c.off('object:moving',   __bounds_onMove);
+      c.off('object:scaling',  __bounds_onScale);
+      c.off('object:rotating', __bounds_onRotate);
+      c.off('object:added',    __bounds_onAdded);
+      try { __bounds_ro.disconnect(); } catch {}
+      if (__boundsOverlay) { try { c.remove(__boundsOverlay); } catch {} }
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
