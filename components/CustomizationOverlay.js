@@ -439,19 +439,20 @@ useEffect(() => {
 
     // Historial
     historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
-    // Primer snapshot luego del primer render estable
+    // Primer snapshot tras primer render estable
     c.once('after:render', () => {
       const s = getSnapshot(); if (s) historyRef.current.push(s);
       refreshCaps();
     });
-    const onAdded = () => recordChange();
-    const onModified = () => recordChange();
-    const onRemoved = () => recordChange();
-    const onPath = () => recordChange();
-    c.on('object:added', onAdded);
-    c.on('object:modified', onModified);
-    c.on('object:removed', onRemoved);
-    c.on('path:created', onPath);
+    const __hist_onAdded = () => recordChange();
+    const __hist_onModified = () => recordChange();
+    const __hist_onRemoved = () => recordChange();
+    const __hist_onPath = () => recordChange();
+    c.on('object:added', __hist_onAdded);
+    c.on('object:modified', __hist_onModified);
+    c.on('object:removed', __hist_onRemoved);
+    c.on('path:created', __hist_onPath);
+
 
     // API mínima
     if (typeof window !== 'undefined') {
@@ -532,10 +533,10 @@ useEffect(() => {
       c.off('selection:created', onSel);
       c.off('selection:updated', onSel);
       c.off('selection:cleared');
-      c.off('object:added', onAdded);
-      c.off('object:modified', onModified);
-      c.off('object:removed', onRemoved);
-      c.off('path:created', onPath);
+      c.off('object:added', __hist_onAdded);
+      c.off('object:modified', __hist_onModified);
+      c.off('object:removed', __hist_onRemoved);
+      c.off('path:created', __hist_onPath);
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
@@ -1089,30 +1090,19 @@ useEffect(() => {
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-                  <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onMouseDown={(e)=>e.preventDefault()}
+        {/* LÍNEA 1: Zoom + modos */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+            <button type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
               onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canUndo}
-              title="Atrás (Ctrl+Z)"
-              aria-label="Atrás"
-            >←</button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onMouseDown={(e)=>e.preventDefault()}
+              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás">←</button>
+            <button type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
               onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canRedo}
-              title="Adelante (Ctrl+Shift+Z)"
-              aria-label="Adelante"
-            >→</button>
+              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante">→</button>
           </div>
-
-          {typeof setZoom === 'function' && (
+{typeof setZoom === 'function' && (
             <div className="input-group input-group-sm" style={{ width: 180 }}>
               <span className="input-group-text">Zoom</span>
               <button type="button" className="btn btn-outline-secondary"
