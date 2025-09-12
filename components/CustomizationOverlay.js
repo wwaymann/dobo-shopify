@@ -457,7 +457,7 @@ useEffect(() => {
     fabricCanvasRef.current = c;
 
     // ===== Delimitar área: margen 40 px por lado (ajustable) =====
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 100 });
+    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 100, h: c.getHeight() - 10 });
 
     // Overlay visual opcional
     const SHOW_BOUNDS = false;
@@ -486,7 +486,7 @@ useEffect(() => {
     // Reaccionar a cambios de tamaño
     const __bounds_ro = new ResizeObserver(() => {
       const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 10, w: cw - 10, h: ch - 100 });
+      setDesignBounds({ x: 10, y: 10, w: cw - 100, h: ch - 10 });
       if (__boundsOverlay && designBoundsRef.current) {
         const { x, y, w, h } = designBoundsRef.current;
         __boundsOverlay.set({ left: x, top: y, width: w, height: h });
