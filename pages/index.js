@@ -752,7 +752,7 @@ const resolveColor = (opt) => {
                           height: 40,
                           borderRadius: "50%",
                           backgroundColor: "#ccc",
-                          border: selectedColor === color ? "3px solid black" : "1px solid #ccc",
+                          order: selectedColor === color ? "3px solid #000" : (resolveColor(color).toLowerCase()==="#ffffff" ? "1px solid #999" : "1px solid #ccc"),
                           cursor: "pointer",
                         }}
                       />
