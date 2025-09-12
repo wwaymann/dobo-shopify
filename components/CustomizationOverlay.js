@@ -460,7 +460,7 @@ useEffect(() => {
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
 
     // Overlay visual opcional
-    const SHOW_BOUNDS = true;
+    const SHOW_BOUNDS = false;
     let __boundsOverlay = null;
     if (SHOW_BOUNDS && designBoundsRef.current) {
       const { x, y, w, h } = designBoundsRef.current;
