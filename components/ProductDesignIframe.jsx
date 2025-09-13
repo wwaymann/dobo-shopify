@@ -3,6 +3,7 @@ export default function ProductDesignIframe({ designJsonUrl, designPreviewUrl, d
   const src = designJsonUrl
     ? `/app/embed?designUrl=${encodeURIComponent(designJsonUrl)}&preview=${encodeURIComponent(designPreviewUrl || '')}&designId=${encodeURIComponent(designId || '')}`
     : `/app/embed`;
+
   return (
     <div className="ratio ratio-16x9" style={{ minHeight: height }}>
       <iframe
