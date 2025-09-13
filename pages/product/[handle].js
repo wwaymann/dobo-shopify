@@ -1,39 +1,12 @@
-import { useRouter } from 'next/router';
-import { useEffect } from 'react';
-import { loadSessionDesign, saveSessionDesign } from '../../lib/designStore';
+import ProductDesignIframe from '@/components/ProductDesignIframe';
 
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    const token = window.localStorage.getItem('customerAccessToken') || ''; // o desde tu auth
-    const restored = await loadSessionDesign(product.id, token);
-    if (!cancelled && restored) {
-      // hidrata tu editor
-      editorRef.current?.loadFromJSON(restored);
-    }
-  })();
-  return () => { cancelled = true; };
-}, [product.id]);
+// tras obtener `product`:
+const designJsonUrl = product?.metafield?.value ?? product?.metafields?.designJsonUrl?.value;
+const previewUrl    = product?.metafield_designPreviewUrl?.value ?? product?.metafields?.designPreviewUrl?.value;
+const designId      = product?.metafield_designId?.value ?? product?.metafields?.designId?.value;
 
-// Ejemplo de guardado tras cambios
-const onDesignChange = (nextState) => {
-  const token = window.localStorage.getItem('customerAccessToken') || '';
-  saveSessionDesign(product.id, nextState, token);
-};
-
-
-export default function ProductPage() {
-  const { query } = useRouter();
-  useEffect(() => {
-    if (!query.handle) return;
-    (async () => {
-      const r = await fetch(`/api/design/load?handle=${encodeURIComponent(query.handle)}`, { cache: 'no-store' });
-      const d = await r.json();
-      if (d?.designJSON?.json && window.doboDesignAPI?.applyDesignSnapshot) {
-        window.doboDesignAPI.applyDesignSnapshot(d.designJSON);
-      }
-    })();
-  }, [query.handle]);
-
-  return (/* tu render */ null);
-}
+<ProductDesignIframe
+  designJsonUrl={designJsonUrl}
+  designPreviewUrl={previewUrl}
+  designId={designId}
+/>
