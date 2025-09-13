@@ -1,3 +1,4 @@
+// pages/app/embed.js
 import { useEffect, useState } from 'react';
 
 export default function Embed() {
@@ -9,8 +10,7 @@ export default function Embed() {
     if (!designUrl) { setStatus('no-design'); return; }
 
     let cancelled = false;
-
-    async function load() {
+    (async () => {
       try {
         setStatus('fetching');
         const resp = await fetch(designUrl, { cache: 'no-store' });
@@ -23,30 +23,22 @@ export default function Embed() {
           if (cancelled) return;
           const api = window.doboDesignAPI;
           if (api && (api.loadDesignSnapshot || api.importDesignSnapshot || api.loadJSON)) {
-            try {
-              if (api.reset) api.reset();
-              if (api.loadDesignSnapshot) api.loadDesignSnapshot(snapshot);
-              else if (api.importDesignSnapshot) api.importDesignSnapshot(snapshot);
-              else if (api.loadJSON) api.loadJSON(snapshot);
-              setStatus('loaded');
-            } catch (e) {
-              setStatus('api-error');
-            }
+            if (api.reset) api.reset();
+            if (api.loadDesignSnapshot) api.loadDesignSnapshot(snapshot);
+            else if (api.importDesignSnapshot) api.importDesignSnapshot(snapshot);
+            else if (api.loadJSON) api.loadJSON(snapshot);
+            setStatus('loaded');
             return;
           }
           await new Promise(r => setTimeout(r, 200));
         }
         setStatus('api-timeout');
-      } catch (e) {
+      } catch {
         setStatus('error');
       }
-    }
-
-    load();
+    })();
     return () => { cancelled = true; };
   }, []);
 
-  // Renderiza tu UI existente del customizador aquí.
-  // Este archivo no inserta botones nuevos; solo carga el diseño si viene por query.
   return null;
 }
