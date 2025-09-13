@@ -23,20 +23,21 @@ export default function Embed() {
           if (cancelled) return;
           const api = window.doboDesignAPI;
           if (api && (api.loadDesignSnapshot || api.importDesignSnapshot || api.loadJSON)) {
-            if (api.reset) api.reset();
-            if (api.loadDesignSnapshot) api.loadDesignSnapshot(snapshot);
-            else if (api.importDesignSnapshot) api.importDesignSnapshot(snapshot);
-            else if (api.loadJSON) api.loadJSON(snapshot);
-            setStatus('loaded');
+            try {
+              if (api.reset) api.reset();
+              if (api.loadDesignSnapshot) api.loadDesignSnapshot(snapshot);
+              else if (api.importDesignSnapshot) api.importDesignSnapshot(snapshot);
+              else if (api.loadJSON) api.loadJSON(snapshot);
+              setStatus('loaded');
+            } catch { setStatus('api-error'); }
             return;
           }
           await new Promise(r => setTimeout(r, 200));
         }
         setStatus('api-timeout');
-      } catch {
-        setStatus('error');
-      }
+      } catch { setStatus('error'); }
     })();
+
     return () => { cancelled = true; };
   }, []);
 
