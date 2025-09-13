@@ -1,10 +1,8 @@
-import React from 'react';
-
+// components/ProductDesignIframe.jsx
 export default function ProductDesignIframe({ designJsonUrl, designPreviewUrl, designId, height = 640 }) {
   const src = designJsonUrl
     ? `/app/embed?designUrl=${encodeURIComponent(designJsonUrl)}&preview=${encodeURIComponent(designPreviewUrl || '')}&designId=${encodeURIComponent(designId || '')}`
     : `/app/embed`;
-
   return (
     <div className="ratio ratio-16x9" style={{ minHeight: height }}>
       <iframe
