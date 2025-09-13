@@ -1,4 +1,4 @@
-import ProductDesignIframe from '@/components/ProductDesignIframe';
+import ProductDesignIframe from '../../components/ProductDesignIframe'
 
 // tras obtener `product`:
 const designJsonUrl = product?.metafield?.value ?? product?.metafields?.designJsonUrl?.value;
