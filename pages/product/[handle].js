@@ -10,7 +10,7 @@ export default function ProductPage({ product }) {
 
   return (
     <div className="container py-3">
-      {/* Aquí tu UI existente del producto */}
+      {/* Tu UI existente del producto */}
       <ProductDesignIframe
         designJsonUrl={designJsonUrl}
         designPreviewUrl={designPreviewUrl}
@@ -34,9 +34,9 @@ export async function getServerSideProps({ params }) {
         id
         title
         handle
-        designJsonUrl: metafield(namespace:"dobo", key:"designJsonUrl"){ value }
-        designPreviewUrl: metafield(namespace:"dobo", key:"designPreviewUrl"){ value }
-        designId: metafield(namespace:"dobo", key:"designId"){ value }
+        designJsonUrl: metafield(namespace:"dobo", key:"design_json_url"){ value }
+        designPreviewUrl: metafield(namespace:"dobo", key:"design_preview_url"){ value }
+        designId: metafield(namespace:"dobo", key:"design_id"){ value }
       }
     }
   `;
