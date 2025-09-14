@@ -4,6 +4,7 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
+import { useEffect } from "react";
 
 function ControlesPublicar() {
   const onPublish = async () => {
@@ -259,6 +260,42 @@ function Home() {
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
+
+   /* ---------- loader de diseño ---------- */
+  
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const designUrl = params.get("designUrl");
+  if (!designUrl) return;
+
+  let cancelled = false;
+  (async () => {
+    try {
+      const resp = await fetch(designUrl, { cache: "no-store" });
+      if (!resp.ok) return;
+      const payload = await resp.json();
+      const snapshot = payload?.design || payload;
+
+      // Espera a que tu API esté lista
+      for (let i = 0; i < 60 && !cancelled; i++) {
+        const api = window.doboDesignAPI;
+        if (api && (api.loadDesignSnapshot || api.importDesignSnapshot || api.loadJSON)) {
+          try {
+            if (api.reset) api.reset();
+            if (api.loadDesignSnapshot) api.loadDesignSnapshot(snapshot);
+            else if (api.importDesignSnapshot) api.importDesignSnapshot(snapshot);
+            else if (api.loadJSON) api.loadJSON(snapshot);
+          } catch {}
+          break;
+        }
+        await new Promise(r => setTimeout(r, 200));
+      }
+    } catch {}
+  })();
+
+  return () => { cancelled = true; };
+}, []);
+  
   /* ---------- fetch por tamaño y tipo ---------- */
   useEffect(() => {
     let cancelled = false;
