@@ -1,8 +1,11 @@
-// components/ProductDesignIframe.jsx
 export default function ProductDesignIframe({ designJsonUrl, designPreviewUrl, designId, height = 640 }) {
-  const src = designJsonUrl
-    ? `/app/embed?designUrl=${encodeURIComponent(designJsonUrl)}&preview=${encodeURIComponent(designPreviewUrl || '')}&designId=${encodeURIComponent(designId || '')}`
-    : `/app/embed`;
+  const base = '/'; // tu customizador real vive en pages/index.js
+  const has = Boolean(designJsonUrl);
+  const sep = base.includes('?') ? '&' : '?';
+  const qs  = has
+    ? `${sep}designUrl=${encodeURIComponent(designJsonUrl)}&preview=${encodeURIComponent(designPreviewUrl || '')}&designId=${encodeURIComponent(designId || '')}`
+    : '';
+  const src = `${base}${qs}`;
 
   return (
     <div className="ratio ratio-16x9" style={{ minHeight: height }}>
