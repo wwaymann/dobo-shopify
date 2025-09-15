@@ -532,26 +532,68 @@ useEffect(() => {
   }
 }
 
+async function waitDesignerReady(timeout = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const api = window.doboDesignAPI;
+    const ok = api && (api.exportDesignSnapshot || api.exportSnapshot || api.exportJSON || api.toJSON || api.getState);
+    if (ok) return api;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return null;
+}
+
+async function getSnapshot(api) {
+  try {
+    return (
+      api.exportDesignSnapshot?.() ??
+      api.exportSnapshot?.() ??
+      api.exportJSON?.() ??
+      api.toJSON?.() ??
+      api.getState?.()
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function getPreviewDataURL(api) {
+  // usa tu helper existente
+  try {
+    const d = await captureDesignPreview();
+    if (d) return d;
+  } catch {}
+  // fallback directo al canvas
+  const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
+  try { return canvas?.toDataURL ? canvas.toDataURL('image/png') : null; } catch { return null; }
+}
+
 async function publishDesignForVariant(variantId) {
   try {
-    const api = window.doboDesignAPI;
-    const snap = api?.exportDesignSnapshot?.();
-    if (!api || !snap) return { ok:false, error:"no-snapshot" };
+    const api = await waitDesignerReady();
+    if (!api) return { ok:false, error:'designer-not-ready' };
 
-    const dataUrl = await captureDesignPreview();
-    if (!dataUrl) return { ok:false, error:"no-preview" };
+    let snap = await getSnapshot(api);
+    if (!snap && typeof loadLocalDesign === 'function') {
+      // si ya importaste loadLocalDesign desde ../lib/designStore, úsalo
+      snap = loadLocalDesign();
+    }
+    if (!snap) return { ok:false, error:'no-snapshot' };
+
+    const previewDataURL = await getPreviewDataURL(api);
+    if (!previewDataURL) return { ok:false, error:'no-preview' };
 
     const meta = {
-      size: activeSize || "",
-      color: selectedColor || "",
-      plantId: plants?.[selectedPlantIndex]?.id || "",
-      potId: pots?.[selectedPotIndex]?.id || ""
+      size: activeSize || '',
+      color: selectedColor || '',
+      plantId: plants?.[selectedPlantIndex]?.id || '',
+      potId: pots?.[selectedPotIndex]?.id || ''
     };
 
-    const r = await fetch("/api/publish-by-variant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ variantId, previewDataURL: dataUrl, design: snap, meta })
+    const r = await fetch('/api/publish-by-variant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variantId, previewDataURL, design: snap, meta })
     });
     const j = await r.json();
     return j;
@@ -559,6 +601,7 @@ async function publishDesignForVariant(variantId) {
     return { ok:false, error:String(e?.message||e) };
   }
 }
+
 
   
   function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
