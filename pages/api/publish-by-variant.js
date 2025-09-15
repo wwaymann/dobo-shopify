@@ -1,5 +1,8 @@
 // pages/api/publish-by-variant.js
-export const config = { runtime: 'nodejs' };
+export const config = {
+  runtime: 'nodejs',
+  api: { bodyParser: { sizeLimit: '10mb' } }
+};
 
 async function adminGraphQL(query, variables) {
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
