@@ -260,62 +260,6 @@ function Home() {
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-useEffect(() => {
-  (async () => {
-    const api = await waitDesignerReady(20000);
-    if (!api) return;
-    const p = new URLSearchParams(window.location.search);
-    const designUrl = p.get("designUrl");
-    if (!designUrl) return;
-
-    try {
-      const j = await fetch(designUrl, { cache: "no-store" }).then(r => r.json());
-      // intenta los nombres que expone tu API
-      if (api.importDesignSnapshot) await api.importDesignSnapshot(j);
-      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(j);
-      else if (api.loadJSON) await api.loadJSON(j);
-      else if (api.fromJSON) await api.fromJSON(j);
-      else if (api.loadFromJSON) await new Promise(res => api.loadFromJSON(j, () => { api.requestRenderAll?.(); res(); }));
-    } catch (e) {
-      console.error("load designUrl failed", e);
-    }
-  })();
-}, []);
-  
-   /* ---------- loader de diseño ---------- */
-  
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const designUrl = params.get("designUrl");
-  if (!designUrl) return;
-
-  let cancelled = false;
-  (async () => {
-    try {
-      const resp = await fetch(designUrl, { cache: "no-store" });
-      if (!resp.ok) return;
-      const payload = await resp.json();
-      const snapshot = payload?.design || payload;
-
-      // Espera a que tu API esté lista
-      for (let i = 0; i < 60 && !cancelled; i++) {
-        const api = window.doboDesignAPI;
-        if (api && (api.loadDesignSnapshot || api.importDesignSnapshot || api.loadJSON)) {
-          try {
-            if (api.reset) api.reset();
-            if (api.loadDesignSnapshot) api.loadDesignSnapshot(snapshot);
-            else if (api.importDesignSnapshot) api.importDesignSnapshot(snapshot);
-            else if (api.loadJSON) api.loadJSON(snapshot);
-          } catch {}
-          break;
-        }
-        await new Promise(r => setTimeout(r, 200));
-      }
-    } catch {}
-  })();
-
-  return () => { cancelled = true; };
-}, []);
   
   /* ---------- fetch por tamaño y tipo ---------- */
   useEffect(() => {
@@ -569,31 +513,6 @@ async function publishDesignForVariant(variantId) {
 }
 
 
-async function waitDesignerReady(timeout = 8000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const api = window.doboDesignAPI;
-    const ok = api && (api.exportDesignSnapshot || api.exportSnapshot || api.exportJSON || api.toJSON || api.getState);
-    if (ok) return api;
-    await new Promise(r => setTimeout(r, 100));
-  }
-  return null;
-}
-
-async function getSnapshot(api) {
-  try {
-    return (
-      api.exportDesignSnapshot?.() ??
-      api.exportSnapshot?.() ??
-      api.exportJSON?.() ??
-      api.toJSON?.() ??
-      api.getState?.()
-    );
-  } catch {
-    return null;
-  }
-}
-
 async function getPreviewDataURL(api) {
   // usa tu helper existente
   try {
@@ -760,6 +679,49 @@ async function waitDesignerReady(timeout = 20000) {
   const totalNow = getTotalPrice() * quantity;
   const totalBase = getTotalComparePrice() * quantity;
 
+// === DOBO loader desde ?designUrl ===
+useEffect(() => {
+  (async () => {
+    const params = new URLSearchParams(window.location.search);
+    const designUrl = params.get("designUrl");
+    if (!designUrl) return;
+
+    // esperar API del editor
+    const wait = async (ms = 20000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        const a = window.doboDesignAPI;
+        const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
+        if (ok) return a;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return null;
+    };
+    const api = await wait();
+    if (!api) return;
+
+    try {
+      api?.reset?.();
+      const resp = await fetch(designUrl, { cache: "no-store" });
+      if (!resp.ok) return;
+      const payload = await resp.json();
+      const snapshot = payload?.design || payload;
+
+      if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
+      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
+      else if (api.loadJSON) await api.loadJSON(snapshot);
+      else if (api.loadFromJSON) {
+        await new Promise(res => api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); }));
+      }
+    } catch (e) {
+      console.error("load designUrl failed", e);
+    }
+  })();
+}, []);
+// === /DOBO loader ===
+
+
+  
   return (
     <div className={`container mt-5 ${styles.container}`} style={{ paddingBottom: "150px" }}>
       <div className="row justify-content-center align-items-start gx-5 gy-4">
