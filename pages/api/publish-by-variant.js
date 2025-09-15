@@ -1,8 +1,5 @@
 // pages/api/publish-by-variant.js
-export const config = {
-  runtime: 'nodejs',
-  api: { bodyParser: { sizeLimit: '10mb' } }
-};
+export const config = { runtime: 'nodejs', api: { bodyParser: { sizeLimit: '10mb' } } };
 
 async function adminGraphQL(query, variables) {
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
@@ -16,40 +13,28 @@ async function adminGraphQL(query, variables) {
   if (!r.ok || j.errors) throw new Error(JSON.stringify(j.errors || r.statusText));
   return j.data;
 }
-
-const toGid = (v) =>
-  String(v).startsWith('gid://') ? String(v) : `gid://shopify/ProductVariant/${v}`;
+const toGid = v => String(v).startsWith('gid://') ? String(v) : `gid://shopify/ProductVariant/${v}`;
 
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') { res.status(405).end(); return; }
-
     const { variantId, previewDataURL, design, meta } = req.body || {};
-    if (!variantId || !previewDataURL || !design) {
-      res.status(400).json({ ok:false, error: 'variantId, previewDataURL y design son requeridos' });
-      return;
-    }
-    if (!process.env.SHOPIFY_STORE_DOMAIN || !process.env.SHOPIFY_ADMIN_API_TOKEN) {
-      res.status(500).json({ ok:false, error: 'Faltan env SHOPIFY_STORE_DOMAIN/SHOPIFY_ADMIN_API_TOKEN' });
-      return;
-    }
+    if (!variantId || !previewDataURL || !design) { res.status(400).json({ ok:false, error:'variantId, previewDataURL y design son requeridos' }); return; }
+    if (!process.env.SHOPIFY_STORE_DOMAIN || !process.env.SHOPIFY_ADMIN_API_TOKEN) { res.status(500).json({ ok:false, error:'Faltan env SHOPIFY_*' }); return; }
 
+    // 0) producto dueño
     let stage = 'owner';
-    // 0) Resolver producto dueño de la variante
-    const vGid = toGid(variantId);
     let ownerId;
     try {
       const d1 = await adminGraphQL(
         `query($id:ID!){ productVariant(id:$id){ product{ id handle } } }`,
-        { id: vGid }
+        { id: toGid(variantId) }
       );
       ownerId = d1?.productVariant?.product?.id;
       if (!ownerId) throw new Error('product not found for variant');
-    } catch (e) {
-      return res.status(500).json({ ok:false, stage, error:String(e) });
-    }
+    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
-    // 1) Preparar buffers
+    // 1) buffers
     const b64 = String(previewDataURL).split(',')[1] || '';
     const previewBuf = Buffer.from(b64, 'base64');
     const designId = `dobo-${Date.now()}`;
@@ -74,11 +59,9 @@ export default async function handler(req, res) {
       const ue = staged?.stagedUploadsCreate?.userErrors || [];
       if (ue.length) throw new Error(JSON.stringify(ue));
       [imgT, jsonT] = staged.stagedUploadsCreate.stagedTargets;
-    } catch (e) {
-      return res.status(500).json({ ok:false, stage, error:String(e) });
-    }
+    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
-    // 3) Subir a S3 presignado
+    // 3) subir a S3
     stage = 's3-upload';
     try {
       const postToS3 = async (t, buf, type) => {
@@ -88,36 +71,41 @@ export default async function handler(req, res) {
         const r = await fetch(t.url, { method:'POST', body: form });
         if (!r.ok) throw new Error(`S3 ${r.status}`);
       };
-      await postToS3(imgT, previewBuf, 'image/png');
+      await postToS3(imgT, previewBuf, 'image/jpeg'); // si envías JPEG desde el cliente
       await postToS3(jsonT, new TextEncoder().encode(jsonString), 'application/json');
-    } catch (e) {
-      return res.status(500).json({ ok:false, stage, error:String(e) });
-    }
+    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
-    // 4) Finalizar en Files
+    // 4) fileCreate con fragments
     stage = 'fileCreate';
     let previewUrl, jsonUrl;
     try {
       const fin = await adminGraphQL(
         `mutation($files:[FileCreateInput!]!){
-          fileCreate(files:$files){ files{ url } userErrors{ field message } }
+          fileCreate(files:$files){
+            files{
+              __typename
+              ... on MediaImage { id image { url } }
+              ... on GenericFile { id url }
+            }
+            userErrors{ field message code }
+          }
         }`,
         { files: [
           { resourceUrl: imgT.resourceUrl,  contentType:'IMAGE', alt: designId },
-          { resourceUrl: jsonT.resourceUrl, contentType:'FILE' }
+          { resourceUrl: jsonT.resourceUrl, contentType:'FILE'  }
         ] }
       );
       const ue = fin?.fileCreate?.userErrors || [];
       if (ue.length) throw new Error(JSON.stringify(ue));
       const files = fin?.fileCreate?.files || [];
-      previewUrl = files.find(f => f.url.endsWith('.png'))?.url || files[0]?.url;
-      jsonUrl    = files.find(f => f.url.endsWith('.json'))?.url || files[1]?.url;
+      const media   = files.find(f => f.__typename === 'MediaImage' && f.image?.url);
+      const generic = files.find(f => f.__typename === 'GenericFile' && f.url);
+      previewUrl = media?.image?.url || null;
+      jsonUrl    = generic?.url || null;
       if (!previewUrl || !jsonUrl) throw new Error('missing file urls');
-    } catch (e) {
-      return res.status(500).json({ ok:false, stage, error:String(e) });
-    }
+    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
-    // 5) Escribir metacampos del producto
+    // 5) escribir metacampos
     stage = 'metafieldsSet';
     try {
       const setRes = await adminGraphQL(
@@ -135,11 +123,9 @@ export default async function handler(req, res) {
       );
       const ue = setRes?.metafieldsSet?.userErrors || [];
       if (ue.length) throw new Error(JSON.stringify(ue));
-    } catch (e) {
-      return res.status(500).json({ ok:false, stage, error:String(e) });
-    }
+    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
-    // 6) Confirmar lectura
+    // 6) confirmación
     stage = 'readBack';
     try {
       const rb = await adminGraphQL(
@@ -153,16 +139,10 @@ export default async function handler(req, res) {
         }`,
         { id: ownerId }
       );
-      return res.status(200).json({
-        ok: true,
-        productId: ownerId,
-        previewUrl, jsonUrl, designId,
-        readBack: rb?.product
-      });
-    } catch (e) {
-      return res.status(500).json({ ok:false, stage, error:String(e) });
-    }
+      return res.status(200).json({ ok:true, productId: ownerId, previewUrl, jsonUrl, designId, readBack: rb?.product });
+    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
+
   } catch (e) {
-    return res.status(500).json({ ok:false, stage:'unknown', error:String(e?.message || e) });
+    return res.status(500).json({ ok:false, stage:'unknown', error:String(e?.message||e) });
   }
 }
