@@ -77,34 +77,66 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
     // 4) fileCreate (usa originalSource, no resourceUrl)
-    stage = 'fileCreate';
-    let previewUrl, jsonUrl;
-    try {
-      const fin = await adminGraphQL(
-        `mutation($files:[FileCreateInput!]!){
-          fileCreate(files:$files){
-            files{
-              __typename
-              ... on MediaImage { id image { url } }
-              ... on GenericFile { id url }
-            }
-            userErrors{ field message code }
-          }
-        }`,
-        { files: [
-          { originalSource: imgT.resourceUrl,  contentType:'IMAGE', alt: designId },
-          { originalSource: jsonT.resourceUrl, contentType:'FILE' }
-        ] }
-      );
-      const ue = fin?.fileCreate?.userErrors || [];
-      if (ue.length) throw new Error(JSON.stringify(ue));
-      const files = fin?.fileCreate?.files || [];
-      const media   = files.find(f => f.__typename === 'MediaImage' && f.image?.url);
-      const generic = files.find(f => f.__typename === 'GenericFile' && f.url);
-      previewUrl = media?.image?.url || null;
-      jsonUrl    = generic?.url || null;
-      if (!previewUrl || !jsonUrl) throw new Error('missing file urls');
-    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
+  // 4) fileCreate con fragments + poll de URLs
+stage = 'fileCreate';
+let previewUrl, jsonUrl, imgId, jsonId;
+
+const sleep = (ms)=>new Promise(r=>setTimeout(r, ms));
+
+try {
+  const fin = await adminGraphQL(
+    `mutation($files:[FileCreateInput!]!){
+      fileCreate(files:$files){
+        files{
+          __typename
+          id
+          ... on MediaImage { image { url } }
+          ... on GenericFile { url }
+        }
+        userErrors{ field message code }
+      }
+    }`,
+    { files: [
+      { originalSource: imgT.resourceUrl,  contentType: 'IMAGE', alt: designId },
+      { originalSource: jsonT.resourceUrl, contentType: 'FILE' }
+    ] }
+  );
+  const ue = fin?.fileCreate?.userErrors || [];
+  if (ue.length) throw new Error(JSON.stringify(ue));
+
+  const files = fin?.fileCreate?.files || [];
+  const media   = files.find(f => f.__typename === 'MediaImage');
+  const generic = files.find(f => f.__typename === 'GenericFile');
+
+  imgId  = media?.id  || null;
+  jsonId = generic?.id || null;
+  previewUrl = media?.image?.url || null;
+  jsonUrl    = generic?.url || null;
+
+  // poll hasta obtener URLs
+  for (let i = 0; i < 10 && (!previewUrl || !jsonUrl); i++) {
+    await sleep(700);
+    const q = await adminGraphQL(
+      `query($ids:[ID!]!){
+        nodes(ids:$ids){
+          __typename
+          ... on MediaImage { id image { url } }
+          ... on GenericFile { id url }
+        }
+      }`,
+      { ids: [imgId, jsonId].filter(Boolean) }
+    );
+    const nodes = q?.nodes || [];
+    const m = nodes.find(n => n.__typename === 'MediaImage');
+    const g = nodes.find(n => n.__typename === 'GenericFile');
+    previewUrl = previewUrl || m?.image?.url || null;
+    jsonUrl    = jsonUrl    || g?.url || null;
+  }
+
+  if (!previewUrl || !jsonUrl) throw new Error('missing file urls');
+} catch (e) {
+  return res.status(500).json({ ok:false, stage, error:String(e) });
+}
 
     // 5) escribir metacampos
     stage = 'metafieldsSet';
