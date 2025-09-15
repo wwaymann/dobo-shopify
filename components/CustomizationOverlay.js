@@ -512,13 +512,33 @@ useEffect(() => {
     c.on('path:created', __hist_onPath);
 
 
-    // API mínima
+ // API completa para snapshot y carga
     if (typeof window !== 'undefined') {
-      window.doboDesignAPI = {
+      const api = {
+        // existente
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
         toSVG: () => c.toSVG({ suppressPreamble: true }),
         getCanvas: () => c,
+        // NUEVO: exportar estado del diseño
+        exportDesignSnapshot: () => {
+          try { return c.toJSON(); } catch { return null; }
+        },
+        // NUEVO: importar/cargar estado del diseño
+        importDesignSnapshot: (snap) => new Promise(res => {
+          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+        }),
+        loadDesignSnapshot: (snap) => new Promise(res => {
+          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+        }),
+        loadJSON: (snap) => new Promise(res => {
+          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+        }),
+        // NUEVO: limpiar
+        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
       };
+      window.doboDesignAPI = api;
+      // Señal de “listo” para quien espere el editor
+      try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
     }
 
     // Helpers de tipo
