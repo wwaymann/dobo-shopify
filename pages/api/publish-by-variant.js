@@ -35,6 +35,7 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
     // 1) buffers
+    const isJpeg = String(previewDataURL).startsWith('data:image/jpeg');
     const b64 = String(previewDataURL).split(',')[1] || '';
     const previewBuf = Buffer.from(b64, 'base64');
     const designId = `dobo-${Date.now()}`;
@@ -52,7 +53,7 @@ export default async function handler(req, res) {
           }
         }`,
         { input: [
-          { resource:'FILE', filename:`${designId}.png`,  mimeType:'image/png',        httpMethod:'POST' },
+          { resource:'FILE', filename:`${designId}.${isJpeg?'jpg':'png'}`, mimeType:isJpeg?'image/jpeg':'image/png', httpMethod:'POST' },
           { resource:'FILE', filename:`${designId}.json`, mimeType:'application/json', httpMethod:'POST' }
         ] }
       );
@@ -71,11 +72,11 @@ export default async function handler(req, res) {
         const r = await fetch(t.url, { method:'POST', body: form });
         if (!r.ok) throw new Error(`S3 ${r.status}`);
       };
-      await postToS3(imgT, previewBuf, 'image/jpeg'); // si envías JPEG desde el cliente
+      await postToS3(imgT, previewBuf, isJpeg ? 'image/jpeg' : 'image/png');
       await postToS3(jsonT, new TextEncoder().encode(jsonString), 'application/json');
     } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
-    // 4) fileCreate con fragments
+    // 4) fileCreate (usa originalSource, no resourceUrl)
     stage = 'fileCreate';
     let previewUrl, jsonUrl;
     try {
@@ -91,8 +92,8 @@ export default async function handler(req, res) {
           }
         }`,
         { files: [
-          { resourceUrl: imgT.resourceUrl,  contentType:'IMAGE', alt: designId },
-          { resourceUrl: jsonT.resourceUrl, contentType:'FILE'  }
+          { originalSource: imgT.resourceUrl,  contentType:'IMAGE', alt: designId },
+          { originalSource: jsonT.resourceUrl, contentType:'FILE' }
         ] }
       );
       const ue = fin?.fileCreate?.userErrors || [];
@@ -143,6 +144,6 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
 
   } catch (e) {
-    return res.status(500).json({ ok:false, stage:'unknown', error:String(e?.message||e) });
+    return res.status(500).json({ ok:false, stage:'unknown', error:String(e?.message || e) });
   }
 }
