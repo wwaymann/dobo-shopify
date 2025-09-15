@@ -568,39 +568,25 @@ async function getPreviewDataURL(api) {
   try { return canvas?.toDataURL ? canvas.toDataURL('image/png') : null; } catch { return null; }
 }
 
-async function publishDesignForVariant(variantId) {
-  try {
-    const api = await waitDesignerReady();
-    if (!api) return { ok:false, error:'designer-not-ready' };
+async function waitDesignerReady(timeout = 20000) {
+  // 1) evento opcional si tu customizador lo emite
+  let api = null;
+  let resolved = false;
+  const onEvt = (e)=>{ api = (e && e.detail) || window.doboDesignAPI; resolved = true; };
+  window.addEventListener('dobo:ready', onEvt, { once:true });
 
-    let snap = await getSnapshot(api);
-    if (!snap && typeof loadLocalDesign === 'function') {
-      // si ya importaste loadLocalDesign desde ../lib/designStore, úsalo
-      snap = loadLocalDesign();
-    }
-    if (!snap) return { ok:false, error:'no-snapshot' };
-
-    const previewDataURL = await getPreviewDataURL(api);
-    if (!previewDataURL) return { ok:false, error:'no-preview' };
-
-    const meta = {
-      size: activeSize || '',
-      color: selectedColor || '',
-      plantId: plants?.[selectedPlantIndex]?.id || '',
-      potId: pots?.[selectedPotIndex]?.id || ''
-    };
-
-    const r = await fetch('/api/publish-by-variant', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variantId, previewDataURL, design: snap, meta })
-    });
-    const j = await r.json();
-    return j;
-  } catch (e) {
-    return { ok:false, error:String(e?.message||e) };
+  // 2) sondeo
+  const start = Date.now();
+  while (Date.now() - start < timeout && !resolved) {
+    const a = window.doboDesignAPI;
+    const ok = a && (a.exportDesignSnapshot || a.exportSnapshot || a.exportJSON || a.toJSON || a.getState);
+    if (ok) { api = a; break; }
+    await new Promise(r => setTimeout(r, 100));
   }
+  window.removeEventListener('dobo:ready', onEvt);
+  return api || null;
 }
+
 
 
   
@@ -677,6 +663,8 @@ async function publishDesignForVariant(variantId) {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
       const pub = await publishDesignForVariant(dp.variantId);
       if (!pub?.ok) throw new Error(pub?.error || "publish failed");
       await publishDesignForVariant(dp.variantId);
@@ -708,6 +696,8 @@ async function publishDesignForVariant(variantId) {
       });
      const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
       const pub = await publishDesignForVariant(dp.variantId);
       if (!pub?.ok) throw new Error(pub?.error || "publish failed");
       await publishDesignForVariant(dp.variantId);
