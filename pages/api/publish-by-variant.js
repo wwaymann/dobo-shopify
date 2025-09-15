@@ -1,3 +1,5 @@
+export const config = { runtime: 'nodejs' };
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") { res.status(405).end(); return; }
@@ -24,12 +26,12 @@ export default async function handler(req, res) {
     const toGid = (v) => String(v).startsWith("gid://") ? String(v) : `gid://shopify/ProductVariant/${v}`;
     const vGid = toGid(variantId);
 
-    // 1) Dueño del variant
-    const q1 = await adminGraphQL(`query($id:ID!){ productVariant(id:$id){ product{ id } } }`, { id: vGid });
-    const ownerId = q1?.productVariant?.product?.id;
+    // dueño del variant
+    const d1 = await adminGraphQL(`query($id:ID!){ productVariant(id:$id){ product{ id handle } } }`, { id: vGid });
+    const ownerId = d1?.productVariant?.product?.id;
     if (!ownerId) { res.status(404).json({ error: "Producto no encontrado" }); return; }
 
-    // 2) Subir PNG + JSON a Files
+    // subir PNG + JSON a Files
     const b64 = String(previewDataURL).split(",")[1] || "";
     const previewBuf = Buffer.from(b64, "base64");
     const designId = `dobo-${Date.now()}`;
@@ -43,8 +45,8 @@ export default async function handler(req, res) {
         }
       }`,
       { input: [
-        { resource:"FILE", filename:`${designId}.png`,  mimeType:"image/png",          httpMethod:"POST" },
-        { resource:"FILE", filename:`${designId}.json`, mimeType:"application/json",   httpMethod:"POST" }
+        { resource:"FILE", filename:`${designId}.png`,  mimeType:"image/png",        httpMethod:"POST" },
+        { resource:"FILE", filename:`${designId}.json`, mimeType:"application/json", httpMethod:"POST" }
       ] }
     );
     const [imgT, jsonT] = staged.stagedUploadsCreate.stagedTargets;
@@ -72,10 +74,13 @@ export default async function handler(req, res) {
     const previewUrl = files.find(f => f.url.endsWith(".png"))?.url || files[0]?.url;
     const jsonUrl    = files.find(f => f.url.endsWith(".json"))?.url || files[1]?.url;
 
-    // 3) Metacampos del producto
-    await adminGraphQL(
+    // metacampos del producto
+    const setRes = await adminGraphQL(
       `mutation set($m:[MetafieldsSetInput!]!){
-        metafieldsSet(metafields:$m){ userErrors{ field message code } }
+        metafieldsSet(metafields:$m){
+          metafields { id key namespace }
+          userErrors{ field message code }
+        }
       }`,
       { m: [
         { ownerId, namespace:"dobo", key:"design_json_url",    type:"url",                    value:String(jsonUrl) },
@@ -83,8 +88,23 @@ export default async function handler(req, res) {
         { ownerId, namespace:"dobo", key:"design_id",          type:"single_line_text_field", value:String(designId) }
       ] }
     );
+    const errs = setRes?.metafieldsSet?.userErrors || [];
+    if (errs.length) throw new Error(`metafieldsSet ${JSON.stringify(errs)}`);
 
-    res.status(200).json({ ok:true, productId: ownerId, previewUrl, jsonUrl, designId });
+    // confirmación
+    const readBack = await adminGraphQL(
+      `query($id:ID!){
+        product(id:$id){
+          id handle
+          mf1: metafield(namespace:"dobo",key:"design_json_url"){ value }
+          mf2: metafield(namespace:"dobo",key:"design_preview_url"){ value }
+          mf3: metafield(namespace:"dobo",key:"design_id"){ value }
+        }
+      }`,
+      { id: ownerId }
+    );
+
+    res.status(200).json({ ok:true, productId: ownerId, previewUrl, jsonUrl, designId, readBack: readBack?.product });
   } catch (e) {
     res.status(500).json({ error: e?.message || "error" });
   }
