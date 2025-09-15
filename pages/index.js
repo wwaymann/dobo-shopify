@@ -501,6 +501,38 @@ useEffect(() => {
       { key: "_LinePriority", value: "0" },
     ];
   }
+
+  async function publishDesignForVariant(variantId) {
+  try {
+    const api = window.doboDesignAPI;
+    const snap = api?.exportDesignSnapshot?.();
+    if (!api || !snap) return;
+
+    // ya existe en tu archivo:
+    const dataUrl = await captureDesignPreview();
+    if (!dataUrl) return;
+
+    await fetch("/api/publish-by-variant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        variantId,
+        previewDataURL: dataUrl,
+        design: snap,
+        meta: {
+          size: activeSize || "",
+          color: selectedColor || "",
+          potId: pots?.[selectedPotIndex]?.id || "",
+          plantId: plants?.[selectedPlantIndex]?.id || ""
+        }
+      })
+    });
+  } catch (e) {
+    console.warn("publish-by-variant", e);
+  }
+}
+
+  
   function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     const asStr = (v) => String(v || "").trim();
     const isNum = (v) => /^\d+$/.test(asStr(v));
@@ -574,6 +606,7 @@ useEffect(() => {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      await publishDesignForVariant(dp.variantId);
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
     } catch (e) {
@@ -602,6 +635,7 @@ useEffect(() => {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      await publishDesignForVariant(dp.variantId);
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
     } catch (e) {
