@@ -1,37 +1,26 @@
 // pages/product/[handle].js
-import ProductDesignIframe from '../../components/ProductDesignIframe';
-
-export default function ProductPage({ product }) {
-  if (!product) return null;
-
-  const designJsonUrl    = product.designJsonUrl?.value || null;
-  const designPreviewUrl = product.designPreviewUrl?.value || null;
-  const designId         = product.designId?.value || null;
-
+export default function ProductPage({ title, handle, iframeSrc }) {
+  if (!iframeSrc) return (<main><h1>{title || handle}</h1><p>Sin diseño.</p></main>);
   return (
-    <div className="container py-3">
-      {/* Tu UI existente del producto */}
-      <ProductDesignIframe
-        designJsonUrl={designJsonUrl}
-        designPreviewUrl={designPreviewUrl}
-        designId={designId}
+    <main>
+      <h1>{title || handle}</h1>
+      <iframe
+        src={iframeSrc}
+        style={{ width: "100%", height: "80vh", border: 0 }}
+        allow="clipboard-write; clipboard-read"
       />
-    </div>
+    </main>
   );
 }
 
 export async function getServerSideProps({ params }) {
-  const handle = params?.handle;
-  if (!handle) return { notFound: true };
-
+  const handle = params.handle;
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
   const token  = process.env.SHOPIFY_STOREFRONT_API_TOKEN;
-  if (!domain || !token) return { notFound: true };
 
   const query = `
     query ProductByHandle($handle: String!) {
       product(handle: $handle) {
-        id
         title
         handle
         designJsonUrl: metafield(namespace:"dobo", key:"design_json_url"){ value }
@@ -41,18 +30,29 @@ export async function getServerSideProps({ params }) {
     }
   `;
 
-  const r = await fetch(`https://${domain}/api/2024-07/graphql.json`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Storefront-Access-Token': token
-    },
-    body: JSON.stringify({ query, variables: { handle } })
-  });
+  let title = handle, designJsonUrl = null;
 
-  if (!r.ok) return { notFound: true };
-  const j = await r.json();
-  const product = j?.data?.product || null;
+  try {
+    const r = await fetch(`https://${domain}/api/2024-07/graphql.json`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Storefront-Access-Token": token
+      },
+      body: JSON.stringify({ query, variables: { handle } })
+    });
+    const j = await r.json();
+    const p = j?.data?.product || null;
+    title = p?.title || handle;
+    designJsonUrl = p?.designJsonUrl?.value || null;
+  } catch (_) {}
 
-  return { props: { product } };
+  // Dónde vive tu customizador (la home). Cambia si usas otra ruta.
+  const base = process.env.NEXT_PUBLIC_CUSTOMIZER_PATH || "/";
+
+  const iframeSrc = designJsonUrl
+    ? `${base}?designUrl=${encodeURIComponent(designJsonUrl)}`
+    : base;
+
+  return { props: { title, handle, iframeSrc } };
 }
