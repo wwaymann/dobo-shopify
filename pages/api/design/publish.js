@@ -1,15 +1,6 @@
-import { uploadDesignToShopifyFiles } from "../../../lib/uploadToShopifyFiles";
-import { adminGraphQL } from "../../../lib/shopifyAdmin";
-
-async function findProductIdByHandle(handle) {
-  const data = await adminGraphQL(`
-    query($q:String!) {
-      products(first:1, query:$q) { edges { node { id handle } } }
-    }
-  `, { q: `handle:${handle}` });
-  const n = data?.products?.edges?.[0]?.node;
-  return n?.id || null;
-}
+// pages/api/design/publish.js
+import { uploadDesignToShopifyFiles } from '../../../lib/uploadToShopifyFiles';
+import { adminGraphQL, findProductIdByHandle } from '../../../lib/shopifyAdmin';
 
 function dataURLtoBuffer(dataURL) {
   const [, b64] = String(dataURL).split(',');
@@ -24,9 +15,10 @@ export default async function handler(req, res) {
 
     const previewBuffer = dataURLtoBuffer(previewDataURL);
     const jsonString = JSON.stringify({ design, meta }, null, 0);
+
     const out = await uploadDesignToShopifyFiles({ previewBuffer, jsonString, designId });
 
-    // set metafields en producto si viene
+    // Adjunta automáticamente a metacampos del producto si se indica
     const ownerId = productId || (productHandle ? await findProductIdByHandle(productHandle) : null);
     if (ownerId) {
       await adminGraphQL(`
@@ -37,9 +29,9 @@ export default async function handler(req, res) {
         }
       `, {
         metafields: [
-          { ownerId, namespace: "dobo", key: "designId", type: "single_line_text_field", value: String(out.id) },
-          { ownerId, namespace: "dobo", key: "designJsonUrl", type: "url", value: String(out.jsonUrl) },
-          { ownerId, namespace: "dobo", key: "designPreviewUrl", type: "url", value: String(out.previewUrl) }
+          { ownerId, namespace: "dobo", key: "design_json_url",     type: "url",                    value: String(out.jsonUrl) },
+          { ownerId, namespace: "dobo", key: "design_preview_url",  type: "url",                    value: String(out.previewUrl) },
+          { ownerId, namespace: "dobo", key: "design_id",           type: "single_line_text_field", value: String(out.id) }
         ]
       });
     }
