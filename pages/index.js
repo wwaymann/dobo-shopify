@@ -502,35 +502,51 @@ useEffect(() => {
     ];
   }
 
-  async function publishDesignForVariant(variantId) {
+async function publishDesignForVariant(variantId) {
   try {
-    const api = window.doboDesignAPI;
-    const snap = api?.exportDesignSnapshot?.();
-    if (!api || !snap) return;
+    const api = await waitDesignerReady(20000);
+    if (!api) return { ok:false, error:'designer-not-ready' };
 
-    // ya existe en tu archivo:
-    const dataUrl = await captureDesignPreview();
-    if (!dataUrl) return;
+    // snapshot
+    let snap = (
+      api.exportDesignSnapshot?.() ??
+      api.exportSnapshot?.() ??
+      api.exportJSON?.() ??
+      api.toJSON?.() ??
+      api.getState?.()
+    );
+    if (!snap && typeof loadLocalDesign === 'function') snap = loadLocalDesign();
+    if (!snap) return { ok:false, error:'no-snapshot' };
 
-    await fetch("/api/publish-by-variant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        variantId,
-        previewDataURL: dataUrl,
-        design: snap,
-        meta: {
-          size: activeSize || "",
-          color: selectedColor || "",
-          potId: pots?.[selectedPotIndex]?.id || "",
-          plantId: plants?.[selectedPlantIndex]?.id || ""
-        }
-      })
+    // preview
+    let previewDataURL = null;
+    try { previewDataURL = await captureDesignPreview(); } catch {}
+    if (!previewDataURL) {
+      const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
+      try { previewDataURL = canvas?.toDataURL?.('image/png') || null; } catch {}
+    }
+    if (!previewDataURL) return { ok:false, error:'no-preview' };
+
+    // call
+    const r = await fetch('/api/publish-by-variant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variantId, previewDataURL, design: snap, meta: {} })
     });
+
+    const raw = await r.text();
+    let j; try { j = JSON.parse(raw); } catch { j = { ok:false, error: raw } }
+
+    if (!r.ok || !j?.ok) {
+      const msg = j?.error ? `${j.error}${j.stage ? ' @'+j.stage : ''}` : `HTTP ${r.status}`;
+      return { ok:false, error: msg };
+    }
+    return j;
   } catch (e) {
-    console.warn("publish-by-variant", e);
+    return { ok:false, error:String(e?.message||e) };
   }
 }
+
 
 async function waitDesignerReady(timeout = 8000) {
   const start = Date.now();
