@@ -260,7 +260,28 @@ function Home() {
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
+useEffect(() => {
+  (async () => {
+    const api = await waitDesignerReady(20000);
+    if (!api) return;
+    const p = new URLSearchParams(window.location.search);
+    const designUrl = p.get("designUrl");
+    if (!designUrl) return;
 
+    try {
+      const j = await fetch(designUrl, { cache: "no-store" }).then(r => r.json());
+      // intenta los nombres que expone tu API
+      if (api.importDesignSnapshot) await api.importDesignSnapshot(j);
+      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(j);
+      else if (api.loadJSON) await api.loadJSON(j);
+      else if (api.fromJSON) await api.fromJSON(j);
+      else if (api.loadFromJSON) await new Promise(res => api.loadFromJSON(j, () => { api.requestRenderAll?.(); res(); }));
+    } catch (e) {
+      console.error("load designUrl failed", e);
+    }
+  })();
+}, []);
+  
    /* ---------- loader de diseño ---------- */
   
 useEffect(() => {
