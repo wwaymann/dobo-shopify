@@ -532,6 +532,34 @@ useEffect(() => {
   }
 }
 
+async function publishDesignForVariant(variantId) {
+  try {
+    const api = window.doboDesignAPI;
+    const snap = api?.exportDesignSnapshot?.();
+    if (!api || !snap) return { ok:false, error:"no-snapshot" };
+
+    const dataUrl = await captureDesignPreview();
+    if (!dataUrl) return { ok:false, error:"no-preview" };
+
+    const meta = {
+      size: activeSize || "",
+      color: selectedColor || "",
+      plantId: plants?.[selectedPlantIndex]?.id || "",
+      potId: pots?.[selectedPotIndex]?.id || ""
+    };
+
+    const r = await fetch("/api/publish-by-variant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ variantId, previewDataURL: dataUrl, design: snap, meta })
+    });
+    const j = await r.json();
+    return j;
+  } catch (e) {
+    return { ok:false, error:String(e?.message||e) };
+  }
+}
+
   
   function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     const asStr = (v) => String(v || "").trim();
@@ -606,6 +634,8 @@ useEffect(() => {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
       await publishDesignForVariant(dp.variantId);
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
@@ -633,8 +663,10 @@ useEffect(() => {
           potTitle: pots[selectedPotIndex]?.title || "Maceta",
         }),
       });
-      const dp = await dpRes.json();
+     const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
       await publishDesignForVariant(dp.variantId);
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
