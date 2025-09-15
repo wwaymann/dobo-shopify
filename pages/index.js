@@ -667,7 +667,7 @@ async function waitDesignerReady(timeout = 20000) {
       if (!apiReady) throw new Error("designer-not-ready");
       const pub = await publishDesignForVariant(dp.variantId);
       if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-      await publishDesignForVariant(dp.variantId);
+    
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
     } catch (e) {
@@ -700,7 +700,7 @@ async function waitDesignerReady(timeout = 20000) {
       if (!apiReady) throw new Error("designer-not-ready");
       const pub = await publishDesignForVariant(dp.variantId);
       if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-      await publishDesignForVariant(dp.variantId);
+     
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
     } catch (e) {
