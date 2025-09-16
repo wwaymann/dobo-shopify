@@ -330,31 +330,6 @@ useEffect(() => {
 }, [activeSize]);
 
 
-  // Selección inicial por URL ?pot=HANDLE&plant=HANDLE (solo una vez)
-useEffect(() => {
-  if (initFromURLRef.current) return;
-  if (!Array.isArray(pots) || !Array.isArray(plants) || (!pots.length && !plants.length)) return;
-
-  const q = new URLSearchParams(window.location.search);
-  const potH = (q.get('pot') || q.get('potHandle') || '').trim().toLowerCase();
-  const plantH = (q.get('plant') || q.get('plantHandle') || '').trim().toLowerCase();
-
-  const norm = (s) => String(s || '').trim().toLowerCase();
-  const findByHandle = (arr, h) =>
-    arr.findIndex(p => norm(p.handle || p.title) === h);
-
-  let touched = false;
-  if (potH) {
-    const i = findByHandle(pots, potH);
-    if (i >= 0) { setSelectedPotIndex(i); touched = true; }
-  }
-  if (plantH) {
-    const j = findByHandle(plants, plantH);
-    if (j >= 0) { setSelectedPlantIndex(j); touched = true; }
-  }
-  if (touched) initFromURLRef.current = true;
-}, [pots, plants]);
-
 
 // DOBO: aplica selección de planta/maceta/color/size desde meta
 useEffect(() => {
@@ -441,6 +416,59 @@ useEffect(() => {
     };
   }, []);
 
+// ---------- RESTAURAR SELECCIÓN (una sola vez) desde meta o query ----------
+const restoredRef = useRef(false);
+useEffect(() => {
+  if (restoredRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 && plants.length === 0) return;
+
+  const meta = designMetaRef.current || {};
+  const q = new URLSearchParams(window.location.search);
+
+  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
+  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
+  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+
+  // tamaño
+  if (wantSize) {
+    if (wantSize.startsWith('p')) setActiveSize('Pequeño');
+    else if (wantSize.startsWith('m')) setActiveSize('Mediano');
+    else if (wantSize.startsWith('g')) setActiveSize('Grande');
+  }
+
+  // helper
+  const toStr = (v) => String(v || '').toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || '');
+    return s.includes('gid://') ? s.split('/').pop() : s;
+  };
+  const findIdx = (arr, key) => {
+    if (!key) return -1;
+    const k = toStr(key);
+    const kNum = gidToNum(k);
+    return arr.findIndex(p => {
+      const ids = [
+        p?.id, gidToNum(p?.id), p?.handle, p?.title
+      ].map(toStr);
+      return ids.includes(k) || ids.includes(toStr(kNum));
+    });
+  };
+
+  // maceta / planta
+  const ip = findIdx(pots, wantPot);
+  if (ip >= 0) setSelectedPotIndex(ip);
+
+  const il = findIdx(plants, wantPlant);
+  if (il >= 0) setSelectedPlantIndex(il);
+
+  // color (opcional)
+  if (meta.color) setSelectedColor(meta.color);
+
+  restoredRef.current = true;
+}, [pots, plants]);
+
+  
   /* ---------- variantes: SOLO color ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
