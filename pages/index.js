@@ -271,71 +271,64 @@ const designMetaRef = useRef(null);
   }, [editing]);
 
   
-  /* ---------- fetch por tamaño y tipo ---------- */
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const sizeQ = encodeURIComponent(activeSize); // "Pequeño" | "Mediano" | "Grande"
-        const [rPots, rPlants, rAcc] = await Promise.all([
-          fetch(`/api/products?size=${sizeQ}&type=maceta&first=60`, { cache: "no-store" }),
-          fetch(`/api/products?size=${sizeQ}&type=planta&first=60`, { cache: "no-store" }),
-          fetch(`/api/products?type=accesorio&first=60`, { cache: "no-store" }), // accesorios no dependen de tamaño
-        ]);
-        if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
-        if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
+// ---------- fetch por tamaño y tipo ----------
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const sizeQ = encodeURIComponent(activeSize); // "Pequeño" | "Mediano" | "Grande"
+      const [rPots, rPlants, rAcc] = await Promise.all([
+        fetch(`/api/products?size=${sizeQ}&type=maceta&first=60`, { cache: "no-store" }),
+        fetch(`/api/products?size=${sizeQ}&type=planta&first=60`, { cache: "no-store" }),
+        fetch(`/api/products?type=accesorio&first=60`, { cache: "no-store" }), // accesorios no dependen de tamaño
+      ]);
+      if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
+      if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
 
-        const dPots = await rPots.json();
-        const dPlants = await rPlants.json();
-        const dAcc = rAcc.ok ? await rAcc.json() : [];
+      const dPots = await rPots.json();
+      const dPlants = await rPlants.json();
+      const dAcc = rAcc.ok ? await rAcc.json() : [];
 
-        const potsList = Array.isArray(dPots) ? dPots : dPots.products || [];
-        const plantsList = Array.isArray(dPlants) ? dPlants : dPlants.products || [];
-        const accList = Array.isArray(dAcc) ? dAcc : dAcc.products || [];
+      const potsList = Array.isArray(dPots) ? dPots : dPots.products || [];
+      const plantsList = Array.isArray(dPlants) ? dPlants : dPlants.products || [];
+      const accList = Array.isArray(dAcc) ? dAcc : dAcc.products || [];
 
-        const norm = (list) =>
-          list.map((p) => ({
-            ...p,
-            description: p?.description || p?.descriptionHtml || p?.body_html || "",
-            descriptionHtml: p?.descriptionHtml || "",
-            tags: Array.isArray(p?.tags) ? p.tags : [],
-            variants: Array.isArray(p?.variants) ? p.variants : [],
-            image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-            minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-          }));
+      const norm = (list) =>
+        list.map((p) => ({
+          ...p,
+          description: p?.description || p?.descriptionHtml || p?.body_html || "",
+          descriptionHtml: p?.descriptionHtml || "",
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          variants: Array.isArray(p?.variants) ? p.variants : [],
+          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+        }));
 
-        if (cancelled) return;
+      if (cancelled) return;
 
-        const potsSafe = norm(potsList);
-        const plantsSafe = norm(plantsList);
-        const accSafe = norm(accList);
+      const potsSafe = norm(potsList);
+      const plantsSafe = norm(plantsList);
+      const accSafe = norm(accList);
 
-        setPots(potsSafe);
-        setPlants(plantsSafe);
-        setAccessories(accSafe);
+      setPots(potsSafe);
+      setPlants(plantsSafe);
+      setAccessories(accSafe);
 
-       // NO resetees a 0: conserva la selección si existe, o clamp si quedó fuera de rango
-setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
-setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
-// La variante se calcula en tu effect de variantes (pots/selectedPotIndex/selectedColor),
-// así que no seteamos selectedPotVariant aquí.
-
-        }
-        setSelectedPotIndex(0);
-        setSelectedPlantIndex(0);
-
-        
-      } catch (err) {
-        console.error("Error fetching products:", err);
-        if (!cancelled) {
-          setPlants([]);
-          setPots([]);
-          setAccessories([]);
-        }
+      // 👉 IMPORTANTE: conservar selección (no resetear a 0 y no tocar selectedPotVariant aquí)
+      setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
+      setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
+    } catch (err) {
+      console.error("Error fetching products:", err);
+      if (!cancelled) {
+        setPlants([]);
+        setPots([]);
+        setAccessories([]);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [activeSize]);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [activeSize]);
+
 
   // Selección inicial por URL ?pot=HANDLE&plant=HANDLE (solo una vez)
 useEffect(() => {
