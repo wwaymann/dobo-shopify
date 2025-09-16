@@ -436,6 +436,7 @@ useEffect(() => {
 
 
 
+
   /* ---------- zoom rueda ---------- */
   useEffect(() => {
     const container = sceneWrapRef.current, stage = stageRef.current;
