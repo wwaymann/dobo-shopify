@@ -202,7 +202,7 @@ function Home() {
   const desiredSizeRef = useRef(null);
   const [designMeta, setDesignMeta] = useState(null);   // <— NUEVO
   const restoredOnceRef = useRef(false);                // <— NUEVO
-
+  const userPickedSizeRef = useRef(false);
 
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -319,6 +319,8 @@ useEffect(() => {
       // 👉 IMPORTANTE: conservar selección (no resetear a 0 y no tocar selectedPotVariant aquí)
       setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
       setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
+      userPickedSizeRef.current = false; // ya cargó la familia del tamaño nuevo
+
     } catch (err) {
       console.error("Error fetching products:", err);
       if (!cancelled) {
@@ -913,14 +915,16 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           {/* Selector de tamaño */}
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
             {["Pequeño", "Mediano", "Grande"].map((s) => (
-              <button
-                key={s}
-                className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
-                onClick={() => setActiveSize(s)}
-              >
-                {s}
-              </button>
-            ))}
+           {["Pequeño", "Mediano", "Grande"].map((s) => (
+  <button
+    key={s}
+    className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+    onClick={() => { userPickedSizeRef.current = true; setActiveSize(s); }}
+  >
+    {s}
+  </button>
+))}
+
           </div>
 
           {/* Escena */}
