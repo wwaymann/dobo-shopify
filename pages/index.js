@@ -200,6 +200,8 @@ function Home() {
   const desiredPotHandleRef = useRef(null);
   const desiredPlantHandleRef = useRef(null);
   const desiredSizeRef = useRef(null);
+  const [designMeta, setDesignMeta] = useState(null);   // <— NUEVO
+  const restoredOnceRef = useRef(false);                // <— NUEVO
 
 
   // para clicks mitad-izq/der estilo Google Shopping
@@ -328,6 +330,61 @@ useEffect(() => {
   })();
   return () => { cancelled = true; };
 }, [activeSize]);
+
+// ---------- aplicar selección desde meta/query (una sola vez) ----------
+const applyDesiredSelection = () => {
+  if (restoredOnceRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 && plants.length === 0) return;
+
+  const meta = designMeta || {};
+  const q = new URLSearchParams(window.location.search);
+
+  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
+  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
+  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+
+  const toStr = (v) => String(v || '').toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || '');
+    return s.includes('gid://') ? s.split('/').pop() : s;
+  };
+  const findIdx = (arr, key) => {
+    if (!key) return -1;
+    const k = toStr(key);
+    const kNum = gidToNum(k);
+    return arr.findIndex(p => {
+      const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(toStr);
+      return ids.includes(k) || ids.includes(toStr(kNum));
+    });
+  };
+
+  let touched = false;
+
+  // tamaño primero (esto re-dispara el fetch con la familia correcta)
+  if (wantSize) {
+    if (wantSize.startsWith('p')) { setActiveSize('Pequeño'); touched = true; }
+    else if (wantSize.startsWith('m')) { setActiveSize('Mediano'); touched = true; }
+    else if (wantSize.startsWith('g')) { setActiveSize('Grande'); touched = true; }
+  }
+
+  // maceta / planta
+  const ip = findIdx(pots, wantPot);
+  if (ip >= 0) { setSelectedPotIndex(ip); touched = true; }
+
+  const il = findIdx(plants, wantPlant);
+  if (il >= 0) { setSelectedPlantIndex(il); touched = true; }
+
+  // color
+  if (meta.color) { setSelectedColor(meta.color); touched = true; }
+
+  if (touched) restoredOnceRef.current = true; // no repetir
+};
+
+// Ejecuta cuando ya hay productos o cambia la meta
+useEffect(() => {
+  applyDesiredSelection();
+}, [pots, plants, designMeta]);
 
 
 
@@ -831,6 +888,8 @@ useEffect(() => {
       const snapshot = payload?.design || payload;
 // guarda meta para sincronizar carruseles
 designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
+      setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
+
 
       if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
       else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
