@@ -167,7 +167,17 @@ function makeSwipeEvents(swipeRef, handlers) {
 }
 
 /* ---------- shop ---------- */
-const SHOP_DOMAIN = "um7xus-0u.myshopify.com";
+let SHOP_DOMAIN = process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com";
+if (typeof window !== 'undefined') {
+  const qs = new URLSearchParams(window.location.search);
+  const fromQS = qs.get('shopDomain');
+  if (fromQS) {
+    SHOP_DOMAIN = fromQS;
+  } else if (document.referrer) {
+    try { SHOP_DOMAIN = new URL(document.referrer).host || SHOP_DOMAIN; } catch {}
+  }
+}
+
 
 function Home() {
   const [plants, setPlants] = useState([]);
