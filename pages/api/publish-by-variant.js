@@ -1,181 +1,302 @@
 // pages/api/publish-by-variant.js
-export const config = { runtime: 'nodejs', api: { bodyParser: { sizeLimit: '10mb' } } };
 
-async function adminGraphQL(query, variables) {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  const token  = process.env.SHOPIFY_ADMIN_API_TOKEN;
-  const r = await fetch(`https://${domain}/admin/api/2024-07/graphql.json`, {
+// Aumenta límite del body para dataURL del preview
+export const config = {
+  api: { bodyParser: { sizeLimit: '10mb' } },
+};
+
+const ADMIN_API_VERSION = process.env.SHOPIFY_ADMIN_API_VERSION || '2024-10';
+
+function pickEnv() {
+  const token = process.env.SHOPIFY_ADMIN_TOKEN || process.env.SHOPIFY_ADMIN_API_TOKEN;
+  const shop =
+    process.env.SHOPIFY_SHOP_DOMAIN ||
+    process.env.SHOPIFY_SHOP ||
+    process.env.SHOP_DOMAIN ||
+    '';
+
+  const url =
+    process.env.SHOPIFY_ADMIN_API_URL ||
+    (shop ? `https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json` : '');
+
+  return { token, url, shop };
+}
+
+async function shopifyFetch(query, variables) {
+  const { token, url } = pickEnv();
+  if (!token || !url) {
+    const e = new Error('env-missing');
+    e.stage = 'env';
+    throw e;
+  }
+
+  const r = await fetch(url, {
     method: 'POST',
-    headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables })
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': token,
+    },
+    body: JSON.stringify({ query, variables }),
   });
-  const j = await r.json();
-  if (!r.ok || j.errors) throw new Error(JSON.stringify(j.errors || r.statusText));
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.errors) {
+    const e = new Error('shopify-graphql-error');
+    e.stage = 'graphql';
+    e.details = j.errors || j;
+    throw e;
+  }
   return j.data;
 }
-const toGid = v => String(v).startsWith('gid://') ? String(v) : `gid://shopify/ProductVariant/${v}`;
+
+// ---------------- GraphQL ----------------
+
+const GQL_STAGED_UPLOADS_CREATE = `
+mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+  stagedUploadsCreate(input: $input) {
+    stagedTargets {
+      url
+      resourceUrl
+      parameters { name value }
+    }
+    userErrors { field message }
+  }
+}
+`;
+
+const GQL_FILE_CREATE = `
+mutation fileCreate($files: [FileCreateInput!]!) {
+  fileCreate(files: $files) {
+    files {
+      __typename
+      id
+      alt
+      createdAt
+      ... on MediaImage { image { url } }
+      ... on GenericFile { url }
+    }
+    userErrors { field message }
+  }
+}
+`;
+
+const GQL_VARIANT_PARENT = `
+query($id: ID!) {
+  productVariant(id: $id) {
+    id
+    product { id handle }
+  }
+}
+`;
+
+const GQL_METAFIELDS_SET = `
+mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+  metafieldsSet(metafields: $metafields) {
+    metafields { id key namespace }
+    userErrors { field message }
+  }
+}
+`;
+
+// -------------- Helpers --------------
+
+function dataUrlToBuffer(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  const m = dataUrl.match(/^data:([\w/+.-]+);base64,(.*)$/);
+  if (!m) return null;
+  const mime = m[1];
+  const b64 = m[2];
+  return { mime, buf: Buffer.from(b64, 'base64') };
+}
+
+async function stagedUpload({ filename, mimeType, buffer }) {
+  // 1) pedir target
+  const upRes = await shopifyFetch(GQL_STAGED_UPLOADS_CREATE, {
+    input: [
+      {
+        resource: 'FILE',
+        filename,
+        mimeType,
+        httpMethod: 'POST',
+      },
+    ],
+  });
+
+  const target = upRes?.stagedUploadsCreate?.stagedTargets?.[0];
+  const errs = upRes?.stagedUploadsCreate?.userErrors || [];
+  if (!target || errs.length) {
+    const e = new Error('staged-uploads-failed');
+    e.stage = 'stagedUploadsCreate';
+    e.details = errs;
+    throw e;
+  }
+
+  // 2) subir a GCS con form-data
+  const form = new FormData();
+  for (const p of target.parameters || []) form.append(p.name, p.value);
+  // El nombre de campo debe ser "file"
+  form.append('file', new Blob([buffer]), filename);
+
+  const r = await fetch(target.url, { method: 'POST', body: form });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    const e = new Error('staged-upload-post-failed');
+    e.stage = 'gcs-upload';
+    e.details = { status: r.status, body: txt };
+    throw e;
+  }
+
+  // 3) resourceUrl para fileCreate
+  return target.resourceUrl;
+}
+
+async function fileCreateFromResourceUrls(inputs) {
+  // inputs: [{ resourceUrl, contentType, alt }]
+  const files = inputs.map((x) => ({
+    originalSource: x.resourceUrl,
+    contentType: x.contentType, // "IMAGE" | "FILE"
+    alt: x.alt || null,
+  }));
+
+  const res = await shopifyFetch(GQL_FILE_CREATE, { files });
+  const userErrors = res?.fileCreate?.userErrors || [];
+  if (userErrors.length) {
+    const e = new Error('fileCreate-errors');
+    e.stage = 'fileCreate';
+    e.details = userErrors;
+    throw e;
+  }
+  const out = res?.fileCreate?.files || [];
+  const urls = out.map((f) => {
+    if (f.__typename === 'MediaImage') return f.image?.url || '';
+    if (f.__typename === 'GenericFile') return f.url || '';
+    return '';
+  });
+  return { files: out, urls };
+}
+
+async function getProductFromVariant(variantId) {
+  const data = await shopifyFetch(GQL_VARIANT_PARENT, { id: variantId });
+  const pv = data?.productVariant;
+  if (!pv?.product?.id) {
+    const e = new Error('variant-parent-not-found');
+    e.stage = 'variantLookup';
+    e.details = { variantId };
+    throw e;
+  }
+  return { productId: pv.product.id, handle: pv.product.handle || '' };
+}
+
+async function setProductMetafields(productId, previewUrl, jsonUrl) {
+  const entries = [];
+  if (previewUrl) {
+    entries.push({
+      ownerId: productId,
+      namespace: 'dobo',
+      key: 'design_preview',
+      type: 'url',
+      value: previewUrl,
+    });
+  }
+  if (jsonUrl) {
+    entries.push({
+      ownerId: productId,
+      namespace: 'dobo',
+      key: 'design_json_url',
+      type: 'url',
+      value: jsonUrl,
+    });
+  }
+  if (!entries.length) return;
+
+  const res = await shopifyFetch(GQL_METAFIELDS_SET, { metafields: entries });
+  const errs = res?.metafieldsSet?.userErrors || [];
+  if (errs.length) {
+    const e = new Error('metafieldsSet-errors');
+    e.stage = 'metafieldsSet';
+    e.details = errs;
+    throw e;
+  }
+}
+
+// -------------- Handler --------------
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== 'POST') { res.status(405).end(); return; }
-    const { variantId, previewDataURL, design, meta } = req.body || {};
-    if (!variantId || !previewDataURL || !design) { res.status(400).json({ ok:false, error:'variantId, previewDataURL y design son requeridos' }); return; }
-    if (!process.env.SHOPIFY_STORE_DOMAIN || !process.env.SHOPIFY_ADMIN_API_TOKEN) { res.status(500).json({ ok:false, error:'Faltan env SHOPIFY_*' }); return; }
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'method-not-allowed' });
+      return;
+    }
 
-    // 0) producto dueño
-    let stage = 'owner';
-    let ownerId;
-    try {
-      const d1 = await adminGraphQL(
-        `query($id:ID!){ productVariant(id:$id){ product{ id handle } } }`,
-        { id: toGid(variantId) }
-      );
-      ownerId = d1?.productVariant?.product?.id;
-      if (!ownerId) throw new Error('product not found for variant');
-    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
+    const { token, url } = pickEnv();
+    if (!token || !url) {
+      res.status(400).json({ ok: false, error: 'env-missing' });
+      return;
+    }
 
-    // 1) buffers
-    const isJpeg = String(previewDataURL).startsWith('data:image/jpeg');
-    const b64 = String(previewDataURL).split(',')[1] || '';
-    const previewBuf = Buffer.from(b64, 'base64');
-    const designId = `dobo-${Date.now()}`;
-    const jsonString = JSON.stringify({ design, meta }, null, 0);
+    const { variantId, previewDataURL, design, meta = {} } = req.body || {};
+    if (!variantId) {
+      res.status(400).json({ ok: false, error: 'missing-variantId' });
+      return;
+    }
 
-    // 2) stagedUploadsCreate
-    stage = 'stagedUploadsCreate';
-    let imgT, jsonT;
-    try {
-      const staged = await adminGraphQL(
-        `mutation($input:[StagedUploadInput!]!){
-          stagedUploadsCreate(input:$input){
-            stagedTargets{ url resourceUrl parameters{ name value } }
-            userErrors{ field message }
-          }
-        }`,
-        { input: [
-          { resource:'FILE', filename:`${designId}.${isJpeg?'jpg':'png'}`, mimeType:isJpeg?'image/jpeg':'image/png', httpMethod:'POST' },
-          { resource:'FILE', filename:`${designId}.json`, mimeType:'application/json', httpMethod:'POST' }
-        ] }
-      );
-      const ue = staged?.stagedUploadsCreate?.userErrors || [];
-      if (ue.length) throw new Error(JSON.stringify(ue));
-      [imgT, jsonT] = staged.stagedUploadsCreate.stagedTargets;
-    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
+    // 1) preparar buffers de archivos
+    const png = dataUrlToBuffer(previewDataURL);
+    if (!png || !png.buf || !/image\/png/i.test(png.mime || '')) {
+      const e = new Error('invalid-preview');
+      e.stage = 'decodePreview';
+      throw e;
+    }
 
-    // 3) subir a S3
-    stage = 's3-upload';
-    try {
-      const postToS3 = async (t, buf, type) => {
-        const form = new FormData();
-        t.parameters.forEach(p => form.append(p.name, p.value));
-        form.append('file', new Blob([buf], { type }));
-        const r = await fetch(t.url, { method:'POST', body: form });
-        if (!r.ok) throw new Error(`S3 ${r.status}`);
-      };
-      await postToS3(imgT, previewBuf, isJpeg ? 'image/jpeg' : 'image/png');
-      await postToS3(jsonT, new TextEncoder().encode(jsonString), 'application/json');
-    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
+    const base = typeof design === 'string' ? JSON.parse(design) : (design || {});
+    const payload = { ...base, meta: { ...(base.meta || {}), ...meta } };
+    const jsonBuf = Buffer.from(JSON.stringify(payload), 'utf8');
 
-    // 4) fileCreate (usa originalSource, no resourceUrl)
-  // 4) fileCreate con fragments + poll de URLs
-stage = 'fileCreate';
-let previewUrl, jsonUrl, imgId, jsonId;
+    const ts = Date.now();
+    const pngName = `dobo-${ts}.png`;
+    const jsonName = `dobo-${ts}.json`;
 
-const sleep = (ms)=>new Promise(r=>setTimeout(r, ms));
+    // 2) staged uploads → resourceUrl
+    const [pngResourceUrl, jsonResourceUrl] = await Promise.all([
+      stagedUpload({ filename: pngName, mimeType: 'image/png', buffer: png.buf }),
+      stagedUpload({ filename: jsonName, mimeType: 'application/json', buffer: jsonBuf }),
+    ]);
 
-try {
-  const fin = await adminGraphQL(
-    `mutation($files:[FileCreateInput!]!){
-      fileCreate(files:$files){
-        files{
-          __typename
-          id
-          ... on MediaImage { image { url } }
-          ... on GenericFile { url }
-        }
-        userErrors{ field message code }
-      }
-    }`,
-    { files: [
-      { originalSource: imgT.resourceUrl,  contentType: 'IMAGE', alt: designId },
-      { originalSource: jsonT.resourceUrl, contentType: 'FILE' }
-    ] }
-  );
-  const ue = fin?.fileCreate?.userErrors || [];
-  if (ue.length) throw new Error(JSON.stringify(ue));
+    // 3) fileCreate → URLs públicas
+    const created = await fileCreateFromResourceUrls([
+      { resourceUrl: pngResourceUrl, contentType: 'IMAGE', alt: `preview-${ts}` },
+      { resourceUrl: jsonResourceUrl, contentType: 'FILE', alt: `design-${ts}` },
+    ]);
 
-  const files = fin?.fileCreate?.files || [];
-  const media   = files.find(f => f.__typename === 'MediaImage');
-  const generic = files.find(f => f.__typename === 'GenericFile');
+    const [previewUrl, jsonUrl] = created.urls;
 
-  imgId  = media?.id  || null;
-  jsonId = generic?.id || null;
-  previewUrl = media?.image?.url || null;
-  jsonUrl    = generic?.url || null;
+    if (!previewUrl || !jsonUrl) {
+      const e = new Error('missing file urls');
+      e.stage = 'fileCreate';
+      throw e;
+    }
 
-  // poll hasta obtener URLs
-  for (let i = 0; i < 10 && (!previewUrl || !jsonUrl); i++) {
-    await sleep(700);
-    const q = await adminGraphQL(
-      `query($ids:[ID!]!){
-        nodes(ids:$ids){
-          __typename
-          ... on MediaImage { id image { url } }
-          ... on GenericFile { id url }
-        }
-      }`,
-      { ids: [imgId, jsonId].filter(Boolean) }
-    );
-    const nodes = q?.nodes || [];
-    const m = nodes.find(n => n.__typename === 'MediaImage');
-    const g = nodes.find(n => n.__typename === 'GenericFile');
-    previewUrl = previewUrl || m?.image?.url || null;
-    jsonUrl    = jsonUrl    || g?.url || null;
-  }
+    // 4) producto padre del variant
+    const { productId, handle } = await getProductFromVariant(variantId);
 
-  if (!previewUrl || !jsonUrl) throw new Error('missing file urls');
-} catch (e) {
-  return res.status(500).json({ ok:false, stage, error:String(e) });
-}
+    // 5) guardar metafields en el PRODUCTO
+    await setProductMetafields(productId, previewUrl, jsonUrl);
 
-    // 5) escribir metacampos
-    stage = 'metafieldsSet';
-    try {
-      const setRes = await adminGraphQL(
-        `mutation set($m:[MetafieldsSetInput!]!){
-          metafieldsSet(metafields:$m){
-            metafields { id key namespace }
-            userErrors{ field message code }
-          }
-        }`,
-        { m: [
-          { ownerId, namespace:'dobo', key:'design_json_url',    type:'url',                    value:String(jsonUrl) },
-          { ownerId, namespace:'dobo', key:'design_preview_url', type:'url',                    value:String(previewUrl) },
-          { ownerId, namespace:'dobo', key:'design_id',          type:'single_line_text_field', value:String(designId) }
-        ] }
-      );
-      const ue = setRes?.metafieldsSet?.userErrors || [];
-      if (ue.length) throw new Error(JSON.stringify(ue));
-    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
-
-    // 6) confirmación
-    stage = 'readBack';
-    try {
-      const rb = await adminGraphQL(
-        `query($id:ID!){
-          product(id:$id){
-            id handle
-            mf1: metafield(namespace:"dobo", key:"design_json_url"){ value }
-            mf2: metafield(namespace:"dobo", key:"design_preview_url"){ value }
-            mf3: metafield(namespace:"dobo", key:"design_id"){ value }
-          }
-        }`,
-        { id: ownerId }
-      );
-      return res.status(200).json({ ok:true, productId: ownerId, previewUrl, jsonUrl, designId, readBack: rb?.product });
-    } catch (e) { return res.status(500).json({ ok:false, stage, error:String(e) }); }
-
-  } catch (e) {
-    return res.status(500).json({ ok:false, stage:'unknown', error:String(e?.message || e) });
+    res.status(200).json({
+      ok: true,
+      variantId,
+      productId,
+      handle,
+      previewUrl,
+      jsonUrl,
+    });
+  } catch (err) {
+    const code = (err && err.stage === 'env') ? 400 : 500;
+    res.status(code).json({
+      ok: false,
+      error: String(err?.message || err || 'error'),
+      stage: err?.stage || null,
+      details: err?.details || null,
+    });
   }
 }
