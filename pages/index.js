@@ -548,11 +548,30 @@ async function publishDesignForVariant(variantId) {
     }
     if (!previewDataURL) return { ok:false, error:'no-preview' };
 
+
+// DOBO: meta para restaurar selección
+const meta = {
+  potId: pots[selectedPotIndex]?.id || "",
+  potTitle: pots[selectedPotIndex]?.title || "",
+  potHandle: pots[selectedPotIndex]?.handle || "",
+  plantId: plants[selectedPlantIndex]?.id || "",
+  plantTitle: plants[selectedPlantIndex]?.title || "",
+  plantHandle: plants[selectedPlantIndex]?.handle || "",
+  color: selectedColor || "",
+  size: activeSize || ""
+};
+
+    
     // call
     const r = await fetch('/api/publish-by-variant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variantId, previewDataURL, design: snap, meta: {} })
+    body: JSON.stringify({
+  variantId,
+  previewDataURL,
+  design: snap,   // el snapshot actual
+  meta            // ← importante
+})
     });
 
     const raw = await r.text();
