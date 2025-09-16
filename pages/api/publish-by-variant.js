@@ -67,6 +67,17 @@ mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
   }
 }`;
 
+const GQL_FILES_BY_ID = `
+query filesById($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    id
+    __typename
+    ... on MediaImage { image { url } }
+    ... on GenericFile { url }
+  }
+}`;
+
+
 /* Helpers */
 function dataUrlToBuffer(dataUrl) {
   if (!dataUrl || typeof dataUrl !== 'string') return null;
@@ -100,24 +111,53 @@ async function stagedUpload({ filename, mimeType, buffer, resource }) {
 
 async function fileCreateFromResourceUrls(inputs) {
   // inputs: [{ resourceUrl, contentType:'IMAGE'|'FILE', alt? }]
-  const files = inputs.map(x => ({
+  const filesInput = inputs.map(x => ({
     originalSource: x.resourceUrl,
     contentType: x.contentType,
     alt: x.alt || null,
   }));
-  const res = await shopifyFetch(GQL_FILE_CREATE, { files });
+
+  const res = await shopifyFetch(GQL_FILE_CREATE, { files: filesInput });
   const uerr = res?.fileCreate?.userErrors || [];
   if (uerr.length) {
     const e = new Error('fileCreate-errors');
     e.stage = 'fileCreate'; e.details = uerr; throw e;
   }
-  const out = res?.fileCreate?.files || [];
-  const urls = out.map(f => f.__typename === 'MediaImage'
-    ? (f.image?.url || '')
-    : (f.url || '')
+  const created = res?.fileCreate?.files || [];
+  const ids = created.map(f => f.id).filter(Boolean);
+
+  // intento inmediato
+  let urls = created.map(f =>
+    f.__typename === 'MediaImage' ? (f.image?.url || '') :
+    f.__typename === 'GenericFile' ? (f.url || '') : ''
   );
-  return { files: out, urls };
+
+  const haveAll = () => urls.every(u => typeof u === 'string' && u.length > 0);
+
+  // si faltan, poll a nodes(ids) hasta 8 veces
+  for (let i = 0; i < 8 && !haveAll(); i++) {
+    await new Promise(r => setTimeout(r, 400 + i * 150));
+    const nodes = await shopifyFetch(GQL_FILES_BY_ID, { ids });
+    const byId = new Map(
+      (nodes?.nodes || []).map(n => {
+        const url = n?.__typename === 'MediaImage' ? (n?.image?.url || '') :
+                    n?.__typename === 'GenericFile' ? (n?.url || '') : '';
+        return [n?.id, url];
+      })
+    );
+    urls = created.map(f => byId.get(f.id) || '');
+  }
+
+  if (!haveAll()) {
+    const e = new Error('missing file urls');
+    e.stage = 'fileCreate';
+    e.details = { ids, urls };
+    throw e;
+  }
+
+  return { files: created, urls };
 }
+
 
 async function getProductFromVariant(variantId) {
   const d = await shopifyFetch(GQL_VARIANT_PARENT, { id: variantId });
