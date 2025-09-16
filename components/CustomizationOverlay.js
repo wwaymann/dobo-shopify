@@ -456,6 +456,30 @@ useEffect(() => {
     });
     fabricCanvasRef.current = c;
 
+    // DOBO: exponer API global del editor
+if (typeof window !== 'undefined') {
+  const api = {
+    // existentes
+    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+    toSVG: () => c.toSVG({ suppressPreamble: true }),
+    getCanvas: () => c,
+    // snapshot
+    exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
+    importDesignSnapshot: (snap) => new Promise(res => {
+      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+    }),
+    loadDesignSnapshot: (snap) => new Promise(res => {
+      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+    }),
+    loadJSON: (snap) => new Promise(res => {
+      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+    }),
+    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+  };
+  window.doboDesignAPI = api;
+  try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
+}
+
     // ===== Delimitar área: margen 40 px por lado (ajustable) =====
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
 
@@ -512,34 +536,6 @@ useEffect(() => {
     c.on('path:created', __hist_onPath);
 
 
- // API completa para snapshot y carga
-    if (typeof window !== 'undefined') {
-      const api = {
-        // existente
-        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-        toSVG: () => c.toSVG({ suppressPreamble: true }),
-        getCanvas: () => c,
-        // NUEVO: exportar estado del diseño
-        exportDesignSnapshot: () => {
-          try { return c.toJSON(); } catch { return null; }
-        },
-        // NUEVO: importar/cargar estado del diseño
-        importDesignSnapshot: (snap) => new Promise(res => {
-          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-        }),
-        loadDesignSnapshot: (snap) => new Promise(res => {
-          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-        }),
-        loadJSON: (snap) => new Promise(res => {
-          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-        }),
-        // NUEVO: limpiar
-        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-      };
-      window.doboDesignAPI = api;
-      // Señal de “listo” para quien espere el editor
-      try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
-    }
 
     // Helpers de tipo
     const classify = (a) => {
@@ -623,6 +619,7 @@ useEffect(() => {
       try { __bounds_ro.disconnect(); } catch {}
       if (__boundsOverlay) { try { c.remove(__boundsOverlay); } catch {} }
       try { c.dispose(); } catch {}
+      try { delete window.doboDesignAPI; } catch {}
       fabricCanvasRef.current = null;
     };
   }, [visible]);
