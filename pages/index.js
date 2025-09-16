@@ -199,6 +199,9 @@ function Home() {
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
   const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
   const CLICK_STEP_PX = 8;
+  // DOBO: meta del diseño cargado
+const designMetaRef = useRef(null);
+
   const handlePointerDownCap = (e, ref) => {
     ref.current = {
       btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0,
@@ -322,6 +325,59 @@ function Home() {
     return () => { cancelled = true; };
   }, [activeSize]);
 
+// DOBO: aplica selección de planta/maceta/color/size desde meta
+useEffect(() => {
+  const meta = designMetaRef.current;
+  if (!meta) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 || plants.length === 0) return;
+
+  const asStr = v => String(v || "").toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || "");
+    return s.includes("gid://") ? s.split("/").pop() : s;
+  };
+
+  const matchIndex = (list, target) => {
+    if (!target) return -1;
+    const t = asStr(target);
+    const tNum = gidToNum(target);
+    return list.findIndex(p => {
+      const ids = [
+        p?.id,                       // gid
+        gidToNum(p?.id),             // num
+        p?.handle,
+        p?.title
+      ].map(asStr);
+      return ids.includes(t) || ids.includes(asStr(tNum));
+    });
+  };
+
+  // 1) tamaño
+  const sizeRaw = meta.size || meta.tamano || meta.tamaño;
+  if (sizeRaw) {
+    const s = asStr(sizeRaw);
+    if (["p","pequeño","pequeno","pequeña","pequena"].includes(s)) setActiveSize("Pequeño");
+    else if (["m","mediano","mediana"].includes(s)) setActiveSize("Mediano");
+    else if (["g","grande"].includes(s)) setActiveSize("Grande");
+  }
+
+  // 2) maceta
+  const potKey = meta.potId || meta.pot || meta.potHandle || meta.potTitle;
+  const ip = matchIndex(pots, potKey);
+  if (ip >= 0) setSelectedPotIndex(ip);
+
+  // 3) planta
+  const plantKey = meta.plantId || meta.plant || meta.plantHandle || meta.plantTitle;
+  const il = matchIndex(plants, plantKey);
+  if (il >= 0) setSelectedPlantIndex(il);
+
+  // 4) color variante
+  if (meta.color) setSelectedColor(meta.color);
+
+}, [pots, plants]);
+
+  
   /* ---------- sync tamaño al navegar carruseles ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
@@ -706,6 +762,8 @@ useEffect(() => {
       if (!resp.ok) return;
       const payload = await resp.json();
       const snapshot = payload?.design || payload;
+// guarda meta para sincronizar carruseles
+designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
 
       if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
       else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
