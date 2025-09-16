@@ -203,6 +203,7 @@ function Home() {
   const [designMeta, setDesignMeta] = useState(null);   // <— NUEVO
   const restoredOnceRef = useRef(false);                // <— NUEVO
   const userPickedSizeRef = useRef(false);
+  const appliedMetaOnceRef = useRef(false);
 
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -392,55 +393,47 @@ useEffect(() => {
 
 // DOBO: aplica selección de planta/maceta/color/size desde meta
 useEffect(() => {
+  // Solo una vez y solo si hay meta
+  if (appliedMetaOnceRef.current) return;
   const meta = designMetaRef.current;
   if (!meta) return;
-  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
-  if (pots.length === 0 || plants.length === 0) return;
+  if (!pots.length || !plants.length) return;
 
   const asStr = v => String(v || "").toLowerCase().trim();
-  const gidToNum = (id) => {
-    const s = String(id || "");
-    return s.includes("gid://") ? s.split("/").pop() : s;
-  };
+  const gidToNum = (id) => (String(id||"").includes("gid://") ? String(id).split("/").pop() : String(id||""));
 
   const matchIndex = (list, target) => {
     if (!target) return -1;
-    const t = asStr(target);
-    const tNum = gidToNum(target);
+    const t = asStr(target); const tNum = asStr(gidToNum(target));
     return list.findIndex(p => {
       const ids = [
-        p?.id,                       // gid
-        gidToNum(p?.id),             // num
-        p?.handle,
-        p?.title
+        p?.id, gidToNum(p?.id), p?.handle, p?.title
       ].map(asStr);
-      return ids.includes(t) || ids.includes(asStr(tNum));
+      return ids.includes(t) || ids.includes(tNum);
     });
   };
 
-  // 1) tamaño
+  // Tamaño guardado en meta → solo si el usuario AÚN no eligió manualmente
   const sizeRaw = meta.size || meta.tamano || meta.tamaño;
-  if (sizeRaw) {
+  if (!userPickedSizeRef.current && sizeRaw) {
     const s = asStr(sizeRaw);
     if (["p","pequeño","pequeno","pequeña","pequena"].includes(s)) setActiveSize("Pequeño");
     else if (["m","mediano","mediana"].includes(s)) setActiveSize("Mediano");
     else if (["g","grande"].includes(s)) setActiveSize("Grande");
   }
 
-  // 2) maceta
-  const potKey = meta.potId || meta.pot || meta.potHandle || meta.potTitle;
-  const ip = matchIndex(pots, potKey);
+  // Selección de maceta/planta si existen en la lista actual
+  const ip = matchIndex(pots,   meta.potId || meta.pot || meta.potHandle || meta.potTitle);
+  const il = matchIndex(plants, meta.plantId || meta.plant || meta.plantHandle || meta.plantTitle);
   if (ip >= 0) setSelectedPotIndex(ip);
-
-  // 3) planta
-  const plantKey = meta.plantId || meta.plant || meta.plantHandle || meta.plantTitle;
-  const il = matchIndex(plants, plantKey);
   if (il >= 0) setSelectedPlantIndex(il);
 
-  // 4) color variante
   if (meta.color) setSelectedColor(meta.color);
 
+  // ¡No volver a aplicar!
+  appliedMetaOnceRef.current = true;
 }, [pots, plants]);
+
 
 
   /* ---------- zoom rueda ---------- */
@@ -914,16 +907,20 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         <div className="col-lg-5 col-md-8 col-12 text-center">
           {/* Selector de tamaño */}
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-            {["Pequeño", "Mediano", "Grande"].map((s) => (
-    
+         {["Pequeño", "Mediano", "Grande"].map((s) => (
   <button
     key={s}
     className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
-    onClick={() => { userPickedSizeRef.current = true; setActiveSize(s); }}
+    onClick={() => {
+      userPickedSizeRef.current = true;        // el usuario eligió
+      appliedMetaOnceRef.current = true;       // no volver a aplicar meta luego
+      setActiveSize(s);                        // dispara fetch por tamaño
+    }}
   >
     {s}
   </button>
 ))}
+
 
           </div>
 
