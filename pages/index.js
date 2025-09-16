@@ -5,6 +5,8 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
+// al inicio del archivo, junto a otros useRef/useState
+const initFromURLRef = { current: false };
 
 function ControlesPublicar() {
   const onPublish = async () => {
@@ -325,6 +327,32 @@ const designMetaRef = useRef(null);
     return () => { cancelled = true; };
   }, [activeSize]);
 
+  // Selección inicial por URL ?pot=HANDLE&plant=HANDLE (solo una vez)
+useEffect(() => {
+  if (initFromURLRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants) || (!pots.length && !plants.length)) return;
+
+  const q = new URLSearchParams(window.location.search);
+  const potH = (q.get('pot') || q.get('potHandle') || '').trim().toLowerCase();
+  const plantH = (q.get('plant') || q.get('plantHandle') || '').trim().toLowerCase();
+
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const findByHandle = (arr, h) =>
+    arr.findIndex(p => norm(p.handle || p.title) === h);
+
+  let touched = false;
+  if (potH) {
+    const i = findByHandle(pots, potH);
+    if (i >= 0) { setSelectedPotIndex(i); touched = true; }
+  }
+  if (plantH) {
+    const j = findByHandle(plants, plantH);
+    if (j >= 0) { setSelectedPlantIndex(j); touched = true; }
+  }
+  if (touched) initFromURLRef.current = true;
+}, [pots, plants]);
+
+
 // DOBO: aplica selección de planta/maceta/color/size desde meta
 useEffect(() => {
   const meta = designMetaRef.current;
@@ -377,18 +405,6 @@ useEffect(() => {
 
 }, [pots, plants]);
 
-  
-  /* ---------- sync tamaño al navegar carruseles ---------- */
-  useEffect(() => {
-    const pot = pots[selectedPotIndex];
-    const sz = pot ? getSizeTag(pot.tags) : "";
-    if (sz && sz !== activeSize) setActiveSize(sz);
-  }, [selectedPotIndex, pots]);
-  useEffect(() => {
-    const plant = plants[selectedPlantIndex];
-    const sz = plant ? getSizeTag(plant.tags) : "";
-    if (sz && sz !== activeSize) setActiveSize(sz);
-  }, [selectedPlantIndex, plants]);
 
   /* ---------- zoom rueda ---------- */
   useEffect(() => {
@@ -632,6 +648,7 @@ async function waitDesignerReady(timeout = 20000) {
     const form = document.createElement("form");
     form.method = "POST";
     form.action = `https://${shop}/cart/add`;
+    form.target = "_top"; // forzar navegación en top-level cuando se ejecuta dentro de un iframe
     const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
     let line = 0;
 
