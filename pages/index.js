@@ -197,6 +197,11 @@ function Home() {
   const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
 
+  const desiredPotHandleRef = useRef(null);
+  const desiredPlantHandleRef = useRef(null);
+  const desiredSizeRef = useRef(null);
+
+
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
   const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -309,12 +314,17 @@ const designMetaRef = useRef(null);
         setPlants(plantsSafe);
         setAccessories(accSafe);
 
-        if (potsSafe.length > 0) {
-          const v = (potsSafe[0].variants || []).find((x) => x?.availableForSale) || potsSafe[0].variants?.[0] || null;
-          setSelectedPotVariant(v || null);
+       // NO resetees a 0: conserva la selección si existe, o clamp si quedó fuera de rango
+setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
+setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
+// La variante se calcula en tu effect de variantes (pots/selectedPotIndex/selectedColor),
+// así que no seteamos selectedPotVariant aquí.
+
         }
         setSelectedPotIndex(0);
         setSelectedPlantIndex(0);
+
+        
       } catch (err) {
         console.error("Error fetching products:", err);
         if (!cancelled) {
