@@ -1,8 +1,10 @@
 // pages/api/publish-by-variant.js
-export const config = { api: { bodyParser: { sizeLimit: '10mb' } } };
+export const runtime = 'nodejs';
+export const config = { api: { bodyParser: { sizeLimit: '25mb' } } };
 
 const ADMIN_API_VERSION = process.env.SHOPIFY_ADMIN_API_VERSION || '2024-10';
 
+/* ================= env ================= */
 function pickEnv() {
   const token =
     process.env.SHOPIFY_ADMIN_TOKEN ||
@@ -18,6 +20,7 @@ function pickEnv() {
   return { token, url, shop };
 }
 
+/* ================ fetch ================ */
 async function shopifyFetch(query, variables) {
   const { token, url } = pickEnv();
   if (!token || !url) {
@@ -28,15 +31,18 @@ async function shopifyFetch(query, variables) {
     headers: { 'Content-Type':'application/json', 'X-Shopify-Access-Token': token },
     body: JSON.stringify({ query, variables }),
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.errors) {
+  const text = await r.text();
+  let j = null; try { j = JSON.parse(text); } catch {}
+  if (!r.ok || !j || j.errors) {
     const e = new Error('shopify-graphql-error');
-    e.stage = 'graphql'; e.details = j.errors || j; throw e;
+    e.stage = 'graphql';
+    e.details = { status: r.status, body: text };
+    throw e;
   }
   return j.data;
 }
 
-/* GQL */
+/* ================ GQL ================== */
 const GQL_STAGED_UPLOADS_CREATE = `
 mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
   stagedUploadsCreate(input: $input) {
@@ -48,11 +54,19 @@ const GQL_FILE_CREATE = `
 mutation fileCreate($files: [FileCreateInput!]!) {
   fileCreate(files: $files) {
     files {
-      __typename id alt createdAt
+      id __typename createdAt
       ... on MediaImage { image { url } }
       ... on GenericFile { url }
     }
     userErrors { field message }
+  }
+}`;
+const GQL_FILES_BY_ID = `
+query filesById($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    id __typename
+    ... on MediaImage { image { url } }
+    ... on GenericFile { url }
   }
 }`;
 const GQL_VARIANT_PARENT = `
@@ -67,18 +81,12 @@ mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
   }
 }`;
 
-const GQL_FILES_BY_ID = `
-query filesById($ids: [ID!]!) {
-  nodes(ids: $ids) {
-    id
-    __typename
-    ... on MediaImage { image { url } }
-    ... on GenericFile { url }
-  }
-}`;
+/* =============== helpers =============== */
+const toGid = (kind, id) => {
+  const s = String(id || '');
+  return s.startsWith('gid://') ? s : `gid://shopify/${kind}/${s}`;
+};
 
-
-/* Helpers */
 function dataUrlToBuffer(dataUrl) {
   if (!dataUrl || typeof dataUrl !== 'string') return null;
   const m = dataUrl.match(/^data:([\w/+.-]+);base64,(.*)$/);
@@ -102,7 +110,7 @@ async function stagedUpload({ filename, mimeType, buffer, resource }) {
   form.append('file', new Blob([buffer]), filename);
   const r = await fetch(target.url, { method:'POST', body: form });
   if (!r.ok) {
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     const e = new Error('gcs-upload-failed');
     e.stage = 'gcs-upload'; e.details = { status:r.status, body:txt }; throw e;
   }
@@ -126,15 +134,12 @@ async function fileCreateFromResourceUrls(inputs) {
   const created = res?.fileCreate?.files || [];
   const ids = created.map(f => f.id).filter(Boolean);
 
-  // intento inmediato
   let urls = created.map(f =>
     f.__typename === 'MediaImage' ? (f.image?.url || '') :
     f.__typename === 'GenericFile' ? (f.url || '') : ''
   );
-
   const haveAll = () => urls.every(u => typeof u === 'string' && u.length > 0);
 
-  // si faltan, poll a nodes(ids) hasta 8 veces
   for (let i = 0; i < 8 && !haveAll(); i++) {
     await new Promise(r => setTimeout(r, 400 + i * 150));
     const nodes = await shopifyFetch(GQL_FILES_BY_ID, { ids });
@@ -158,9 +163,8 @@ async function fileCreateFromResourceUrls(inputs) {
   return { files: created, urls };
 }
 
-
 async function getProductFromVariant(variantId) {
-  const d = await shopifyFetch(GQL_VARIANT_PARENT, { id: variantId });
+  const d = await shopifyFetch(GQL_VARIANT_PARENT, { id: toGid('ProductVariant', variantId) });
   const pv = d?.productVariant;
   if (!pv?.product?.id) {
     const e = new Error('variant-parent-not-found');
@@ -186,7 +190,7 @@ async function setProductMetafields(productId, previewUrl, jsonUrl) {
   }
 }
 
-/* Handler */
+/* ================ handler =============== */
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') return res.status(405).json({ ok:false, error:'method-not-allowed' });
@@ -197,13 +201,13 @@ export default async function handler(req, res) {
     const { variantId, previewDataURL, design, meta = {} } = req.body || {};
     if (!variantId) return res.status(400).json({ ok:false, error:'missing-variantId' });
 
-    // preview PNG
+    // PNG desde dataURL
     const png = dataUrlToBuffer(previewDataURL);
     if (!png?.buf || !/image\/png/i.test(png.mime||'')) {
       const e = new Error('invalid-preview'); e.stage = 'decodePreview'; throw e;
     }
 
-    // JSON con meta fusionada
+    // JSON diseño + meta
     const base = typeof design === 'string' ? JSON.parse(design) : (design || {});
     const payload = { ...base, meta: { ...(base.meta || {}), ...meta } };
     const jsonBuf = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -212,18 +216,17 @@ export default async function handler(req, res) {
     const pngName = `dobo-${ts}.png`;
     const jsonName = `dobo-${ts}.json`;
 
-    // staged uploads: OJO tipo correcto
+    // subir a staged uploads con tipo correcto
     const [pngResourceUrl, jsonResourceUrl] = await Promise.all([
       stagedUpload({ filename: pngName,  mimeType: 'image/png',         buffer: png.buf,  resource: 'IMAGE' }),
-      stagedUpload({ filename: jsonName, mimeType: 'application/json',  buffer: jsonBuf, resource: 'FILE'  }),
+      stagedUpload({ filename: jsonName, mimeType: 'application/json',  buffer: jsonBuf,  resource: 'FILE'  }),
     ]);
 
-    // crear Files públicos
+    // crear Files públicos y esperar URLs
     const created = await fileCreateFromResourceUrls([
       { resourceUrl: pngResourceUrl,  contentType: 'IMAGE', alt: `preview-${ts}` },
       { resourceUrl: jsonResourceUrl, contentType: 'FILE',  alt: `design-${ts}`  },
     ]);
-
     const [previewUrl, jsonUrl] = created.urls;
     if (!previewUrl || !jsonUrl) {
       const e = new Error('missing file urls'); e.stage = 'fileCreate'; e.details = created; throw e;
@@ -232,7 +235,7 @@ export default async function handler(req, res) {
     // producto padre
     const { productId, handle } = await getProductFromVariant(variantId);
 
-    // metafields en PRODUCTO
+    // escribir metafields en PRODUCTO
     await setProductMetafields(productId, previewUrl, jsonUrl);
 
     res.status(200).json({ ok:true, variantId, productId, handle, previewUrl, jsonUrl });
