@@ -915,7 +915,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           {/* Selector de tamaño */}
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
             {["Pequeño", "Mediano", "Grande"].map((s) => (
-           {["Pequeño", "Mediano", "Grande"].map((s) => (
+    
   <button
     key={s}
     className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
