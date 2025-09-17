@@ -7,6 +7,7 @@ import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
+const mobileShellRef = { current: null };
 
 function ControlesPublicar() {
   const onPublish = async () => {
@@ -103,6 +104,7 @@ function IframePreview(props) {
     <div style={style}>
       <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
     </div>
+    
   );
 }
 
@@ -122,6 +124,7 @@ function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
       ))}
       <span className={styles.dotsLabel}>{current + 1}/{count}</span>
     </div>
+   
   );
 }
 
@@ -284,6 +287,25 @@ const designMetaRef = useRef(null);
   }, [editing]);
 
   
+
+// Centrar horizontalmente el conjunto en móvil sin remaquetar
+useEffect(() => {
+  const shell = mobileShellRef?.current;
+  if (!shell) return;
+  const content = shell.querySelector('.container');
+  if (!content) return;
+  const center = () => {
+    try {
+      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
+      shell.scrollLeft = target;
+    } catch {}
+  };
+  center();
+  const onR = () => center();
+  window.addEventListener('resize', onR);
+  return () => window.removeEventListener('resize', onR);
+}, []);
+
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
   let cancelled = false;
@@ -936,9 +958,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           </div>
 
           {/* Escena */}
-                    {/* SCENE WRAPPER START */}
-          <div className={styles.sceneScaler}>
-            <div className={styles.sceneScalerInner}>
           <div
             className="position-relative"
             ref={sceneWrapRef}
@@ -959,11 +978,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               userSelect: "none",
             }}
           >
-            
-          {/* SCENE WRAPPER END */}
-            </div>
-          </div>
-{/* Dots y flechas PLANTAS */}
+            {/* Dots y flechas PLANTAS */}
             <IndicatorDots
               count={plants.length}
               current={selectedPlantIndex}
@@ -1266,6 +1281,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         .pot-carousel--locked::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
+   
   );
 }
 
