@@ -197,7 +197,7 @@ function Home() {
   const [colorOptions, setColorOptions] = useState([]);
 
   const [editing, setEditing] = useState(false);
-  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
+// const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
   const zoomRef = useRef(1);
@@ -285,18 +285,7 @@ const designMetaRef = useRef(null);
   }, [editing]);
 
 
-  // Medir ancho/alto reales del escenario para alinear carruseles por píxeles
-  useEffect(() => {
-    const el = sceneWrapRef?.current;
-    if (!el) return;
-    const apply = () => setStageSize({ w: Math.round(el.clientWidth || 0), h: Math.round(el.clientHeight || 0) });
-    apply();
-    const ro = new ResizeObserver(() => apply());
-    try { ro.observe(el); } catch {}
-    return () => { try { ro.disconnect(); } catch {} };
-  }, []);
-
-  
+  // (removido) Medición de ancho/alto no necesaria para %
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
   let cancelled = false;
@@ -1033,20 +1022,20 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", top: Math.max(4, Math.round(stageSize.h * 0.02)) + "px", width: stageSize.w || "100%", zIndex: 2, touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...potSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * (stageSize.w || 0)}px)` }}>
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                   {pots.map((product, idx) => {
                     const isSel = idx === selectedPotIndex;
                     const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
                     const imageUrl = vImg || product.image;
                     return (
-                      <div key={product.id} className={styles.carouselItem} style={{ minWidth: stageSize.w || undefined }}>
+                      <div key={product.id} className={styles.carouselItem}>
                         <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
                       </div>
                     );
@@ -1066,9 +1055,9 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 onContextMenu={(e) => e.preventDefault()}
                 {...plantSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * (stageSize.w || 0)}px)` }}>
+                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                   {plants.map((product) => (
-                    <div key={product.id} className={styles.carouselItem} style={{ minWidth: stageSize.w || undefined }}>
+                    <div key={product.id} className={styles.carouselItem}>
                       <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
                     </div>
                   ))}
