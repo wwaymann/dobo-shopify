@@ -187,3 +187,10 @@
 @media (min-width: 577px) and (max-width: 768px){
   .sceneScalerInner{ transform: scale(0.92); transform-origin: top center; }
 }
+
+@media (max-width: 768px){
+  .carouselContainer { width:100%; max-width:100%; }
+  .carouselItem { min-width:100%; }
+  .carouselImage { width:100%; max-width:100%; height:auto; object-fit:contain; }
+}
+
