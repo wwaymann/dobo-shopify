@@ -936,6 +936,9 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           </div>
 
           {/* Escena */}
+                    {/* SCENE WRAPPER START */}
+          <div className={styles.sceneScaler}>
+            <div className={styles.sceneScalerInner}>
           <div
             className="position-relative"
             ref={sceneWrapRef}
@@ -956,7 +959,11 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               userSelect: "none",
             }}
           >
-            {/* Dots y flechas PLANTAS */}
+            
+          {/* SCENE WRAPPER END */}
+            </div>
+          </div>
+{/* Dots y flechas PLANTAS */}
             <IndicatorDots
               count={plants.length}
               current={selectedPlantIndex}
