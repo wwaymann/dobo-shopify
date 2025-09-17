@@ -1,23 +1,28 @@
-// Cliente puro. Sin SSR.
-import { useEffect, useState } from "react";
+// /pages/preview-2d.js
 import dynamic from "next/dynamic";
-const Preview2D = () => {
+import { useEffect, useState } from "react";
+import { applyRelief2DFromURLs } from "../lib/relief2d";
+
+function Preview2D(){
   const [url, setUrl] = useState(null);
   useEffect(() => {
     (async () => {
-      const { applyRelief2DFromURLs } = await import("../lib/relief2d");
-      const out = await applyRelief2DFromURLs(
-        "/pot.jpg",
-        "/logo-dobo.png",
-        {
-          logoScaleW: 0.36,
-          logoCenter: [0.48, 0.46],
-          strength: 3.2,
-          light: [-0.9, -0.6, 0.35],
-          ao: 0.25
-        }
-      );
-      setUrl(out);
+      try {
+        const out = await applyRelief2DFromURLs(
+          "/pot.jpg",
+          "/logo-dobo.png",
+          {
+            logoScaleW: 0.36,
+            logoCenter: [0.48, 0.46],
+            strength: 3.2,
+            light: [-0.9, -0.6, 0.35],
+            ao: 0.25
+          }
+        );
+        setUrl(out);
+      } catch (e) {
+        console.error("relief2D fail:", e);
+      }
     })();
   }, []);
   if (!url) return <p style={{padding:16}}>Procesando…</p>;
@@ -27,5 +32,5 @@ const Preview2D = () => {
       <a href={url} download="dobo-relieve-2d.png">Descargar PNG</a>
     </div>
   );
-};
+}
 export default dynamic(() => Promise.resolve(Preview2D), { ssr: false });
