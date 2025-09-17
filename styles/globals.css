@@ -30,6 +30,14 @@ body {
   height: 100px;
   background: #ccc;
 }
+
+/* Mobile: mantener layout intacto con scroll horizontal del conjunto */
+@media (max-width: 992px) {
+  html, body { overflow-x: auto; }
+  .container { min-width: 1140px; }
+}
+
+
 /* Responsive defaults */
 img, canvas, video, iframe { max-width: 100%; height: auto; }
 .container, .container-fluid { padding-left: 12px; padding-right: 12px; }
