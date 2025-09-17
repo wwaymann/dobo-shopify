@@ -964,6 +964,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             style={{
               width: "500px",
               height: "650px",
+              width: "100%", maxWidth: "500px",
+              aspectRatio: "500 / 650",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
