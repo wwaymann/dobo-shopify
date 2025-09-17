@@ -3,6 +3,18 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
+import { applyRelief2DFromURLs } from "../lib/relief2d";
+
+
+async function aplicarSobreRelieveEnCanvas(fabricCanvas){
+  const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
+    logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
+  });
+  fabric.Image.fromURL(url, (img)=>{
+    img.set({ selectable:false, evented:false });
+    fabricCanvas.add(img).bringToFront(img).renderAll();
+  });
+}
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
