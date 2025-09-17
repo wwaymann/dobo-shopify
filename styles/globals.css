@@ -30,14 +30,8 @@ body {
   height: 100px;
   background: #ccc;
 }
-
-/* Mobile: mantener layout intacto con scroll horizontal del conjunto */
+/* Mobile centering shell: mantiene layout intacto, centra y permite scroll horizontal */
 @media (max-width: 992px) {
-  html, body { overflow-x: auto; }
-  .container { min-width: 1140px; }
+  .mobile-shell { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .mobile-shell > .container { min-width: 1140px; margin: 0 auto; }
 }
-
-
-/* Responsive defaults */
-img, canvas, video, iframe { max-width: 100%; height: auto; }
-.container, .container-fluid { padding-left: 12px; padding-right: 12px; }
