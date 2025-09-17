@@ -940,8 +940,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             className="position-relative"
             ref={sceneWrapRef}
             style={{
-              width: "500px",
-              height: "650px",
+              width: "min(92vw, 540px)",
+              height: "min(78vh, 760px)",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1046,7 +1046,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 2, position: "absolute", bottom: "min(32vh, 300px)", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
                 onAuxClick={(e) => e.preventDefault()}
