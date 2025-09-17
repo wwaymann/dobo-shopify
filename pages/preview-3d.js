@@ -1,3 +1,4 @@
+import DebugBoundary from "../components/DebugBoundary";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { normalMapFromImage } from "../lib/normalMap";
@@ -17,4 +18,5 @@ export default function Preview3D(){
 
   if(!nmUrl) return <p style={{padding:16}}>Generando normal map…</p>;
   return <PotViewer normalUrl={nmUrl} />;
+return <DebugBoundary><PotViewer normalUrl={nmUrl}/></DebugBoundary>;
 }
