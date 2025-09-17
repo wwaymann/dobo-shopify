@@ -197,7 +197,6 @@ function Home() {
   const [colorOptions, setColorOptions] = useState([]);
 
   const [editing, setEditing] = useState(false);
-// const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
   const zoomRef = useRef(1);
@@ -284,8 +283,7 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-
-  // (removido) Medición de ancho/alto no necesaria para %
+  
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
   let cancelled = false;
@@ -1022,7 +1020,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
