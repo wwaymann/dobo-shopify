@@ -197,6 +197,7 @@ function Home() {
   const [colorOptions, setColorOptions] = useState([]);
 
   const [editing, setEditing] = useState(false);
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
   const zoomRef = useRef(1);
@@ -282,6 +283,18 @@ const designMetaRef = useRef(null);
     c.style.touchAction = editing ? "none" : "pan-y";
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
+
+
+  // Medir ancho/alto reales del escenario para alinear carruseles por píxeles
+  useEffect(() => {
+    const el = sceneWrapRef?.current;
+    if (!el) return;
+    const apply = () => setStageSize({ w: Math.round(el.clientWidth || 0), h: Math.round(el.clientHeight || 0) });
+    apply();
+    const ro = new ResizeObserver(() => apply());
+    try { ro.observe(el); } catch {}
+    return () => { try { ro.disconnect(); } catch {} };
+  }, []);
 
   
 // ---------- fetch por tamaño y tipo ----------
@@ -940,8 +953,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             className="position-relative"
             ref={sceneWrapRef}
             style={{
-              width: "min(92vw, 540px)",
-              height: "min(78vh, 760px)",
+              width: "500px",
+              height: "650px",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1020,20 +1033,20 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", top: Math.max(4, Math.round(stageSize.h * 0.02)) + "px", width: stageSize.w || "100%", zIndex: 2, touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...potSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * (stageSize.w || 0)}px)` }}>
                   {pots.map((product, idx) => {
                     const isSel = idx === selectedPotIndex;
                     const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
                     const imageUrl = vImg || product.image;
                     return (
-                      <div key={product.id} className={styles.carouselItem}>
+                      <div key={product.id} className={styles.carouselItem} style={{ minWidth: stageSize.w || undefined }}>
                         <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
                       </div>
                     );
@@ -1046,16 +1059,16 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "min(32vh, 300px)", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...plantSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * (stageSize.w || 0)}px)` }}>
                   {plants.map((product) => (
-                    <div key={product.id} className={styles.carouselItem}>
+                    <div key={product.id} className={styles.carouselItem} style={{ minWidth: stageSize.w || undefined }}>
                       <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
                     </div>
                   ))}
