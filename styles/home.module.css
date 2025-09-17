@@ -179,11 +179,6 @@
   
 
 /* === Responsive overrides === */
-:global(:root) {
-  --dobo-stage-max-w: 540px;
-  --dobo-stage-max-h: 760px;
-}
-
 @media (max-width: 992px) {
   .container { max-width: min(960px, 100vw - 24px); }
 }
@@ -194,7 +189,7 @@
   .carouselContainer { width: 100%; }
   .carouselItem { min-width: 100%; }
   .carouselImage {
-    width: min(92vw, var(--dobo-stage-max-w));
+    width: min(92vw, 540px);
     height: auto;
     max-width: 100%;
   }
