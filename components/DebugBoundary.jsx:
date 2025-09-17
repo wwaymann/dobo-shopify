@@ -1,0 +1,10 @@
+import React from 'react';
+export default class DebugBoundary extends React.Component{
+  constructor(p){ super(p); this.state={err:null,info:null}; }
+  componentDidCatch(err, info){ console.error('[Boundary]', err, info); this.setState({err,info}); }
+  render(){ return this.state.err
+    ? <pre style={{whiteSpace:'pre-wrap',padding:16,background:'#111',color:'#eee'}}>
+        {String(this.state.err?.message || this.state.err)}
+      </pre>
+    : this.props.children; }
+}
