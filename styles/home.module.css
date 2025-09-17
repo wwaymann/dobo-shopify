@@ -178,26 +178,10 @@
 .shopify-section { overflow: visible; }
   
 
-/* === Responsive overrides === */
+
+/* ===== Mobile scroll shell: preserva layout exacto y solo permite scroll horizontal en anchos chicos ===== */
+.mobileScrollShell { width: 100%; }
 @media (max-width: 992px) {
-  .container { max-width: min(960px, 100vw - 24px); }
-}
-
-@media (max-width: 768px) {
-  .viewportWrapper { margin: 1rem 0; }
-  .container { max-width: calc(100vw - 24px); }
-  .carouselContainer { width: 100%; }
-  .carouselItem { min-width: 100%; }
-  .carouselImage {
-    width: min(92vw, 540px);
-    height: auto;
-    max-width: 100%;
-  }
-  .plantImageOverlay { transform: translateY(0); }
-}
-
-@media (max-width: 576px) {
-  .dots { gap: 4px; }
-  .dot { width: 6px; height: 6px; }
-  .dotActive { width: 22px; height: 6px; }
+  .mobileScrollShell { overflow-x: auto; }
+  .mobileScrollShell :global(.container) { min-width: 1140px; }
 }
