@@ -179,7 +179,7 @@
   
 
 /* === Responsive overrides === */
-:root {
+:global(:root) {
   --dobo-stage-max-w: 540px;
   --dobo-stage-max-h: 760px;
 }
