@@ -1,6 +1,6 @@
 body {
   font-family: 'Arial', sans-serif;
-  padding: 20px;
+  padding: 5px;
   background-color: #f9f9f9;
 }
 
@@ -30,7 +30,8 @@ body {
   height: 100px;
   background: #ccc;
 }
-/* Mobile: container sin padding para full-bleed cuando sea necesario */
+/* Full-bleed móvil: overrides globales permitidos (fuera de CSS Modules) */
 @media (max-width: 768px){
   .container{ padding-left:0 !important; padding-right:0 !important; }
+  .row{ --bs-gutter-x: 0 !important; }
 }
