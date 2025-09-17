@@ -1,4 +1,6 @@
 // Página de prueba cliente. Sin SSR.
+'use client';
+
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { applyRelief2DFromURLs } from "../lib/relief2d";
