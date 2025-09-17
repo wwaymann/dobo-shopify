@@ -178,15 +178,10 @@
 .shopify-section { overflow: visible; }
   
 
-/* Centrado + escala segura SOLO en móviles para el bloque de escena */
-.sceneScaler{ width:100%; display:flex; justify-content:center; }
-.sceneScalerInner{ display:inline-block; }
-@media (max-width: 576px){
-  .sceneScalerInner{ transform: scale(0.85); transform-origin: top center; }
+/* === Full-bleed en móvil para carruseles de la escena === */
+@media (max-width: 768px){
+  :global(.container){ padding-left:0 !important; padding-right:0 !important; }
+  :global(.row){ --bs-gutter-x: 0 !important; }
+  /* Asegura que el contenedor de carrusel use todo el ancho disponible */
+  .carouselContainer{ width:100% !important; max-width:100% !important; }
 }
-@media (min-width: 577px) and (max-width: 768px){
-  .sceneScalerInner{ transform: scale(0.92); transform-origin: top center; }
-}
-
-
-
