@@ -1403,14 +1403,15 @@ useEffect(() => {
         <div
           style={{
             position: 'fixed',
-            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
-            bottom: 8,
-            transform: 'translateX(-50%)',
-            zIndex: Z_MENU,
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            pointerEvents: 'none'
+ left: anchorRect ? anchorRect.left : 0,
+ top: anchorRect ? (anchorRect.top + anchorRect.height + 8) : 'auto',
+ transform: 'none',
+ zIndex: Z_MENU,
+ width: anchorRect ? anchorRect.width : '100%',
+ maxWidth: '100vw',
+ display: 'flex',
+ justifyContent: 'center',
+ pointerEvents: 'none'
           }}
         >
           <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
