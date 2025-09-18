@@ -935,7 +935,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
   
   return (
-  <div className={`container mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+<div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+
 
 
       <div className="row justify-content-center align-items-start gx-5 gy-4">
