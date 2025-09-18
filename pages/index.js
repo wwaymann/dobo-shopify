@@ -202,7 +202,7 @@ function Home() {
   const [editing, setEditing] = useState(false);
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
-  const zoomRef = useRef(1);
+  const zoomRef = useRef(0.8);
   const sceneWrapRef = useRef(null);
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
@@ -475,7 +475,7 @@ useEffect(() => {
     if (!container || !stage) return;
     zoomRef.current = zoomRef.current || 1;
     stage.style.setProperty("--zoom", String(zoomRef.current));
-    const MIN = 0.8, MAX = 2.5;
+    const MIN = 0.7, MAX = 2.5;
     let target = zoomRef.current, raf = 0;
     const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
     const schedule = () => {
