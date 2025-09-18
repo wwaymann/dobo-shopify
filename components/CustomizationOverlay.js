@@ -1399,12 +1399,12 @@ useEffect(() => {
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
       {/* Menú fijo abajo */}
-{ anchorRef?.current ? createPortal(
-  <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
-    <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
-  </div>,
-  anchorRef.current
-) : null }
+{ anchorRef?.current ?  createPortal(
+   <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
+     <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
+   </div>,
+  document.getElementById('dobo-menu-dock')
+ ) : null }
     </>
   );
 }
