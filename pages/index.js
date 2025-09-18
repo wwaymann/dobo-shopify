@@ -475,7 +475,7 @@ useEffect(() => {
     if (!container || !stage) return;
     zoomRef.current = zoomRef.current || 1;
     stage.style.setProperty("--zoom", String(zoomRef.current));
-    const MIN = 0.7, MAX = 2.5;
+    const MIN = 0.5, MAX = 2.5;
     let target = zoomRef.current, raf = 0;
     const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
     const schedule = () => {
