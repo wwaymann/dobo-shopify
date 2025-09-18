@@ -202,7 +202,7 @@ function Home() {
   const [editing, setEditing] = useState(false);
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
-  const zoomRef = useRef(0.8);
+  const zoomRef = useRef(0.5);
   const sceneWrapRef = useRef(null);
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
