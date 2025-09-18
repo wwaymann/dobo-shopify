@@ -1087,6 +1087,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               </div>
             </div>
           </div>
+{/* Dock menú DOBO debajo de carruseles */}
+<div id="dobo-menu-dock" className={styles.menuDock} />
 
        
         </div>
