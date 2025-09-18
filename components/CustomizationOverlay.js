@@ -1399,27 +1399,12 @@ useEffect(() => {
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
       {/* Menú fijo abajo */}
-      {typeof document !== 'undefined' ? createPortal(
-        <div
-          style={{
-            position: 'fixed',
- left: anchorRect ? anchorRect.left : 0,
- top: anchorRect ? (anchorRect.top + anchorRect.height + 8) : 'auto',
- transform: 'none',
- zIndex: Z_MENU,
- width: anchorRect ? anchorRect.width : '100%',
- maxWidth: '100vw',
- display: 'flex',
- justifyContent: 'center',
- pointerEvents: 'none'
-          }}
-        >
-          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
-            <Menu />
-          </div>
-        </div>,
-        document.body
-      ) : null}
+{ anchorRef?.current ? createPortal(
+  <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
+    <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
+  </div>,
+  anchorRef.current
+) : null }
     </>
   );
 }
