@@ -161,6 +161,8 @@
   border-radius: 9999px;
   background: #c7c7c7;
 }
+.menuDock{ width:100%; display:flex; justify-content:center; 
+}
 
 /* Flechas */
 .chev{
