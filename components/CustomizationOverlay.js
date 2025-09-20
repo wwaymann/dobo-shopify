@@ -814,7 +814,7 @@ useEffect(() => {
 
   const readZ = () => {
     const el = stageRef?.current;
-    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
+    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '0.5');
     const n = parseFloat((v || '1').trim());
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
