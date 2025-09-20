@@ -24,6 +24,10 @@ const Z_MENU   = 10000;  // menú fijo por encima de todo
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
+// cerca de otros useRef/useState
+const INITIAL_ZOOM = 0.5;
+const zoomRef = useRef(INITIAL_ZOOM);
+
 // Fuentes visibles en el selector
 const FONT_OPTIONS = [
   { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
