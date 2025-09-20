@@ -9,9 +9,7 @@ import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
 
-// cerca de otros useRef/useState
-const INITIAL_ZOOM = 0.5;
-const zoomRef = useRef(INITIAL_ZOOM);
+
 
 
 function ControlesPublicar() {
@@ -291,7 +289,9 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  
+  // cerca de otros useRef/useState
+const INITIAL_ZOOM = 0.5;
+const zoomRef = useRef(INITIAL_ZOOM);
 
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
 useEffect(() => {
