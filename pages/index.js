@@ -9,6 +9,11 @@ import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
 
+// cerca de otros useRef/useState
+const INITIAL_ZOOM = 0.5;
+const zoomRef = useRef(INITIAL_ZOOM);
+
+
 function ControlesPublicar() {
   const onPublish = async () => {
     const api = window.doboDesignAPI;
