@@ -469,7 +469,14 @@ useEffect(() => {
   appliedMetaOnceRef.current = true;
 }, [pots, plants]);
 
-
+const INITIAL_ZOOM = 0.5;
+const zoomRef = useRef(INITIAL_ZOOM);
+  
+useLayoutEffect(() => {
+  const z = String(zoomRef.current || INITIAL_ZOOM);
+  sceneWrapRef.current?.style.setProperty('--zoom', z);
+  stageRef.current?.style.setProperty('--zoom', z);
+}, []);
 
 
   /* ---------- zoom rueda ---------- */
@@ -1037,6 +1044,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               className="d-flex justify-content-center align-items-end"
               style={{
                 height: "100%",
+                "--zoom": INITIAL_ZOOM,
                 "--zoom": 0.5,
                 transform: "scale(var(--zoom))",
                 transformOrigin: "50% 70%",
