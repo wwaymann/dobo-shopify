@@ -1,1402 +1,1272 @@
-// components/CustomizationOverlay.js
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import * as fabric from 'fabric';
-import { createPortal } from 'react-dom';
-import HistoryManager from '../lib/history';
+// pages/index.js
+import { useEffect, useState, useRef } from "react";
+import styles from "../styles/home.module.css";
+import "bootstrap/dist/css/bootstrap.min.css";
+import dynamic from "next/dynamic";
+import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
-// ===== Constantes =====
-const MAX_TEXTURE_DIM = 1600;
-const VECTOR_SAMPLE_DIM = 500;
-const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
-const Z_MENU   = 10000;  // menú fijo por encima de todo
+// al inicio del archivo, junto a otros useRef/useState
+const initFromURLRef = { current: false };
 
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+function ControlesPublicar() {
+  const onPublish = async () => {
+    const api = window.doboDesignAPI;
+    const snap = api?.exportDesignSnapshot?.();
+    if (!snap) { alert('No hay diseño'); return; }
 
-// Fuentes visibles en el selector
-const FONT_OPTIONS = [
-  { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
-  { name: 'Georgia', css: 'Georgia, serif' },
-  { name: 'Times New Roman', css: '"Times New Roman", Times, serif' },
-  { name: 'Courier New', css: '"Courier New", Courier, monospace' },
-  { name: 'Trebuchet MS', css: '"Trebuchet MS", Tahoma, sans-serif' },
-  { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
-  { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
-];
+    const canvas = api.getCanvas();
+    const dataURL = exportPreviewDataURL(canvas, { multiplier: 2 });
+    const attachment = await dataURLtoBase64Attachment(dataURL);
 
-export default function CustomizationOverlay({
-  stageRef,
-  anchorRef,
-  visible = true,
-  zoom = 1,
-  setZoom,
-}) {
-  // ===== Refs y estado =====
-  const canvasRef = useRef(null);
-  const fabricCanvasRef = useRef(null);
-  const overlayRef = useRef(null);
+    const meta = { potHandle: 'maceta-x', plantHandle: 'planta-y', size: 'M' }; // ajusta con tus selecciones reales
+    const designJSON = { ...snap, meta };
 
-  const addInputRef = useRef(null);
-  const replaceInputRef = useRef(null);
-  const menuRef = useRef(null);
-
-  
-  
-  const designBoundsRef = useRef(null);
-const historyRef = useRef(null);
-  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
-const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
-
-  const [editing, setEditing] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
-
-  // Tipografía
-  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
-  const [fontSize, setFontSize] = useState(60);
-  const [isBold, setIsBold] = useState(false);
-  const [isItalic, setIsItalic] = useState(false);
-  const [isUnderline, setIsUnderline] = useState(false);
-  const [textAlign, setTextAlign] = useState('center');
-  const [showAlignMenu, setShowAlignMenu] = useState(false);
-
-  // Imagen/relieve
-  const [vecOffset, setVecOffset] = useState(1);     // 0..5
-  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
-  const [vecBias, setVecBias] = useState(0);         // -60..+60
-
-  const suppressSelectionRef = useRef(false);
-  const [anchorRect, setAnchorRect] = useState(null);
-  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
-  const [textEditing, setTextEditing] = useState(false);
-
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  const upper = c?.upperCanvasEl;
-  if (!upper) return;
-  upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
-}, [textEditing, editing]);
-
-  
-  // Mantén --zoom siempre actualizado para leerlo en tiempo real
-  useEffect(() => {
-    const v = typeof zoom === 'number' ? zoom : 1;
-    stageRef?.current?.style.setProperty('--zoom', String(v));
-  }, [zoom, stageRef]);
-
-  // ===== Layout y medidas =====
-  useLayoutEffect(() => {
-    const el = anchorRef?.current;
-    if (!el) return;
-    const prev = el.style.position;
-    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
-    return () => { try { el.style.position = prev; } catch {} };
-  }, [anchorRef]);
-
-  // Medida exacta del área de la maceta en coords locales del stage
-  useLayoutEffect(() => {
-    const stage = stageRef?.current;
-    const anchor = anchorRef?.current;
-    if (!stage || !anchor) return;
-
-    const measure = () => {
-      const w = Math.max(1, anchor.clientWidth);
-      const h = Math.max(1, anchor.clientHeight);
-      let left = 0, top = 0;
-      let el = anchor;
-      while (el && el !== stage) {
-        left += el.offsetLeft || 0;
-        top  += el.offsetTop  || 0;
-        el = el.offsetParent;
-      }
-      setBaseSize({ w, h });
-      setOverlayBox({ left, top, w, h });
-
-      const c = fabricCanvasRef.current;
-      if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
-    };
-
-    measure();
-    const roA = new ResizeObserver(measure);
-    const roS = new ResizeObserver(measure);
-    try { roA.observe(anchor); } catch {}
-    try { roS.observe(stage); } catch {}
-    window.addEventListener('resize', measure, { passive: true });
-
-    return () => {
-      try { roA.disconnect(); } catch {}
-      try { roS.disconnect(); } catch {}
-      window.removeEventListener('resize', measure);
-    };
-  }, [stageRef, anchorRef]);
-
-  // Posiciona el menú dentro de la columna de carruseles
-  useLayoutEffect(() => {
-    const el = anchorRef?.current;
-    if (!el || typeof window === 'undefined') return;
-    const update = () => setAnchorRect(el.getBoundingClientRect());
-    update();
-    const ro = new ResizeObserver(update);
-    try { ro.observe(el); } catch {}
-    window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
-    return () => {
-      try { ro.disconnect(); } catch {}
-      window.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
-    };
-  }, [anchorRef]);
-
-  // ===== Helpers de relieve =====
-  const makeTextGroup = (text, opts = {}) => {
-    const base = new fabric.Textbox(text, {
-      ...opts,
-      originX: 'center', originY: 'center',
-      selectable: false, evented: false,
-      objectCaching: false, shadow: null, stroke: null,
-      fill: 'rgba(35,35,35,1)', globalCompositeOperation: 'multiply'
+    const r = await fetch('/api/design/publish', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ designJSON, previewBase64: attachment, status: 'draft', tags: ['dobo','custom'] })
     });
-    const shadow = new fabric.Textbox(text, {
-      ...opts,
-      originX: 'center', originY: 'center',
-      left: -1, top: -1,
-      selectable: false, evented: false,
-      objectCaching: false, fill: '',
-      stroke: 'rgba(0,0,0,0.48)', strokeWidth: 1,
-      globalCompositeOperation: 'multiply'
-    });
-    const highlight = new fabric.Textbox(text, {
-      ...opts,
-      originX: 'center', originY: 'center',
-      left: +1, top: +1,
-      selectable: false, evented: false,
-      objectCaching: false, fill: '',
-      stroke: 'rgba(255,255,255,0.65)', strokeWidth: 0.6,
-      globalCompositeOperation: 'screen'
-    });
-
-    const group = new fabric.Group([shadow, highlight, base], {
-      originX: 'center', originY: 'center',
-      subTargetCheck: false,
-      objectCaching: false,
-      selectable: true, evented: true,
-      scaleX: 1, scaleY: 1
-    });
-    group._kind = 'textGroup';
-    group._textChildren = { shadow, highlight, base };
-
-    const sync = () => {
-      const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-      const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-      const ox = 1 / sx, oy = 1 / sy;
-      shadow.set({ left: -ox, top: -oy });
-      highlight.set({ left: +ox, top: +oy });
-      group.setCoords();
-      group.canvas?.requestRenderAll?.();
-    };
-    group.on('scaling',  sync);
-    group.on('modified', sync);
-    sync();
-    return group;
+    const out = await r.json();
+    if (!r.ok) { alert(out.error || 'Error al publicar'); return; }
+    console.log('Publicado:', out);
   };
 
-  const attachDebossToBase = (c, baseObj, { offset = 1 } = {}) => {
-    const cloneFrom = () => {
-      const el = typeof baseObj.getElement === 'function' ? baseObj.getElement() : baseObj._element;
-      return new fabric.Image(el, {
-        originX: 'center', originY: 'center',
-        objectCaching: false, noScaleCache: true, selectable: false, evented: false,
-      });
-    };
-
-    const base = cloneFrom();
-    const shadow = cloneFrom();
-    const highlight = cloneFrom();
-
-    const group = new fabric.Group([shadow, highlight, base], {
-      originX: 'center', originY: 'center',
-      objectCaching: false, selectable: true, evented: true,
-      subTargetCheck: false,
-    });
-    group._kind = 'imgGroup';
-    group._imgChildren = { base, shadow, highlight };
-    group._debossOffset = offset;
-
-    // pose inicial desde baseObj
-    group.left    = baseObj.left ?? 0;
-    group.top     = baseObj.top ?? 0;
-    group.scaleX  = baseObj.scaleX ?? 1;
-    group.scaleY  = baseObj.scaleY ?? 1;
-    group.angle   = baseObj.angle  ?? 0;
-
-    const srcEl = typeof baseObj.getElement === 'function' ? baseObj.getElement() : baseObj._element;
-    const applyElement = (img) => {
-      base.setElement(img); shadow.setElement(img); highlight.setElement(img);
-    };
-    applyElement(srcEl);
-
-    shadow.set({ globalCompositeOperation: 'multiply', opacity: 1 });
-    highlight.set({ globalCompositeOperation: 'screen', opacity: 1 });
-
-    const normalizeImgOffsets = () => {
-      const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-      const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-      const ox = group._debossOffset / sx;
-      const oy = group._debossOffset / sy;
-      shadow.set({ left: -ox, top: -oy });
-      highlight.set({ left: +ox, top: +oy });
-      base.set({ left: 0, top: 0 });
-      group.setCoords?.();
-      group.canvas?.requestRenderAll?.();
-    };
-    group._debossSync = normalizeImgOffsets;
-
-    group.on('scaling', normalizeImgOffsets);
-    group.on('modified', normalizeImgOffsets);
-    normalizeImgOffsets();
-
-    return group;
-  };
-
-  const updateDebossVisual = (obj, { offset }) => {
-    const g = obj && obj._kind === 'imgGroup' ? obj : null;
-    if (!g) return;
-    g._debossOffset = offset;
-
-    const { shadow, highlight } = g._imgChildren || {};
-    if (!shadow || !highlight) return;
-
-    const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-    const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-    const ox = g._debossOffset / sx;
-    const oy = g._debossOffset / sy;
-    shadow.set({ left: -ox, top: -oy });
-    highlight.set({ left: +ox, top: +oy });
-    g.setCoords();
-    g.canvas?.requestRenderAll?.();
-  };
-
-  // ===== Utils imagen/vectorizado =====
-  const downscale = (imgEl) => {
-    const w = imgEl.naturalWidth || imgEl.width;
-    const h = imgEl.naturalHeight || imgEl.height;
-    const r = Math.min(MAX_TEXTURE_DIM / w, MAX_TEXTURE_DIM / h, 1);
-    if (!w || !h || r === 1) return imgEl;
-    const cw = Math.round(w * r), ch = Math.round(h * r);
-    const cv = document.createElement('canvas');
-    cv.width = cw; cv.height = ch;
-    const ctx = cv.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(imgEl, 0, 0, cw, ch);
-    return cv;
-  };
-
-  const otsuThreshold = (gray, total) => {
-    if (!gray || !total || total <= 0) return 127;
-    const hist = new Uint32Array(256);
-    for (let i = 0; i < total; i++) hist[gray[i]]++;
-
-    let sum = 0;
-    for (let t = 0; t < 256; t++) sum += t * hist[t];
-
-    let sumB = 0, wB = 0;
-    let varMax = -1;
-    let threshold = 127;
-
-    for (let t = 0; t < 256; t++) {
-      wB += hist[t];
-      if (wB === 0) continue;
-      const wF = total - wB;
-      if (wF === 0) break;
-
-      sumB += t * hist[t];
-      const mB = sumB / wB;
-      const mF = (sum - sumB) / wF;
-      const diff = mB - mF;
-      const between = wB * wF * diff * diff;
-
-      if (Number.isFinite(between) && between > varMax) {
-        varMax = between;
-        threshold = t;
-      }
-    }
-    return threshold;
-  };
-
-  const vectorizeElementToBitmap = (element, opts = {}) => {
-    const {
-      maxDim   = VECTOR_SAMPLE_DIM,
-      makeDark = true,
-      drawColor = [51, 51, 51],
-      thrBias  = 0
-    } = opts;
-
-    const iw = element?.width, ih = element?.height;
-    if (!iw || !ih) return null;
-
-    const scale = (iw > ih) ? maxDim / iw : maxDim / ih;
-    const w = Math.max(1, Math.round(iw * scale));
-    const h = Math.max(1, Math.round(ih * scale));
-
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(element, 0, 0, w, h);
-
-    let img;
-    try {
-      img = ctx.getImageData(0, 0, w, h);
-    } catch {
-      return null;
-    }
-    const data = img?.data;
-    const total = w * h;
-    if (!data || data.length < total * 4) return null;
-
-    const gray = new Uint8Array(total);
-    for (let i = 0, j = 0; j < total; i += 4, j++) {
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      gray[j] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-    }
-    const thr0 = otsuThreshold(gray, total);
-    const thr  = clamp(thr0 + thrBias, 0, 255);
-
-    for (let j = 0, i = 0; j < total; j++, i += 4) {
-      const keep = makeDark ? (gray[j] <= thr) : (gray[j] > thr);
-      if (keep) {
-        data[i]   = drawColor[0];
-        data[i+1] = drawColor[1];
-        data[i+2] = drawColor[2];
-        data[i+3] = 255;
-      } else {
-        data[i+3] = 0;
-      }
-    }
-    ctx.putImageData(img, 0, 0);
-
-    const bm = new fabric.Image(cv, {
-      left: 0, top: 0,
-      originX: 'left', originY: 'top',
-      objectCaching: false,
-      noScaleCache: true,
-      selectable: true,
-      evented: true,
-    });
-    bm._vecSourceEl = element;
-    bm._vecMeta = { w, h };
-    return bm;
-  };
-
-  // ===== Historial: helpers seguros =====
-  const getSnapshot = () => {
-    const c = fabricCanvasRef.current;
-    if (!c) return null;
-    return c.toJSON(['_kind','_meta','_textChildren']);
-  };
-  const applySnapshot = (snap) => {
-    const c = fabricCanvasRef.current;
-    if (!c || !snap) return;
-    c._skipHistory = true;
-    c.loadFromJSON(snap, () => {
-      c._skipHistory = false;
-      c.requestRenderAll();
-    });
-  };
-  const refreshCaps = () => setHistCaps({
-    canUndo: !!historyRef.current?.canUndo(),
-    canRedo: !!historyRef.current?.canRedo(),
-  });
-  const recordChange = (() => {
-    let t = null;
-    return () => {
-      if (fabricCanvasRef.current?._skipHistory) return;
-      clearTimeout(t);
-      t = setTimeout(() => {
-        const s = getSnapshot();
-        if (s && historyRef.current) historyRef.current.push(s);
-        refreshCaps();
-      }, 160);
-    };
-  })();
-
-
-  // ===== Área de trabajo (bounds) =====
-  const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
-
-  const clampObjectToBounds = (obj) => {
-    const b = designBoundsRef.current; if (!b || !obj) return;
-    obj.setCoords();
-    const r = obj.getBoundingRect(true);
-    let dx = 0, dy = 0;
-    if (r.left < b.x) dx = b.x - r.left;
-    if (r.top  < b.y) dy = b.y - r.top;
-    if (r.left + r.width  > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
-    if (r.top  + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top  + r.height);
-    if (dx || dy) {
-      obj.left = (obj.left ?? 0) + dx;
-      obj.top  = (obj.top  ?? 0) + dy;
-      obj.setCoords();
-    }
-  };
-
-
-  // ===== Inicializar Fabric =====
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
-
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8,
-    });
-    fabricCanvasRef.current = c;
-
-    // DOBO: exponer API global del editor
-if (typeof window !== 'undefined') {
-  const api = {
-    // existentes
-    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-    toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    // snapshot
-    exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    loadDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    loadJSON: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-  };
-  window.doboDesignAPI = api;
-  try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
+  return <button className="btn btn-primary" onClick={onPublish}>Publicar diseño</button>;
 }
 
-    // ===== Delimitar área: margen 40 px por lado (ajustable) =====
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
 
-    // Overlay visual opcional
-    const SHOW_BOUNDS = false;
-    let __boundsOverlay = null;
-    if (SHOW_BOUNDS && designBoundsRef.current) {
-      const { x, y, w, h } = designBoundsRef.current;
-      __boundsOverlay = new fabric.Rect({
-        left: x, top: y, width: w, height: h,
-        fill: 'rgba(0,0,0,0)',
-        stroke: '#999', strokeDashArray: [5,5],
-        selectable: false, evented: false, excludeFromExport: true
-      });
-      c.add(__boundsOverlay); __boundsOverlay.sendToBack();
-    }
-
-    // Enforcers
-    const __bounds_onMove   = (e) => clampObjectToBounds(e.target);
-    const __bounds_onScale  = (e) => clampObjectToBounds(e.target);
-    const __bounds_onRotate = (e) => clampObjectToBounds(e.target);
-    const __bounds_onAdded  = (e) => clampObjectToBounds(e.target);
-    c.on('object:moving',   __bounds_onMove);
-    c.on('object:scaling',  __bounds_onScale);
-    c.on('object:rotating', __bounds_onRotate);
-    c.on('object:added',    __bounds_onAdded);
-
-    // Reaccionar a cambios de tamaño
-    const __bounds_ro = new ResizeObserver(() => {
-      const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 10, w: cw - 10, h: ch - 10 });
-      if (__boundsOverlay && designBoundsRef.current) {
-        const { x, y, w, h } = designBoundsRef.current;
-        __boundsOverlay.set({ left: x, top: y, width: w, height: h });
-        __boundsOverlay.setCoords(); c.requestRenderAll();
-      }
-      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
-    });
-    __bounds_ro.observe(c.upperCanvasEl);
-
-    // Historial
-    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
-    c.once('after:render', () => {
-      const s = getSnapshot(); if (s) historyRef.current.push(s);
-      refreshCaps();
-    });
-    const __hist_onAdded = () => recordChange();
-    const __hist_onModified = () => recordChange();
-    const __hist_onRemoved = () => recordChange();
-    const __hist_onPath = () => recordChange();
-    c.on('object:added', __hist_onAdded);
-    c.on('object:modified', __hist_onModified);
-    c.on('object:removed', __hist_onRemoved);
-    c.on('path:created', __hist_onPath);
-
-
-
-    // Helpers de tipo
-    const classify = (a) => {
-      if (!a) return 'none';
-      if (a._kind === 'imgGroup')  return 'image';
-      if (a._kind === 'textGroup') return 'text';
-      if (a.type === 'activeSelection' && a._objects?.length) {
-        if (a._objects.every(o => o._kind === 'textGroup')) return 'text';
-        if (a._objects.some(o => o._kind === 'imgGroup'))    return 'image';
-        return 'none';
-      }
-      if (a.type === 'image') return 'image';
-      if (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text') return 'text';
-      return 'none';
-    };
-
-    const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
-
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      if (!a) return;
-      let first = null;
-      if (a._kind === 'textGroup') first = a._textChildren?.base || null;
-      else if (a.type === 'activeSelection') first = a._objects?.find(x => x._kind === 'textGroup')?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + '' === '700') || first.fontWeight === 'bold');
-        setIsItalic((first.fontStyle + '' === 'italic'));
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || 'center');
-      }
-    };
-
-    const onSel = () => {
-      const cobj = c.getActiveObject();
-      if (suppressSelectionRef.current) {
-        try { if (cobj?.type === 'activeSelection') cobj.discard(); } catch {}
-        try { c.discardActiveObject(); } catch {}
-        try { c.setActiveObject(null); } catch {}
-        try { c._activeObject = null; } catch {}
-        setSelType('none');
-        c.requestRenderAll();
-        return;
-      }
-      setSelType(classify(cobj));
-      reflectTypo();
-    };
-    c.on('selection:created', onSel);
-    c.on('selection:updated', onSel);
-    c.on('selection:cleared', () => setSelType('none'));
-
-    // Doble-click (desktop) → editar texto del grupo
-    c.on('mouse:dblclick', (e) => {
-      const t = e.target;
-      if (!t) return;
-      if (t._kind === 'textGroup') startInlineTextEdit(t);
-      else if (isTextObj(t) && typeof t.enterEditing === 'function') {
-        t.enterEditing();
-        c.requestRenderAll();
-      }
-    });
-
-    setReady(true);
-
-    return () => {
-      c.off('mouse:dblclick');
-      c.off('selection:created', onSel);
-      c.off('selection:updated', onSel);
-      c.off('selection:cleared');
-      c.off('object:added', __hist_onAdded);
-      c.off('object:modified', __hist_onModified);
-      c.off('object:removed', __hist_onRemoved);
-      c.off('path:created', __hist_onPath);
-      
-      c.off('object:moving',   __bounds_onMove);
-      c.off('object:scaling',  __bounds_onScale);
-      c.off('object:rotating', __bounds_onRotate);
-      c.off('object:added',    __bounds_onAdded);
-      try { __bounds_ro.disconnect(); } catch {}
-      if (__boundsOverlay) { try { c.remove(__boundsOverlay); } catch {} }
-      try { c.dispose(); } catch {}
-      try { delete window.doboDesignAPI; } catch {}
-      fabricCanvasRef.current = null;
-    };
-  }, [visible]);
-
-  // Ajusta tamaño de lienzo
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
-
-  // Interactividad según modo
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-
-    const enableNode = (o, on) => {
-      if (!o) return;
-      const isGroup = o._kind === 'imgGroup' || o._kind === 'textGroup';
-      o.selectable   = on;
-      o.evented      = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      o.hasControls  = on;
-      o.hasBorders   = on;
-      if (!isGroup && (o.type === 'i-text' || typeof o.enterEditing === 'function')) o.editable = on;
-      o.hoverCursor  = on ? 'move' : 'default';
-      if (isGroup) return;
-      const children = o._objects || (typeof o.getObjects === 'function' ? o.getObjects() : null);
-      if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-    };
-
-    const setAll = (on) => {
-      c.skipTargetFind = !on;
-      c.selection = on;
-      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      const upper = c.upperCanvasEl;
-      const lower = c.lowerCanvasEl;
-      if (upper) { upper.style.pointerEvents = on ? 'auto' : 'none'; upper.style.touchAction = on ? 'none' : 'auto'; upper.tabIndex = on ? 0 : -1; }
-      if (lower) { lower.style.pointerEvents = 'none'; lower.style.touchAction = 'none'; }
-      c.defaultCursor = on ? 'move' : 'default';
-      try { c.discardActiveObject(); } catch {}
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-    };
-
-    setAll(!!editing);
-  }, [editing]);
-
-  // Heredar flags al añadir objetos
-  useEffect(() => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const apply = (o) => {
-      o.selectable = editing;
-      o.evented = editing;
-      o.lockMovementX = !editing;
-      o.lockMovementY = !editing;
-      if (o.type === 'i-text' || typeof o.enterEditing === 'function') o.editable = editing;
-      o.hoverCursor = editing ? 'move' : 'default';
-    };
-    const onAdded = (e) => { if (e?.target) apply(e.target); };
-    c.on('object:added', onAdded);
-    return () => { c.off('object:added', onAdded); };
-  }, [editing]);
-
-  // Anunciar cambio de modo
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
-  }, [editing]);
-
-  // === Edición inline de texto (móvil/desktop) ===
-  // Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group.
-const startInlineTextEdit = (group) => {
-  const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
-  const base = group._textChildren?.base; if (!base) return;
-
-  const pose = {
-    left: group.left, top: group.top, originX: 'center', originY: 'center',
-    scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
-  };
-
-  try { c.remove(group); } catch {}
-
-  const tb = new fabric.Textbox(base.text || 'Texto', {
-    left: pose.left, top: pose.top, originX: 'center', originY: 'center',
-    width: Math.min(baseSize.w * 0.9, base.width || 220),
-    fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
-    fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
-    editable: true, selectable: true, evented: true, objectCaching: false
-  });
-
-  c.add(tb);
-  c.setActiveObject(tb);
-  c.requestRenderAll();
-
-  // Estamos editando: libera touch-action y desactiva pinch/zoom
-  setTextEditing(true);
-
-  // iOS: dar tiempo a crear el textarea y luego enfocar
-  setTimeout(() => {
-    try { tb.enterEditing?.(); } catch {}
-    try { tb.hiddenTextarea?.focus(); } catch {}
-    // reintento corto por si el primero no abre el teclado
-    setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
-  }, 0);
-
-  const finish = () => {
-    const newText = tb.text || '';
-    const finalPose = {
-      left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
-      scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
-    };
-    try { c.remove(tb); } catch {}
-
-    const group2 = makeTextGroup(newText, {
-      width: tb.width,
-      fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
-      fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
-    });
-    group2.set(finalPose);
-    c.add(group2);
-    c.setActiveObject(group2);
-    c.requestRenderAll();
-    setSelType('text');
-
-    // Salimos de edición: reactivar pinch/zoom y volver a touch-action previa
-    setTextEditing(false);
-  };
-
-  const onExit = () => { tb.off('editing:exited', onExit); finish(); };
-  tb.on('editing:exited', onExit);
-
-  // Safety net por si no dispara editing:exited (móvil raras veces)
-  const safety = setTimeout(() => {
-    try { tb.off('editing:exited', onExit); } catch {}
-    finish();
-  }, 15000);
-  tb.on('removed', () => { clearTimeout(safety); });
+/* ---------- tamaño: normalización de etiquetas ---------- */
+function normalizeSizeTag(raw) {
+  if (!raw) return "";
+  const s = String(raw).trim().toLowerCase();
+  if (s === "grande" || s === "g") return "Grande";
+  if (s === "mediano" || s === "mediana" || s === "m") return "Mediano";
+  if (s === "pequeño" || s === "pequeno" || s === "pequeña" || s === "pequena" || s === "perqueña" || s === "perquena" || s === "p")
+    return "Pequeño";
+  return "";
+}
+const getSizeTag = (tags = []) => {
+  if (!Array.isArray(tags)) return "";
+  for (const t of tags) {
+    const n = normalizeSizeTag(t);
+    if (n) return n;
+  }
+  return "";
 };
 
+/* ---------- precio ---------- */
+const money = (amount, currency = "CLP") =>
+  new Intl.NumberFormat("es-CL", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
+const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
+const firstVariantPrice = (p) => {
+  const v = p?.variants?.[0]?.price;
+  return v ? num(v) : num(p?.minPrice);
+};
+const productMin = (p) => num(p?.minPrice);
 
-  // Doble-tap móvil: detectar y abrir edición de texto
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    const upper = c?.upperCanvasEl;
-    if (!upper) return;
-
-    let lastTap = 0;
-    const onTap = (e) => {
-      if (!editing || e.pointerType !== 'touch') return;
-      const now = Date.now();
-      if (now - lastTap < 320) {
-        // segundo tap: buscar target de Fabric y editar si es textGroup
-        // Nota: findTarget es método interno pero disponible en runtime.
-        try {
-          const target = c.findTarget?.(e, false);
-          if (target && target._kind === 'textGroup') {
-            e.preventDefault(); e.stopPropagation();
-            startInlineTextEdit(target);
-          }
-        } catch {}
-      }
-      lastTap = now;
-    };
-
-    upper.addEventListener('pointerup', onTap, { passive: false, capture: true });
-    return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
-  }, [editing]);
-
-// Zoom SIEMPRE activo (PC y móvil) sobre el stage.
-// Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  const target = stageRef?.current || c?.upperCanvasEl;
-  if (!target) return;
-
-  const readZ = () => {
-    const el = stageRef?.current;
-    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
-    const n = parseFloat((v || '1').trim());
-    return Number.isFinite(n) && n > 0 ? n : 1;
+/* ---------- preview accesorios ---------- */
+const escapeHtml = (s) =>
+  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
+const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,sans-serif}
+.wrap{padding:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
+img{max-width:100%;height:auto;display:block}
+h4{margin:0;font-size:14px;font-weight:600;text-align:center}
+p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
+</style></head><body><div class="wrap">
+<img src="${escapeHtml(imgUrl)}" alt=""><h4>${escapeHtml(title||"")}</h4><p>${escapeHtml(desc||"")}</p>
+</div></body></html>`;
+function getPreviewRect() {
+  if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
+  const m = window.innerWidth <= 768;
+  const w = m ? Math.min(window.innerWidth - 24, 420) : 360;
+  const h = m ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
+  return { w, h, centered: m };
+}
+function IframePreview(props) {
+  if (!props.visible) return null;
+  const d = getPreviewRect();
+  const base = {
+    position: "fixed",
+    borderRadius: 12,
+    overflow: "hidden",
+    background: "#fff",
+    boxShadow: "0 12px 32px rgba(0,0,0,.24)",
+    zIndex: 9999,
+    pointerEvents: "none",
   };
-  const writeZ = (z) => {
-    const v = Math.max(0.8, Math.min(2.5, z));
-    stageRef?.current?.style.setProperty('--zoom', String(v));
-    if (typeof setZoom === 'function') setZoom(v);
-  };
-
-  // PC: rueda
-  const onWheel = (e) => {
-    if (textEditing) return;
-    e.preventDefault();
-    writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
-  };
-
-  // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
-  let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
-  const park = () => {
-    if (parked || !c) return;
-    saved = { selection: c.selection, skip: c.skipTargetFind };
-    c.selection = false;
-    c.skipTargetFind = true;
-    parked = true;
-  };
-  const unpark = () => {
-    if (!c) return;
-    if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
-    parked = false;
-    c.requestRenderAll?.();
-  };
-
-  const onPD = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
-    if (!pB && e.pointerId !== pA.id) {
-      pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      startScale = readZ();
-      park();
-    }
-  };
-
-  const onPM = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-    if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-    if (pA && pB && startDist) {
-      e.preventDefault();
-      const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-      writeZ(startScale * Math.pow(d / startDist, 0.9));
-    }
-  };
-
-  const onPU = (e) => {
-    if (textEditing) return;
-    if (e.pointerType !== 'touch') return;
-    if (pA && e.pointerId === pA.id) pA = null;
-    if (pB && e.pointerId === pB.id) pB = null;
-    if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
-  };
-
-  const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
-
-  target.addEventListener('wheel', onWheel, { passive: false });
-  target.addEventListener('pointerdown', onPD, { passive: true });
-  target.addEventListener('pointermove', onPM, { passive: false, capture: true });
-  window.addEventListener('pointerup', onPU, { passive: true });
-  window.addEventListener('pointercancel', onCancel, { passive: true });
-  document.addEventListener('visibilitychange', onCancel);
-  window.addEventListener('blur', onCancel);
-
-  return () => {
-    target.removeEventListener('wheel', onWheel);
-    target.removeEventListener('pointerdown', onPD);
-    target.removeEventListener('pointermove', onPM, { capture: true });
-    window.removeEventListener('pointerup', onPU);
-    window.removeEventListener('pointercancel', onCancel);
-    document.removeEventListener('visibilitychange', onCancel);
-    window.removeEventListener('blur', onCancel);
-  };
-}, [stageRef, setZoom, textEditing]);
-
-  // Bloquear clicks externos mientras se diseña
-  useEffect(() => {
-    const hostA = anchorRef?.current;
-    const hostS = stageRef?.current;
-    const host = hostA || hostS;
-    if (!host) return;
-
-    const getAllowed = () => {
-      const c = fabricCanvasRef.current;
-      return [overlayRef.current, c?.upperCanvasEl].filter(Boolean);
-    };
-    const insideAllowed = (e) => {
-      const allowed = getAllowed();
-      const path = e.composedPath ? e.composedPath() : [];
-      return path.some(n => allowed.includes(n));
-    };
-
-    const stop = (e) => {
-      if (!editing) return;
-      if (insideAllowed(e)) return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-
-    const opts = { capture: true, passive: false };
-    const evs = ['pointerdown','mousedown','touchstart','click','wheel'];
-    evs.forEach(ev => host.addEventListener(ev, stop, opts));
-
-    return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
-  }, [editing, anchorRef, stageRef]);
-
-  // ===== Acciones =====
-  const addText = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const group = makeTextGroup('Nuevo párrafo', {
-      width: Math.min(baseSize.w * 0.9, 220),
-      fontSize, fontFamily, fontWeight: isBold ? '700' : 'normal',
-      fontStyle: isItalic ? 'italic' : 'normal',
-      underline: isUnderline, textAlign,
-    });
-    group.set({ left: baseSize.w/2, top: baseSize.h/2, originX: 'center', originY: 'center' });
-    c.add(group);
-    c.setActiveObject(group);
-    setSelType('text');
-    c.requestRenderAll();
-    setEditing(true);
-  };
-
-  const addImageFromFile = (file) => {
-    const c = fabricCanvasRef.current; if (!c || !file) return;
-    const url = URL.createObjectURL(file);
-    const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    imgEl.onload = () => {
-      const src = downscale(imgEl);
-      const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
-      const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
-      const s = Math.min(maxW / baseImg._vecMeta.w, maxH / baseImg._vecMeta.h);
-      baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: false, evented: false, objectCaching: false });
-      const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.add(group);
-      c.setActiveObject(group);
-      setSelType('image');
-      c.requestRenderAll();
-      setEditing(true);
-      URL.revokeObjectURL(url);
-    };
-    imgEl.onerror = () => URL.revokeObjectURL(url);
-    imgEl.src = url;
-  };
-
-  const replaceActiveFromFile = (file) => {
-    const c = fabricCanvasRef.current; if (!c || !file) return;
-    const active = c.getActiveObject(); if (!active) return;
-    const url = URL.createObjectURL(file);
-    const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
-    imgEl.onload = () => {
-      const src = downscale(imgEl);
-      const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
-      try { c.remove(active); } catch {}
-      const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
-      baseImg.set({ selectable: false, evented: false, objectCaching: false });
-      const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-      group.set(pose);
-      c.add(group);
-      c.setActiveObject(group);
-      setSelType('image');
-      c.requestRenderAll();
-      setEditing(true);
-      URL.revokeObjectURL(url);
-    };
-    imgEl.onerror = () => URL.revokeObjectURL(url);
-    imgEl.src = url;
-  };
-
-  // Borrar selección (grupos)
-  const onDelete = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const removeOne = (o) => { if (!o) return; try { c.remove(o); } catch {} };
-
-    if (a.type === 'activeSelection' && a._objects?.length) {
-      const arr = a._objects.slice();
-      a.discard();
-      arr.forEach(removeOne);
-    } else {
-      removeOne(a);
-    }
-    c.discardActiveObject();
-    c.requestRenderAll();
-    setSelType('none');
-  };
-
-  const clearSelectionHard = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    try { c.getObjects().forEach(o => { if (o?.isEditing && typeof o.exitEditing === 'function') o.exitEditing(); }); } catch {}
-    try { const a = c.getActiveObject(); if (a?.type === 'activeSelection') a.discard(); } catch {}
-    try { c.discardActiveObject(); } catch {}
-    try { c.setActiveObject(null); } catch {}
-    try { c._activeObject = null; } catch {}
-    setSelType('none');
-    c.requestRenderAll();
-  };
-
-  const enterDesignMode = () => {
-    suppressSelectionRef.current = true;
-    clearSelectionHard();
-    setEditing(true);
-    requestAnimationFrame(() => {
-      clearSelectionHard();
-      setTimeout(() => { suppressSelectionRef.current = false; }, 150);
-    });
-  };
-
-  const exitDesignMode = () => {
-    suppressSelectionRef.current = true;
-    clearSelectionHard();
-    setEditing(false);
-    setTimeout(() => { suppressSelectionRef.current = false; }, 150);
-  };
-
-  // Aplicar cambios tipográficos a selección (grupos de texto)
-  const applyToSelection = (mutator) => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const applyToGroup = (g) => {
-      if (!g || g._kind !== 'textGroup') return;
-      const { base, shadow, highlight } = g._textChildren || {};
-      [base, shadow, highlight].forEach(o => o && mutator(o));
-      // re-sincronizar offsets del relieve
-      const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-      const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-      const ox = 1 / sx, oy = 1 / sy;
-      shadow?.set({ left: -ox, top: -oy });
-      highlight?.set({ left: +ox, top: +oy });
-      g.setCoords();
-    };
-
-    if (a.type === 'activeSelection' && Array.isArray(a._objects)) {
-      a._objects.forEach(applyToGroup);
-    } else if (a._kind === 'textGroup') {
-      applyToGroup(a);
-    } else if (a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') {
-      mutator(a);
-    }
-    c.requestRenderAll();
-  };
-
-  // Re-vectorizar imagen al cambiar Detalles/Invertir
-  useEffect(() => {
-    if (!editing || selType !== 'image') return;
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const rebuild = (obj) => {
-      let element = null;
-      let pose = null;
-
-      if (obj?._kind === 'imgGroup') {
-        const base = obj._imgChildren?.base;
-        if (!base) return;
-        element = base._vecSourceEl || (typeof base.getElement === 'function' ? base.getElement() : base._element);
-        pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
-        try { obj.canvas.remove(obj); } catch {}
-      } else if (obj?._vecSourceEl || obj?.type === 'image') {
-        element = obj._vecSourceEl || (typeof obj.getElement === 'function' ? obj.getElement() : obj._element);
-        pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
-        try { obj.canvas.remove(obj); } catch {}
-      } else {
-        return;
-      }
-
-      const baseImg = vectorizeElementToBitmap(element, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) return;
-      baseImg.set({ selectable: false, evented: false, objectCaching: false });
-
-      const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-      group.set(pose);
-      c.add(group);
-      c.setActiveObject(group);
-    };
-
-    if (a.type === 'activeSelection' && a._objects?.length) {
-      const arr = a._objects.slice(); a.discard(); arr.forEach(rebuild);
-    } else { rebuild(a); }
-
-    c.requestRenderAll();
-  }, [vecBias, vecInvert]);
-
-  // Offset de relieve en caliente
-  useEffect(() => {
-    if (!editing || selType !== 'image') return;
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-    const upd = (obj) => { if (obj._kind === 'imgGroup') updateDebossVisual(obj, { offset: vecOffset }); };
-    if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
-  }, [vecOffset, editing, selType]);
-
-  if (!visible) return null;
-
-  // ===== Overlay Canvas dentro de la maceta =====
-  const OverlayCanvas = (
-    <div
-      ref={overlayRef}
-      style={{
-        position: "absolute",
-        left: overlayBox.left,
-        top: overlayBox.top,
-        width: overlayBox.w,
-        height: overlayBox.h,
-        zIndex: Z_CANVAS,
-        overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain",
-      }}
-      // Evita que un toque en canvas active botones del menú
-      onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
-    >
-      <canvas
-        data-dobo-design="1"
-        ref={canvasRef}
-        width={overlayBox.w}
-        height={overlayBox.h}
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'block',
-          background: 'transparent',
-          touchAction: editing ? 'none' : 'auto'
-        }}
-      />
+  const style = d.centered
+    ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: d.w, height: d.h }
+    : { ...base, left: props.x, top: props.y, width: d.w, height: d.h };
+  return (
+    <div style={style}>
+      <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
     </div>
   );
+}
 
-  // ===== Menú fijo =====
-  function Menu() {
-    return (
-      <div
-        ref={menuRef}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          background: 'rgba(253, 253, 253, 0.34)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
-          border: '1px solid #ddd',
-          borderRadius: 12,
-          padding: '10px 12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          width: 'auto',
-          maxWidth: '94vw',
-          fontSize: 12,
-          userSelect: 'none'
-        }}
-        // Los eventos del menú nunca deben tocar el canvas
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-      >
-        {/* LÍNEA 1: Zoom + modos */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
-            <button type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás">←</button>
-            <button type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante">→</button>
-          </div>
-{typeof setZoom === 'function' && (
-            <div className="input-group input-group-sm" style={{ width: 180 }}>
-              <span className="input-group-text">Zoom</span>
-              <button type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center"
-                value={`${Math.round((zoom || 1) * 100)}%`} />
-              <button type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
-            </div>
-          )}
-          <button
-            type="button"
-            className={`btn ${!editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={exitDesignMode}
-            style={{ minWidth: '16ch' }}
-          >
-            Seleccionar Maceta
-          </button>
-
-          <button
-            type="button"
-            className={`btn ${editing ? 'btn-dark' : 'btn-outline-secondary'} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={enterDesignMode}
-            style={{ minWidth: '12ch' }}
-          >
-            Diseñar
-          </button>
-        </div>
-
-        {/* LÍNEA 2: Acciones básicas */}
-        {editing && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button type="button" className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={addText}
-              disabled={!ready}
-            >
-              + Texto
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => addInputRef.current?.click()}
-              disabled={!ready}
-            >
-              + Imagen
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-danger"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={onDelete}
-              disabled={!ready || selType === 'none'}
-              title="Eliminar seleccionado"
-            >
-              Borrar
-            </button>
-          </div>
-        )}
-
-        {/* LÍNEA 3: Propiedades por tipo */}
-        {editing && (
-          <>
-            {selType === 'text' && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-                  <span className="input-group-text">Fuente</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={fontFamily}
-                    onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                  >
-                    {FONT_OPTIONS.map(f => (
-                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                  <button
-                    type="button"
-                    className={`btn ${isBold ? 'btn-dark' : 'btn-outline-secondary'}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? '700' : 'normal' })); }}
-                  >
-                    B
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${isItalic ? 'btn-dark' : 'btn-outline-secondary'}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? 'italic' : 'normal' })); }}
-                  >
-                    I
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${isUnderline ? 'btn-dark' : 'btn-outline-secondary'}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
-                  >
-                    U
-                  </button>
-                </div>
-
-                <div className="input-group input-group-sm" style={{ width: 160 }}>
-                  <span className="input-group-text">Tamaño</span>
-                  <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    min={8}
-                    max={200}
-                    step={1}
-                    value={fontSize}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onChange={(e) => {
-                      const v = clamp(parseInt(e.target.value || '0', 10), 8, 200);
-                      setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
-                    }}
-                  />
-                </div>
-
-                <div className="btn-group dropup">
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => setShowAlignMenu(v => !v)}
-                  >
-                    {textAlign === 'left' ? '⟸' : textAlign === 'center' ? '⟺' : textAlign === 'right' ? '⟹' : '≣'}
-                  </button>
-                  {showAlignMenu && (
-                    <ul className="dropdown-menu show" style={{ position: 'absolute' }}>
-                      {['left','center','right','justify'].map(a => (
-                        <li key={a}>
-                          <button
-                            type="button"
-                            className={`dropdown-item ${textAlign === a ? 'active' : ''}`}
-                            onPointerDown={(e)=>e.stopPropagation()}
-                            onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
-                          >
-                            {a}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {selType === 'image' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <div className="input-group input-group-sm" style={{ width: 230 }}>
-                  <span className="input-group-text">Detalles</span>
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
-                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
-                </div>
-
-                <div className="input-group input-group-sm" style={{ width: 190 }}>
-                  <span className="input-group-text">Profundidad</span>
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
-                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
-                  <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
-                </div>
-
-                <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-                  <button type="button" className={`btn ${!vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
-                  <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Inputs ocultos */}
-        <input ref={addInputRef} type="file" accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
-          onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
-        <input ref={replaceInputRef} type="file" accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
-          onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
-      </div>
-    );
-  }
-
-  // ===== Render =====
+/* ---------- dots ---------- */
+function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
+  if (!count || count < 2) return null;
   return (
-    <>
-      {/* Overlay dentro de la maceta */}
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-
-      {/* Menú fijo abajo */}
-      {
-      typeof document !== 'undefined' ? createPortal(
-        <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
-          <div style={{ pointerEvents:'auto', display:'inline-flex' }}>
-            <Menu />
-          </div>
-        </div>,
-        document.getElementById('dobo-menu-dock')
-      ) : null
-    }
-    </>
+    <div className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <button
+          key={i}
+          type="button"
+          className={`${styles.dot} ${i === current ? styles.dotActive : ""}`}
+          aria-current={i === current ? "true" : "false"}
+          onClick={() => onSelect(i)}
+        />
+      ))}
+      <span className={styles.dotsLabel}>{current + 1}/{count}</span>
+    </div>
   );
 }
+
+/* ---------- overlay ---------- */
+const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
+
+/* ---------- swipe ---------- */
+function makeSwipeEvents(swipeRef, handlers) {
+  const begin = (x, y, id, el) => {
+    swipeRef.current = { active: true, id, x, y };
+    if (id != null && el?.setPointerCapture) el.setPointerCapture(id);
+  };
+  const end = (ev, el) => {
+    const id = swipeRef.current?.id;
+    if (id != null && el?.releasePointerCapture) el.releasePointerCapture(id);
+    swipeRef.current = { active: false, id: null, x: 0, y: 0 };
+  };
+  const move = (x, y, ev, el) => {
+    const s = swipeRef.current;
+    if (!s?.active) return;
+    const dx = x - s.x, dy = y - s.y;
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+      ev.preventDefault();
+      if (Math.abs(dx) > 48) {
+        dx > 0 ? handlers.prev() : handlers.next();
+        end(ev, el);
+      }
+    }
+  };
+  return {
+    onPointerDown: (e) => begin(e.clientX, e.clientY, e.pointerId ?? null, e.currentTarget),
+    onPointerMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onPointerUp: (e) => end(e, e.currentTarget),
+    onPointerCancel: (e) => end(e, e.currentTarget),
+    onTouchStart: (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, null, e.currentTarget); },
+    onTouchMove: (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e, e.currentTarget); },
+    onTouchEnd: (e) => end(e, e.currentTarget),
+    onTouchCancel: (e) => end(e, e.currentTarget),
+    onMouseDown: (e) => begin(e.clientX, e.clientY, null, e.currentTarget),
+    onMouseMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onMouseUp: (e) => end(e, e.currentTarget),
+  };
+}
+
+/* ---------- shop ---------- */
+let SHOP_DOMAIN = process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com";
+if (typeof window !== 'undefined') {
+  const qs = new URLSearchParams(window.location.search);
+  const fromQS = qs.get('shopDomain');
+  if (fromQS) {
+    SHOP_DOMAIN = fromQS;
+  } else if (document.referrer) {
+    try { SHOP_DOMAIN = new URL(document.referrer).host || SHOP_DOMAIN; } catch {}
+  }
+}
+
+
+function Home() {
+  const [plants, setPlants] = useState([]);
+  const [pots, setPots] = useState([]);
+  const [accessories, setAccessories] = useState([]);
+
+  const [selectedPlantIndex, setSelectedPlantIndex] = useState(0);
+  const [selectedPotIndex, setSelectedPotIndex] = useState(0);
+  const [selectedPotVariant, setSelectedPotVariant] = useState(null);
+
+  const [selectedAccessoryIndices, setSelectedAccessoryIndices] = useState([]);
+  const [quantity, setQuantity] = useState(1);
+
+  const [accPreview, setAccPreview] = useState({ visible: false, x: 0, y: 0, html: "" });
+
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [colorOptions, setColorOptions] = useState([]);
+
+  const [editing, setEditing] = useState(false);
+  const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
+
+  const zoomRef = useRef(1);
+  const sceneWrapRef = useRef(null);
+  const stageRef = useRef(null);
+  const plantScrollRef = useRef(null);
+  const potScrollRef = useRef(null);
+  const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+  const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+
+  const desiredPotHandleRef = useRef(null);
+  const desiredPlantHandleRef = useRef(null);
+  const desiredSizeRef = useRef(null);
+  const [designMeta, setDesignMeta] = useState(null);   // <— NUEVO
+  const restoredOnceRef = useRef(false);                // <— NUEVO
+  const userPickedSizeRef = useRef(false);
+  const appliedMetaOnceRef = useRef(false);
+
+  // para clicks mitad-izq/der estilo Google Shopping
+  const potDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const CLICK_STEP_PX = 8;
+  // DOBO: meta del diseño cargado
+const designMetaRef = useRef(null);
+
+  const handlePointerDownCap = (e, ref) => {
+    ref.current = {
+      btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0,
+      x: e.clientX ?? 0,
+      y: e.clientY ?? 0,
+    };
+  };
+  const handlePointerUpCap = (e, ref, handlers) => {
+    if (editing) return;
+    const d = ref.current || { btn: null, x: 0, y: 0 };
+    if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
+    const dx = Math.abs((e.clientX ?? 0) - d.x);
+    const dy = Math.abs((e.clientY ?? 0) - d.y);
+    if (dx > CLICK_STEP_PX || dy > CLICK_STEP_PX) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX ?? 0) - rect.left;
+    (x > rect.width / 2 ? handlers.next : handlers.prev)();
+  };
+
+  const COLOR_MAP = {
+    negro:"#000000", blanco:"#ffffff", gris:"#808080", "gris claro":"#bfbfbf", "gris oscuro":"#4a4a4a", plomo:"#9ea2a2",
+    plata:"#c0c0c0", dorado:"#d4af37", cobre:"#b87333",
+    rojo:"#ff0000", burdeo:"#6d071a", vino:"#7b001c", rosado:"#ff7aa2", rosa:"#ff7aa2",
+    naranjo:"#ff7a00", naranja:"#ff7a00", amarillo:"#ffd400",
+    verde:"#00a65a", "verde oliva":"#6b8e23", oliva:"#6b8e23", menta:"#3eb489",
+    azul:"#0066ff", celeste:"#4db8ff", turquesa:"#30d5c8",
+    morado:"#7d3cff", lila:"#b57edc", lavanda:"#b497bd",
+    café:"#6f4e37", marrón:"#6f4e37", cafe:"#6f4e37", chocolate:"#4e2a1e",
+    beige:"#d9c6a5", crema:"#f5f0e6", hueso:"#f2efe6",
+  };
+
+  const _stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const _norm = raw => _stripAccents(String(raw||'').toLowerCase().trim())
+    .replace(/\s+/g,' ')
+    .replace(/(claro|oscuro|mate|brillante|satinado|metalico|metalic|pastel)\b/g,'$1')
+    .trim();
+
+  const resolveColor = (opt) => {
+    const raw = String((opt&&opt.hex) || opt || '').trim();
+    if (/^#([0-9a-f]{3}){1,2}$/i.test(raw)) return raw;
+    const key = _norm(raw);
+    if (COLOR_MAP[key]) return COLOR_MAP[key];
+    const parts = key.split(/[\/,-]/).map(s=>s.trim());
+    for (const p of parts) if (COLOR_MAP[p]) return COLOR_MAP[p];
+    return '#ccc';
+  };
+
+  useEffect(() => {
+    const onFlag = (e) => setEditing(!!e.detail?.editing);
+    window.addEventListener("dobo-editing", onFlag);
+    return () => window.removeEventListener("dobo-editing", onFlag);
+  }, []);
+  useEffect(() => {
+    const s = stageRef.current, c = sceneWrapRef.current;
+    if (!s || !c) return;
+    const ps = s.style.touchAction, pc = c.style.touchAction;
+    s.style.touchAction = editing ? "none" : "pan-y";
+    c.style.touchAction = editing ? "none" : "pan-y";
+    return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+  }, [editing]);
+
+  
+// ---------- fetch por tamaño y tipo ----------
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const sizeQ = encodeURIComponent(activeSize); // "Pequeño" | "Mediano" | "Grande"
+      const [rPots, rPlants, rAcc] = await Promise.all([
+        fetch(`/api/products?size=${sizeQ}&type=maceta&first=60`, { cache: "no-store" }),
+        fetch(`/api/products?size=${sizeQ}&type=planta&first=60`, { cache: "no-store" }),
+        fetch(`/api/products?type=accesorio&first=60`, { cache: "no-store" }), // accesorios no dependen de tamaño
+      ]);
+      if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
+      if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
+
+      const dPots = await rPots.json();
+      const dPlants = await rPlants.json();
+      const dAcc = rAcc.ok ? await rAcc.json() : [];
+
+      const potsList = Array.isArray(dPots) ? dPots : dPots.products || [];
+      const plantsList = Array.isArray(dPlants) ? dPlants : dPlants.products || [];
+      const accList = Array.isArray(dAcc) ? dAcc : dAcc.products || [];
+
+      const norm = (list) =>
+        list.map((p) => ({
+          ...p,
+          description: p?.description || p?.descriptionHtml || p?.body_html || "",
+          descriptionHtml: p?.descriptionHtml || "",
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          variants: Array.isArray(p?.variants) ? p.variants : [],
+          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+        }));
+
+      if (cancelled) return;
+
+      const potsSafe = norm(potsList);
+      const plantsSafe = norm(plantsList);
+      const accSafe = norm(accList);
+
+      setPots(potsSafe);
+      setPlants(plantsSafe);
+      setAccessories(accSafe);
+
+      // 👉 IMPORTANTE: conservar selección (no resetear a 0 y no tocar selectedPotVariant aquí)
+      setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
+      setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
+      userPickedSizeRef.current = false; // ya cargó la familia del tamaño nuevo
+
+    } catch (err) {
+      console.error("Error fetching products:", err);
+      if (!cancelled) {
+        setPlants([]);
+        setPots([]);
+        setAccessories([]);
+      }
+    }
+  })();
+  return () => { cancelled = true; };
+}, [activeSize]);
+
+// ---------- aplicar selección desde meta/query (una sola vez) ----------
+const applyDesiredSelection = () => {
+  if (restoredOnceRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 && plants.length === 0) return;
+
+  const meta = designMeta || {};
+  const q = new URLSearchParams(window.location.search);
+
+  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
+  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
+  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+
+  const toStr = (v) => String(v || '').toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || '');
+    return s.includes('gid://') ? s.split('/').pop() : s;
+  };
+  const findIdx = (arr, key) => {
+    if (!key) return -1;
+    const k = toStr(key);
+    const kNum = gidToNum(k);
+    return arr.findIndex(p => {
+      const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(toStr);
+      return ids.includes(k) || ids.includes(toStr(kNum));
+    });
+  };
+
+  let touched = false;
+
+  // tamaño primero (esto re-dispara el fetch con la familia correcta)
+  if (wantSize) {
+    if (wantSize.startsWith('p')) { setActiveSize('Pequeño'); touched = true; }
+    else if (wantSize.startsWith('m')) { setActiveSize('Mediano'); touched = true; }
+    else if (wantSize.startsWith('g')) { setActiveSize('Grande'); touched = true; }
+  }
+
+  // maceta / planta
+  const ip = findIdx(pots, wantPot);
+  if (ip >= 0) { setSelectedPotIndex(ip); touched = true; }
+
+  const il = findIdx(plants, wantPlant);
+  if (il >= 0) { setSelectedPlantIndex(il); touched = true; }
+
+  // color
+  if (meta.color) { setSelectedColor(meta.color); touched = true; }
+
+  if (touched) restoredOnceRef.current = true; // no repetir
+};
+
+// Ejecuta cuando ya hay productos o cambia la meta
+useEffect(() => {
+  applyDesiredSelection();
+}, [pots, plants, designMeta]);
+
+
+
+// DOBO: aplica selección de planta/maceta/color/size desde meta
+useEffect(() => {
+  // Solo una vez y solo si hay meta
+  if (appliedMetaOnceRef.current) return;
+  const meta = designMetaRef.current;
+  if (!meta) return;
+  if (!pots.length || !plants.length) return;
+
+  const asStr = v => String(v || "").toLowerCase().trim();
+  const gidToNum = (id) => (String(id||"").includes("gid://") ? String(id).split("/").pop() : String(id||""));
+
+  const matchIndex = (list, target) => {
+    if (!target) return -1;
+    const t = asStr(target); const tNum = asStr(gidToNum(target));
+    return list.findIndex(p => {
+      const ids = [
+        p?.id, gidToNum(p?.id), p?.handle, p?.title
+      ].map(asStr);
+      return ids.includes(t) || ids.includes(tNum);
+    });
+  };
+
+  // Tamaño guardado en meta → solo si el usuario AÚN no eligió manualmente
+  const sizeRaw = meta.size || meta.tamano || meta.tamaño;
+  if (!userPickedSizeRef.current && sizeRaw) {
+    const s = asStr(sizeRaw);
+    if (["p","pequeño","pequeno","pequeña","pequena"].includes(s)) setActiveSize("Pequeño");
+    else if (["m","mediano","mediana"].includes(s)) setActiveSize("Mediano");
+    else if (["g","grande"].includes(s)) setActiveSize("Grande");
+  }
+
+  // Selección de maceta/planta si existen en la lista actual
+  const ip = matchIndex(pots,   meta.potId || meta.pot || meta.potHandle || meta.potTitle);
+  const il = matchIndex(plants, meta.plantId || meta.plant || meta.plantHandle || meta.plantTitle);
+  if (ip >= 0) setSelectedPotIndex(ip);
+  if (il >= 0) setSelectedPlantIndex(il);
+
+  if (meta.color) setSelectedColor(meta.color);
+
+  // ¡No volver a aplicar!
+  appliedMetaOnceRef.current = true;
+}, [pots, plants]);
+
+
+
+
+  /* ---------- zoom rueda ---------- */
+  useEffect(() => {
+    const container = sceneWrapRef.current, stage = stageRef.current;
+    if (!container || !stage) return;
+    zoomRef.current = zoomRef.current || 1;
+    stage.style.setProperty("--zoom", String(zoomRef.current));
+    const MIN = 0.8, MAX = 2.5;
+    let target = zoomRef.current, raf = 0;
+    const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        stage.style.setProperty("--zoom", String(target));
+        container.style.setProperty("--zoom", String(target));
+      });
+    };
+    const onWheel = (e) => {
+      if (!stage.contains(e.target)) return;
+      e.preventDefault();
+      const step = e.deltaY > 0 ? -0.08 : 0.08;
+      zoomRef.current = clamp(zoomRef.current + step);
+      target = zoomRef.current;
+      schedule();
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+// ---------- RESTAURAR SELECCIÓN (una sola vez) desde meta o query ----------
+const restoredRef = useRef(false);
+useEffect(() => {
+  if (restoredRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 && plants.length === 0) return;
+
+  const meta = designMetaRef.current || {};
+  const q = new URLSearchParams(window.location.search);
+
+  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
+  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
+  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+
+  // tamaño
+  if (wantSize) {
+    if (wantSize.startsWith('p')) setActiveSize('Pequeño');
+    else if (wantSize.startsWith('m')) setActiveSize('Mediano');
+    else if (wantSize.startsWith('g')) setActiveSize('Grande');
+  }
+
+  // helper
+  const toStr = (v) => String(v || '').toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || '');
+    return s.includes('gid://') ? s.split('/').pop() : s;
+  };
+  const findIdx = (arr, key) => {
+    if (!key) return -1;
+    const k = toStr(key);
+    const kNum = gidToNum(k);
+    return arr.findIndex(p => {
+      const ids = [
+        p?.id, gidToNum(p?.id), p?.handle, p?.title
+      ].map(toStr);
+      return ids.includes(k) || ids.includes(toStr(kNum));
+    });
+  };
+
+  // maceta / planta
+  const ip = findIdx(pots, wantPot);
+  if (ip >= 0) setSelectedPotIndex(ip);
+
+  const il = findIdx(plants, wantPlant);
+  if (il >= 0) setSelectedPlantIndex(il);
+
+  // color (opcional)
+  if (meta.color) setSelectedColor(meta.color);
+
+  restoredRef.current = true;
+}, [pots, plants]);
+
+  
+  /* ---------- variantes: SOLO color ---------- */
+  useEffect(() => {
+    const pot = pots[selectedPotIndex];
+    if (!pot) { setColorOptions([]); setSelectedPotVariant(null); return; }
+    const valid = (pot.variants || []).filter((v) => !!v.image);
+    const lower = (s) => (s ?? "").toString().trim().toLowerCase();
+    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value)))];
+    setColorOptions(colors);
+    const match = (v, c) => {
+      const opts = v.selectedOptions || [];
+      return c ? opts.some((o) => lower(o.name) === "color" && lower(o.value) === lower(c)) : true;
+    };
+    if (!(selectedColor && valid.some((v) => match(v, selectedColor)))) {
+      const first = colors.find((c) => valid.some((v) => match(v, c)));
+      if (first) setSelectedColor(first);
+    }
+    const chosen = valid.find((v) => match(v, selectedColor)) || valid[0] || null;
+    setSelectedPotVariant(chosen || null);
+  }, [pots, selectedPotIndex, selectedColor]);
+
+  /* ---------- totales ---------- */
+  const getTotalPrice = () => {
+    const pot = pots[selectedPotIndex];
+    const plant = plants[selectedPlantIndex];
+    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const plantPrice = productMin(plant);
+    const accTotal = selectedAccessoryIndices.reduce((s, i) => {
+      const a = accessories[i];
+      const v = a?.variants?.[0]?.price;
+      return s + (v ? num(v) : productMin(a));
+    }, 0);
+    return potPrice + plantPrice + accTotal;
+  };
+  const getTotalComparePrice = () => {
+    const pot = pots[selectedPotIndex];
+    const plant = plants[selectedPlantIndex];
+    const potCmp = selectedPotVariant?.compareAtPrice ? num(selectedPotVariant.compareAtPrice) :
+                    selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const plantCmp = productMin(plant);
+    const accCmp = selectedAccessoryIndices.reduce((s, i) => {
+      const a = accessories[i];
+      const base = a?.variants?.[0]?.compareAtPrice ?? a?.variants?.[0]?.price ?? a?.minPrice;
+      return s + num(base);
+    }, 0);
+    return potCmp + plantCmp + accCmp;
+  };
+
+  /* ---------- cart helpers ---------- */
+  const gidToNumeric = (id) => {
+    const s = String(id || "");
+    return s.includes("gid://") ? s.split("/").pop() : s;
+  };
+  async function captureDesignPreview() {
+    const el = stageRef?.current;
+    if (!el) return null;
+    const { default: html2canvas } = await import("html2canvas");
+    const onclone = (doc) => {
+      const st = doc.querySelector('[data-capture-stage="1"]') || doc.body;
+      st.style.overflow = "visible";
+      st.style.clipPath = "none";
+      const prune = (sel, keep) => {
+        const tr = doc.querySelector(sel);
+        if (!tr) return;
+        Array.from(tr.children).forEach((node, i) => { if (i !== keep) node.remove(); });
+        tr.style.transform = "none";
+        tr.style.width = "100%";
+      };
+      prune('[data-capture="pot-track"]', selectedPotIndex);
+      prune('[data-capture="plant-track"]', selectedPlantIndex);
+      ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach((sel) => {
+        const c = doc.querySelector(sel);
+        if (c) { c.style.overflow = "visible"; c.style.clipPath = "none"; }
+      });
+    };
+    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
+    return canvas.toDataURL("image/png");
+  }
+  async function prepareDesignAttributes() {
+    let previewUrl = "";
+    try {
+      const dataUrl = await captureDesignPreview();
+      if (dataUrl) {
+        const resp = await fetch("/api/upload-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
+        previewUrl = json.url || "";
+      }
+    } catch {}
+    const pot = pots[selectedPotIndex];
+    const plant = plants[selectedPlantIndex];
+    return [
+      { key: "_DesignPreview", value: previewUrl },
+      { key: "_DesignId", value: String(Date.now()) },
+      { key: "_DesignPlant", value: plant?.id || "" },
+      { key: "_DesignPot", value: pot?.id || "" },
+      { key: "_DesignColor", value: selectedColor || "" },
+      { key: "_DesignSize", value: activeSize || "" },
+      { key: "_LinePriority", value: "0" },
+    ];
+  }
+
+async function publishDesignForVariant(variantId) {
+  try {
+    const api = await waitDesignerReady(20000);
+    if (!api) return { ok:false, error:'designer-not-ready' };
+
+    // snapshot
+    let snap = (
+      api.exportDesignSnapshot?.() ??
+      api.exportSnapshot?.() ??
+      api.exportJSON?.() ??
+      api.toJSON?.() ??
+      api.getState?.()
+    );
+    if (!snap && typeof loadLocalDesign === 'function') snap = loadLocalDesign();
+    if (!snap) return { ok:false, error:'no-snapshot' };
+
+    // preview
+    let previewDataURL = null;
+    try { previewDataURL = await captureDesignPreview(); } catch {}
+    if (!previewDataURL) {
+      const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
+      try { previewDataURL = canvas?.toDataURL?.('image/png') || null; } catch {}
+    }
+    if (!previewDataURL) return { ok:false, error:'no-preview' };
+
+
+// DOBO: meta para restaurar selección
+const meta = {
+  potId: pots[selectedPotIndex]?.id || "",
+  potTitle: pots[selectedPotIndex]?.title || "",
+  potHandle: pots[selectedPotIndex]?.handle || "",
+  plantId: plants[selectedPlantIndex]?.id || "",
+  plantTitle: plants[selectedPlantIndex]?.title || "",
+  plantHandle: plants[selectedPlantIndex]?.handle || "",
+  color: selectedColor || "",
+  size: activeSize || ""
+};
+
+    
+    // call
+    const r = await fetch('/api/publish-by-variant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+  variantId,
+  previewDataURL,
+  design: snap,   // el snapshot actual
+  meta            // ← importante
+})
+    });
+
+    const raw = await r.text();
+    let j; try { j = JSON.parse(raw); } catch { j = { ok:false, error: raw } }
+
+    if (!r.ok || !j?.ok) {
+      const msg = j?.error ? `${j.error}${j.stage ? ' @'+j.stage : ''}` : `HTTP ${r.status}`;
+      return { ok:false, error: msg };
+    }
+    return j;
+  } catch (e) {
+    return { ok:false, error:String(e?.message||e) };
+  }
+}
+
+
+async function getPreviewDataURL(api) {
+  // usa tu helper existente
+  try {
+    const d = await captureDesignPreview();
+    if (d) return d;
+  } catch {}
+  // fallback directo al canvas
+  const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
+  try { return canvas?.toDataURL ? canvas.toDataURL('image/png') : null; } catch { return null; }
+}
+
+async function waitDesignerReady(timeout = 20000) {
+  // 1) evento opcional si tu customizador lo emite
+  let api = null;
+  let resolved = false;
+  const onEvt = (e)=>{ api = (e && e.detail) || window.doboDesignAPI; resolved = true; };
+  window.addEventListener('dobo:ready', onEvt, { once:true });
+
+  // 2) sondeo
+  const start = Date.now();
+  while (Date.now() - start < timeout && !resolved) {
+    const a = window.doboDesignAPI;
+    const ok = a && (a.exportDesignSnapshot || a.exportSnapshot || a.exportJSON || a.toJSON || a.getState);
+    if (ok) { api = a; break; }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  window.removeEventListener('dobo:ready', onEvt);
+  return api || null;
+}
+
+
+
+  
+  function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
+    const asStr = (v) => String(v || "").trim();
+    const isNum = (v) => /^\d+$/.test(asStr(v));
+    const gidToNum = (id) => { const s = asStr(id); return s.includes("gid://") ? s.split("/").pop() : s; };
+    const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
+    if (!isNum(main)) throw new Error("Variant principal inválido");
+    const accs = (accessoryIds || []).map((id) => (isNum(id) ? asStr(id) : gidToNum(id))).filter(isNum);
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = `https://${shop}/cart/add`;
+    form.target = "_top"; // forzar navegación en top-level cuando se ejecuta dentro de un iframe
+    const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
+    let line = 0;
+
+    const getA = (name) => {
+      const n = name.toLowerCase();
+      return (attrs || []).find((a) => {
+        const k = (a.key || "").toLowerCase();
+        return k === n || k === `_${n}`;
+      })?.value || "";
+    };
+
+    const previewUrl = getA("DesignPreview"), designId = getA("DesignId"),
+          designPlant = getA("DesignPlant"), designPot = getA("DesignPot"),
+          designColor = getA("DesignColor"), designSize = getA("DesignSize");
+
+    add(`items[${line}][id]`, main);
+    add(`items[${line}][quantity]`, String(qty || 1));
+    add(`items[${line}][properties][_LinePriority]`, "0");
+    if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
+    if (designId) add(`items[${line}][properties][_DesignId]`, designId);
+    if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
+    if (designPot) add(`items[${line}][properties][_DesignPot]`, designPot);
+    if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
+    if (designSize) add(`items[${line}][properties][_DesignSize]`, designSize);
+    line++;
+
+    accs.forEach((id) => {
+      add(`items[${line}][id]`, id);
+      add(`items[${line}][quantity]`, "1");
+      add(`items[${line}][properties][_Accessory]`, "true");
+      add(`items[${line}][properties][_LinePriority]`, "1");
+      line++;
+    });
+
+    if (returnTo) add("return_to", returnTo);
+    document.body.appendChild(form);
+    form.submit();
+  }
+  const getAccessoryVariantIds = () =>
+    selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
+  async function buyNow() {
+    try {
+      const attrs = await prepareDesignAttributes();
+      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const plantPrice = productMin(plants[selectedPlantIndex]);
+      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+      const dpRes = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find((a) => a.key === "_DesignId")?.value,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+      const dp = await dpRes.json();
+      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+    
+      const accIds = getAccessoryVariantIds();
+      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+    } catch (e) {
+      alert(`No se pudo iniciar el checkout: ${e.message}`);
+    }
+  }
+  async function addToCart() {
+    try {
+      const attrs = await prepareDesignAttributes();
+      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const plantPrice = productMin(plants[selectedPlantIndex]);
+      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+      const dpRes = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find((a) => a.key === "_DesignId")?.value,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+     const dp = await dpRes.json();
+      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+     
+      const accIds = getAccessoryVariantIds();
+      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+    } catch (e) {
+      alert(`No se pudo añadir: ${e.message}`);
+    }
+  }
+
+  /* ---------- handlers swipe ---------- */
+  const createHandlers = (items, setIndex) => ({
+    prev: () => setIndex((p) => (p > 0 ? p - 1 : Math.max(items.length - 1, 0))),
+    next: () => setIndex((p) => (p < items.length - 1 ? p + 1 : 0)),
+  });
+  const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
+  const potHandlers = createHandlers(pots, setSelectedPotIndex);
+  const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
+  const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
+
+  /* ---------- UI ---------- */
+  const baseCode = selectedPotVariant?.price?.currencyCode || "CLP";
+  const totalNow = getTotalPrice() * quantity;
+  const totalBase = getTotalComparePrice() * quantity;
+
+// === DOBO loader desde ?designUrl ===
+useEffect(() => {
+  (async () => {
+    const params = new URLSearchParams(window.location.search);
+    const designUrl = params.get("designUrl");
+    if (!designUrl) return;
+
+    // esperar API del editor
+    const wait = async (ms = 20000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        const a = window.doboDesignAPI;
+        const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
+        if (ok) return a;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return null;
+    };
+    const api = await wait();
+    if (!api) return;
+
+    try {
+      api?.reset?.();
+      const resp = await fetch(designUrl, { cache: "no-store" });
+      if (!resp.ok) return;
+      const payload = await resp.json();
+      const snapshot = payload?.design || payload;
+// guarda meta para sincronizar carruseles
+designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
+      setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
+
+
+      if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
+      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
+      else if (api.loadJSON) await api.loadJSON(snapshot);
+      else if (api.loadFromJSON) {
+        await new Promise(res => api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); }));
+      }
+    } catch (e) {
+      console.error("load designUrl failed", e);
+    }
+  })();
+}, []);
+// === /DOBO loader ===
+
+
+  
+  return (
+    <div className={`container mt-5 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+      <div className="row justify-content-center align-items-start gx-5 gy-4">
+        <div className="col-lg-5 col-md-8 col-12 text-center">
+          {/* Selector de tamaño */}
+          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
+         {["Pequeño", "Mediano", "Grande"].map((s) => (
+  <button
+    key={s}
+    className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+    onClick={() => {
+      userPickedSizeRef.current = true;        // el usuario eligió
+      appliedMetaOnceRef.current = true;       // no volver a aplicar meta luego
+      setActiveSize(s);                        // dispara fetch por tamaño
+    }}
+  >
+    {s}
+  </button>
+))}
+
+
+          </div>
+
+              {/* Dock menú DOBO debajo de carruseles */}
+              <div id="dobo-menu-dock" className={styles.menuDock} />
+
+
+          {/* Escena */}
+          <div
+            className="position-relative"
+            ref={sceneWrapRef}
+            style={{
+              width: "500px",
+              height: "650px",
+              backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              border: "3px dashed #6c757d",
+              borderRadius: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              touchAction: "pan-y",
+              userSelect: "none",
+            }}
+          >
+            {/* Dots y flechas PLANTAS */}
+            <IndicatorDots
+              count={plants.length}
+              current={selectedPlantIndex}
+              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              position="top"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevTopLeft}`}
+              aria-label="Anterior"
+              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevTopRight}`}
+              aria-label="Siguiente"
+              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
+            {/* Dots y flechas MACETAS */}
+            <IndicatorDots
+              count={pots.length}
+              current={selectedPotIndex}
+              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              position="bottom"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevBottomLeft}`}
+              aria-label="Anterior"
+              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevBottomRight}`}
+              aria-label="Siguiente"
+              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
+            {/* Nodo escalado con carruseles */}
+            <div
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+              }}
+            >
+              {/* Macetas */}
+              <div
+                className={styles.carouselContainer}
+                ref={potScrollRef}
+                data-capture="pot-container"
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...potSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                    const imageUrl = vImg || product.image;
+                    return (
+                      <div key={product.id} className={styles.carouselItem}>
+                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Plantas */}
+              <div
+                className={styles.carouselContainer}
+                ref={plantScrollRef}
+                data-capture="plant-container"
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...plantSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                  {plants.map((product) => (
+                    <div key={product.id} className={styles.carouselItem}>
+                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+       
+        </div>
+
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+
+        {/* Panel derecho */}
+        <div className="col-lg-5 col-md-8 col-12">
+          {pots.length > 0 && plants.length > 0 && (
+            <div className="text-center">
+              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
+                {totalBase > totalNow && (
+                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
+                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
+                  </p>
+                )}
+                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
+              </div>
+
+              {/* SOLO color */}
+              {colorOptions.length > 0 && (
+                <div className="mb-4">
+                  <h5>Color</h5>
+                  <div className="d-flex justify-content-center gap-3 flex-wrap">
+                    {colorOptions.map((color, index) => {
+                      const bg = resolveColor(color);
+                      const isWhite = bg.toLowerCase() === "#ffffff" || bg.toLowerCase() === "#fff";
+                      const isSelected = selectedColor === color;
+                      return (
+                        <div
+                          key={index}
+                          onClick={() => setSelectedColor(color)}
+                          title={color}
+                          aria-label={color}
+                          aria-selected={isSelected}
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "50%",
+                            backgroundColor: bg,              // <- FIX: usar color real
+                            border: isSelected ? "3px solid #000" : (isWhite ? "1px solid #999" : "1px solid #ccc"),
+                            boxShadow: isSelected ? "0 0 0 3px rgba(0,0,0,0.15) inset" : "none",
+                            cursor: "pointer",
+                            transition: "transform .12s ease",
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+   {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
+          {accessories && accessories.length > 0 && (
+            <div className="mb-4 mt-4">
+              <h5>Accesorios</h5>
+              <div className="d-flex justify-content-center gap-3 flex-wrap">
+                {accessories.map((product, index) => {
+                  const img =
+                    product?.image?.src || product?.image ||
+                    (Array.isArray(product?.images) && product.images[0]?.src) ||
+                    "/placeholder.png";
+                  const title = product?.title || product?.name || `Accesorio ${index + 1}`;
+                  const selected = selectedAccessoryIndices.includes(index);
+                  return (
+                    <div
+                      key={product?.id || index}
+                      onClick={(e) => {
+                        setSelectedAccessoryIndices((prev) =>
+                          prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+                        );
+                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                        setAccPreview({
+                          visible: true,
+                          x: cx + 16,
+                          y: cy + 16,
+                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                        });
+                      }}
+                      onMouseEnter={(e) => {
+                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                        setAccPreview({
+                          visible: true,
+                          x: cx + 16,
+                          y: cy + 16,
+                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                        });
+                      }}
+                      onMouseMove={(e) =>
+                        setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
+                      }
+                      onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
+                      aria-label={title}
+                      style={{
+                        border: selected ? "3px solid black" : "1px solid #ccc",
+                        borderRadius: "12px",
+                        padding: "6px",
+                        cursor: "zoom-in",
+                        width: "100px",
+                        height: "100px",
+                        overflow: "hidden",
+                        transition: "transform 0.2s ease",
+                      }}
+                    >
+                      <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+              {/* Cantidad + botones */}
+              <div className="d-flex flex-column align-items-center mb-5">
+                <div className="mb-3 text-center">
+                  <label className="form-label d-block">Cantidad</label>
+                  <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
+                    <input
+                      type="number"
+                      className="form-control text-center"
+                      value={quantity}
+                      min="1"
+                      max="1000"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (/^\d*$/.test(val)) {
+                          const n = parseInt(val, 10);
+                          if (!isNaN(n) && n >= 1 && n <= 1000) setQuantity(n);
+                          else if (val === "") setQuantity("");
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const n = parseInt(e.target.value, 10);
+                        if (isNaN(n) || n < 1) setQuantity(1);
+                        else if (n > 1000) setQuantity(1000);
+                      }}
+                    />
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
+                  </div>
+                </div>
+
+                <div className="d-flex gap-3">
+                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
+                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Descripciones */}
+          <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
+            <h6><strong>Planta</strong></h6>
+            {(() => {
+              const p = plants[selectedPlantIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+              );
+            })()}
+
+            <h6 className="mt-3"><strong>Maceta</strong></h6>
+            {(() => {
+              const p = pots[selectedPotIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+
+      {/* Preview flotante accesorios */}
+      <IframePreview
+        visible={accPreview.visible}
+        x={accPreview.x}
+        y={accPreview.y}
+        html={accPreview.html}
+        onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
+      />
+
+      <style jsx global>{`
+        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
+        .pot-carousel--locked::-webkit-scrollbar { display: none; }
+      `}</style>
+    </div>
+  );
+}
+
+export async function getServerSideProps() {
+  return { props: {} };
+}
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
