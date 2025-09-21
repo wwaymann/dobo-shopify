@@ -1,5 +1,5 @@
 // pages/index.js
-import { useEffect, useState, useRef, useLayoutEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
@@ -7,10 +7,6 @@ import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
-const mobileShellRef = { current: null };
-
-
-
 
 function ControlesPublicar() {
   const onPublish = async () => {
@@ -107,7 +103,6 @@ function IframePreview(props) {
     <div style={style}>
       <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
     </div>
-    
   );
 }
 
@@ -127,7 +122,6 @@ function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
       ))}
       <span className={styles.dotsLabel}>{current + 1}/{count}</span>
     </div>
-   
   );
 }
 
@@ -205,7 +199,7 @@ function Home() {
   const [editing, setEditing] = useState(false);
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
-  const zoomRef = useRef(0.5);
+  const zoomRef = useRef(1);
   const sceneWrapRef = useRef(null);
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
@@ -289,26 +283,7 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-
-
-// Centrar horizontalmente el conjunto en móvil sin remaquetar
-useEffect(() => {
-  const shell = mobileShellRef?.current;
-  if (!shell) return;
-  const content = shell.querySelector('.container');
-  if (!content) return;
-  const center = () => {
-    try {
-      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
-      shell.scrollLeft = target;
-    } catch {}
-  };
-  center();
-  const onR = () => center();
-  window.addEventListener('resize', onR);
-  return () => window.removeEventListener('resize', onR);
-}, []);
-
+  
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
   let cancelled = false;
@@ -470,12 +445,6 @@ useEffect(() => {
 }, [pots, plants]);
 
 
-  
-useLayoutEffect(() => {
-  const z = String(zoomRef.current || INITIAL_ZOOM);
-  sceneWrapRef.current?.style.setProperty('--zoom', z);
-  stageRef.current?.style.setProperty('--zoom', z);
-}, []);
 
 
   /* ---------- zoom rueda ---------- */
@@ -484,7 +453,7 @@ useLayoutEffect(() => {
     if (!container || !stage) return;
     zoomRef.current = zoomRef.current || 1;
     stage.style.setProperty("--zoom", String(zoomRef.current));
-    const MIN = 0.5, MAX = 2.5;
+    const MIN = 0.8, MAX = 2.5;
     let target = zoomRef.current, raf = 0;
     const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
     const schedule = () => {
@@ -944,10 +913,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
   
   return (
-<div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
-
-
-
+    <div className={`container mt-5 ${styles.container}`} style={{ paddingBottom: "150px" }}>
       <div className="row justify-content-center align-items-start gx-5 gy-4">
         <div className="col-lg-5 col-md-8 col-12 text-center">
           {/* Selector de tamaño */}
@@ -976,8 +942,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             style={{
               width: "500px",
               height: "650px",
-              width: "100%", maxWidth: "500px",
-              aspectRatio: "500 / 650",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1043,8 +1007,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               className="d-flex justify-content-center align-items-end"
               style={{
                 height: "100%",
-                "--zoom": INITIAL_ZOOM,
-                "--zoom": 0.5,
                 transform: "scale(var(--zoom))",
                 transformOrigin: "50% 70%",
                 willChange: "transform",
@@ -1101,8 +1063,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               </div>
             </div>
           </div>
-{/* Dock menú DOBO debajo de carruseles */}
-<div id="dobo-menu-dock" className={styles.menuDock} />
 
        
         </div>
@@ -1299,7 +1259,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         .pot-carousel--locked::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
-   
   );
 }
 
