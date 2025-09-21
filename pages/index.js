@@ -180,11 +180,6 @@ if (typeof window !== 'undefined') {
 
 
 function Home() {
-  // Evitar hidratar en SSR hasta estar montado en cliente
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return null;
-
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
@@ -288,10 +283,7 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  const [mounted, setMounted] = useState(false);
-useEffect(() => { setMounted(true); }, []);
-if (!mounted) return null;
-
+  
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
   let cancelled = false;
@@ -943,6 +935,10 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
           </div>
 
+              {/* Dock menú DOBO debajo de carruseles */}
+              <div id="dobo-menu-dock" className={styles.menuDock} />
+
+
           {/* Escena */}
           <div
             className="position-relative"
@@ -1274,4 +1270,3 @@ export async function getServerSideProps() {
   return { props: {} };
 }
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
-
