@@ -3,18 +3,6 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
-import { applyRelief2DFromURLs } from "../lib/relief2d";
-
-
-async function aplicarSobreRelieveEnCanvas(fabricCanvas){
-  const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
-    logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
-  });
-  fabric.Image.fromURL(url, (img)=>{
-    img.set({ selectable:false, evented:false });
-    fabricCanvas.add(img).bringToFront(img).renderAll();
-  });
-}
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -23,8 +11,6 @@ const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
 const Z_MENU   = 10000;  // menú fijo por encima de todo
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-
 
 // Fuentes visibles en el selector
 const FONT_OPTIONS = [
@@ -816,7 +802,7 @@ useEffect(() => {
 
   const readZ = () => {
     const el = stageRef?.current;
-    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '0.5');
+    const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
     const n = parseFloat((v || '1').trim());
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
@@ -1401,12 +1387,26 @@ useEffect(() => {
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
       {/* Menú fijo abajo */}
-{ anchorRef?.current ?  createPortal(
-   <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
-     <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
-   </div>,
-  document.getElementById('dobo-menu-dock')
- ) : null }
+      {typeof document !== 'undefined' ? createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: anchorRect ? (anchorRect.left + anchorRect.width / 2) : '50%',
+            bottom: 8,
+            transform: 'translateX(-50%)',
+            zIndex: Z_MENU,
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
+            <Menu />
+          </div>
+        </div>,
+        document.body
+      ) : null}
     </>
   );
 }
