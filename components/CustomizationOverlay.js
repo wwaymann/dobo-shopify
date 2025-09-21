@@ -1383,6 +1383,21 @@ useEffect(() => {
   // ===== Render =====
   return (
     <>
+    const target = (typeof window !== 'undefined')
+  ? (document.getElementById('dobo-menu-dock') || document.body)
+  : null;
+
+return target
+  ? createPortal(
+      <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
+        <div style={{ pointerEvents:'auto', display:'inline-flex' }}>
+          <Menu />
+        </div>
+      </div>,
+      target
+    )
+  : null;
+
       {/* Overlay dentro de la maceta */}
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
