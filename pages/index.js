@@ -469,8 +469,7 @@ useEffect(() => {
   appliedMetaOnceRef.current = true;
 }, [pots, plants]);
 
-const INITIAL_ZOOM = 0.5;
-const zoomRef = useRef(INITIAL_ZOOM);
+
   
 useLayoutEffect(() => {
   const z = String(zoomRef.current || INITIAL_ZOOM);
