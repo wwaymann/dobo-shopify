@@ -180,6 +180,11 @@ if (typeof window !== 'undefined') {
 
 
 function Home() {
+  // Evitar hidratar en SSR hasta estar montado en cliente
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
