@@ -288,7 +288,10 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  
+  const [mounted, setMounted] = useState(false);
+useEffect(() => { setMounted(true); }, []);
+if (!mounted) return null;
+
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
   let cancelled = false;
@@ -1271,3 +1274,4 @@ export async function getServerSideProps() {
   return { props: {} };
 }
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
+
