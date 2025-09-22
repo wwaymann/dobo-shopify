@@ -1,9 +1,9 @@
+// pages/index.js
 import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
-// pages/index.js
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
