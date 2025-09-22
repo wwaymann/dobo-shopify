@@ -582,77 +582,98 @@ try {
 } catch {}
 
 
-    // DOBO: exponer API global del editor
+// DOBO: exponer API global del editor
 if (typeof window !== 'undefined') {
+  // Normaliza TODOS los objetos para que queden editables (y convierte 'text' → Textbox)
+  const normalizeObjectsForEditing = () => {
+    const objs = c.getObjects?.() || [];
+    objs.forEach((o0) => {
+      let o = o0;
+
+      // Legacy: fabric.Text → Textbox editable
+      if (o.type === 'text' && typeof fabric.Textbox === 'function') {
+        const tb = new fabric.Textbox(o.text || '', {
+          left: o.left, top: o.top, originX: o.originX, originY: o.originY,
+          angle: o.angle, scaleX: o.scaleX, scaleY: o.scaleY, flipX: o.flipX, flipY: o.flipY,
+          width: Math.max(120, (o.width || 220)),
+          fontFamily: o.fontFamily, fontSize: o.fontSize, fontWeight: o.fontWeight,
+          fontStyle: o.fontStyle, underline: o.underline, textAlign: o.textAlign || 'center',
+          editable: true, selectable: true, evented: true, objectCaching: false,
+        });
+        try { c.remove(o); } catch {}
+        c.add(tb);
+        o = tb;
+      }
+
+      // Habilitar selección/movimiento/edición
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders  = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+    });
+
+    c.skipTargetFind = false;
+    c.selection = true;
+    try { c.upperCanvasEl.style.pointerEvents = 'auto'; c.upperCanvasEl.style.touchAction = 'none'; c.upperCanvasEl.tabIndex = 0; } catch {}
+    c.requestRenderAll?.();
+  };
+
   const api = {
-    // existentes
     toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
     toSVG: () => c.toSVG({ suppressPreamble: true }),
     getCanvas: () => c,
+
+    // toggle edición desde fuera si hace falta
+    setEditing: (on = true) => { try { setEditing(!!on); } catch {} },
+    normalizeObjectsForEditing,
+
     // snapshot
     exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-  importDesignSnapshot: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      (c.getObjects() || []).forEach(o => {
-        o.selectable = true;
-        o.evented = true;
-        o.hasControls = true;
-        o.hasBorders = true;
-        o.lockMovementX = false;
-        o.lockMovementY = false;
-        o.hoverCursor = 'move';
-        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
-      });
-      c.skipTargetFind = false;
-      c.selection = true;
-      c.requestRenderAll();
-      c.calcOffset?.();
-      
-      // entra en modo edición tras cargar
-      try { setEditing(true); } catch {}
-      res(true);
-    });
-  } catch { res(false); }
-}),
-loadDesignSnapshot: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      (c.getObjects() || []).forEach(o => {
-        o.selectable = true; o.evented = true; o.hasControls = true; o.hasBorders = true;
-        o.lockMovementX = false; o.lockMovementY = false; o.hoverCursor = 'move';
-        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
-      });
-      c.skipTargetFind = false; c.selection = true;
-      c.requestRenderAll();
-      c.calcOffset?.();
-      try { setEditing(true); } catch {}
-      res(true);
-    });
-  } catch { res(false); }
-}),
-loadJSON: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      (c.getObjects() || []).forEach(o => {
-        o.selectable = true; o.evented = true; o.hasControls = true; o.hasBorders = true;
-        o.lockMovementX = false; o.lockMovementY = false; o.hoverCursor = 'move';
-        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
-      });
-      c.skipTargetFind = false; c.selection = true;
-      c.requestRenderAll();
-      c.calcOffset?.();
-      try { setEditing(true); } catch {}
-      res(true);
-    });
-  } catch { res(false); }
-}),
+
+    importDesignSnapshot: (snap) => new Promise((res) => {
+      try {
+        c.loadFromJSON(snap, () => {
+          normalizeObjectsForEditing();
+          try { setEditing(true); } catch {}
+          c.requestRenderAll?.();
+          res(true);
+        });
+      } catch { res(false); }
+    }),
+
+    loadDesignSnapshot: (snap) => new Promise((res) => {
+      try {
+        c.loadFromJSON(snap, () => {
+          normalizeObjectsForEditing();
+          try { setEditing(true); } catch {}
+          c.requestRenderAll?.();
+          res(true);
+        });
+      } catch { res(false); }
+    }),
+
+    loadJSON: (snap) => new Promise((res) => {
+      try {
+        c.loadFromJSON(snap, () => {
+          normalizeObjectsForEditing();
+          try { setEditing(true); } catch {}
+          c.requestRenderAll?.();
+          res(true);
+        });
+      } catch { res(false); }
+    }),
 
     reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
   };
+
   window.doboDesignAPI = api;
   try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
 }
+
 
     // ===== Delimitar área: margen 40 px por lado (ajustable) =====
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
