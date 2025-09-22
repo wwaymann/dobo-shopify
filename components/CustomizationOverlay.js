@@ -1063,37 +1063,41 @@ useEffect(() => {
 }, [stageRef, setZoom, textEditing]);
 
   // Bloquear clicks externos mientras se diseña
-  useEffect(() => {
-    const hostA = anchorRef?.current;
-    const hostS = stageRef?.current;
-    const host = hostA || hostS;
-    if (!host) return;
+// Bloquear clicks externos mientras se diseña
+useEffect(() => {
+  const hostA = anchorRef?.current;
+  const hostS = stageRef?.current;
+  const host = hostA || hostS;
+  if (!host) return;
 
-    const getAllowed = () => {
-      const c = fabricCanvasRef.current;
-      return [overlayRef.current, c?.upperCanvasEl].filter(Boolean);
-    };
-    const insideAllowed = (e) => {
-     const getAllowed = () => {
-  const c = fabricCanvasRef.current;
-  // permitir el contenedor del overlay + todas las capas de Fabric
-  return [overlayRef.current, c?.upperCanvasEl, c?.lowerCanvasEl, c?.wrapperEl].filter(Boolean);
-};
+  const getAllowed = () => {
+    const c = fabricCanvasRef.current;
+    // permitir overlay + TODAS las capas de Fabric
+    return [overlayRef.current, c?.upperCanvasEl, c?.lowerCanvasEl, c?.wrapperEl].filter(Boolean);
+  };
 
+  const insideAllowed = (e) => {
+    const allowed = getAllowed();
+    const path = e.composedPath ? e.composedPath() : [];
+    return path.some((n) => allowed.includes(n));
+  };
 
-    const stop = (e) => {
-      if (!editing) return;
-      if (insideAllowed(e)) return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
+  const stop = (e) => {
+    if (!editing) return;
+    if (insideAllowed(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
-    const opts = { capture: true, passive: false };
-    const evs = ['pointerdown','mousedown','touchstart','click','wheel'];
-    evs.forEach(ev => host.addEventListener(ev, stop, opts));
+  const opts = { capture: true, passive: false };
+  const evs = ['pointerdown', 'mousedown', 'touchstart', 'click', 'wheel'];
+  evs.forEach((ev) => host.addEventListener(ev, stop, opts));
 
-    return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
-  }, [editing, anchorRef, stageRef]);
+  return () => {
+    evs.forEach((ev) => host.removeEventListener(ev, stop, opts));
+  };
+}, [editing, anchorRef, stageRef]);
+
 
   // ===== Acciones =====
   const addText = () => {
