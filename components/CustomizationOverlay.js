@@ -162,7 +162,7 @@ const historyRef = useRef(null);
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
 const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(true);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
