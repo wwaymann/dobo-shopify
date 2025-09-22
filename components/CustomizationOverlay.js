@@ -3,6 +3,18 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
+import { applyRelief2DFromURLs } from "../lib/relief2d";
+
+
+async function aplicarSobreRelieveEnCanvas(fabricCanvas){
+  const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
+    logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
+  });
+  fabric.Image.fromURL(url, (img)=>{
+    img.set({ selectable:false, evented:false });
+    fabricCanvas.add(img).bringToFront(img).renderAll();
+  });
+}
 
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
@@ -1387,17 +1399,12 @@ useEffect(() => {
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
       {/* Menú fijo abajo */}
-      {
-      typeof document !== 'undefined' ? createPortal(
-  <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
-    <div style={{ pointerEvents:'auto', display:'inline-flex' }}>
-      <Menu />
-    </div>
-  </div>,
+{ anchorRef?.current ?  createPortal(
+   <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
+     <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
+   </div>,
   document.getElementById('dobo-menu-dock')
-)
- : null
-    }
+ ) : null }
     </>
   );
 }
