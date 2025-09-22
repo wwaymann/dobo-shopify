@@ -583,15 +583,59 @@ if (typeof window !== 'undefined') {
     getCanvas: () => c,
     // snapshot
     exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    loadDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    loadJSON: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
+  importDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      (c.getObjects() || []).forEach(o => {
+        o.selectable = true;
+        o.evented = true;
+        o.hasControls = true;
+        o.hasBorders = true;
+        o.lockMovementX = false;
+        o.lockMovementY = false;
+        o.hoverCursor = 'move';
+        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      });
+      c.skipTargetFind = false;
+      c.selection = true;
+      c.requestRenderAll();
+      // entra en modo edición tras cargar
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+loadDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      (c.getObjects() || []).forEach(o => {
+        o.selectable = true; o.evented = true; o.hasControls = true; o.hasBorders = true;
+        o.lockMovementX = false; o.lockMovementY = false; o.hoverCursor = 'move';
+        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      });
+      c.skipTargetFind = false; c.selection = true;
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+loadJSON: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      (c.getObjects() || []).forEach(o => {
+        o.selectable = true; o.evented = true; o.hasControls = true; o.hasBorders = true;
+        o.lockMovementX = false; o.lockMovementY = false; o.hoverCursor = 'move';
+        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      });
+      c.skipTargetFind = false; c.selection = true;
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+
     reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
   };
   window.doboDesignAPI = api;
