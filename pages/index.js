@@ -913,9 +913,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
   
   return (
-  <div className={`container mt-lg-5 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
-
-
+    <div className={`container mt-5 ${styles.container}`} style={{ paddingBottom: "150px" }}>
       <div className="row justify-content-center align-items-start gx-5 gy-4">
         <div className="col-lg-5 col-md-8 col-12 text-center">
           {/* Selector de tamaño */}
@@ -933,11 +931,12 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     {s}
   </button>
 ))}
-   ck" className={styles.menuDock} />
+
 
           </div>
 
-        
+              {/* Dock menú DOBO debajo de carruseles */}
+              <div id="dobo-menu-dock" className={styles.menuDock} />
 
 
           {/* Escena */}
@@ -1074,6 +1073,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
 {/* Dock menú DOBO debajo de carruseles */}
 <div id="dobo-menu-dock" className={styles.menuDock} />
+
 
         {/* Overlay de edición (restaurado) */}
         <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
