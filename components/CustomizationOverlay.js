@@ -1295,6 +1295,7 @@ useEffect(() => {
   const OverlayCanvas = (
     <div
       ref={overlayRef}
+    data-html2canvas-ignore="true"
       style={{
         position: "absolute",
         left: overlayBox.left,
