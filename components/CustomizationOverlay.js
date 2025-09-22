@@ -809,7 +809,7 @@ const startInlineTextEdit = (group) => {
 // Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
 useEffect(() => {
   const c = fabricCanvasRef.current;
-  const target = c?.upperCanvasEl || stageRef?.current;
+  const target = stageRef?.current || c?.upperCanvasEl;
   if (!target) return;
 
   const readZ = () => {
