@@ -81,104 +81,108 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
-  function useCanvasZoom(canvas, stageRef, zoomRef) {
+// props: { canvas, stageRef, zoomRef }
+export function useCanvasZoom(canvas, stageRef, zoomRef) {
+  // 1) Zoom inicial EXACTO = 0.5, una sola vez
   useEffect(() => {
-    const c = canvas;
-    if (!c) return;
+    if (!canvas) return;
+    if (canvas.__doboInitZoomApplied) return;
 
-    const target = c.upperCanvasEl;
-    if (!target) return;
+    const z = 0.5;
+    const center = new fabric.Point(canvas.getWidth() / 2, canvas.getHeight() / 2);
+    canvas.zoomToPoint(center, z);
+    canvas.__doboInitZoomApplied = true;
 
-    // límites y helpers
+    if (zoomRef) zoomRef.current = z;
+    stageRef?.current?.style?.setProperty("--zoom", String(z));
+    canvas.requestRenderAll();
+  }, [canvas, stageRef, zoomRef]);
+
+  // 2) Rueda + pellizco sobre el canvas superior
+  useEffect(() => {
+    if (!canvas) return;
+
+    const el = canvas.upperCanvasEl;
+    if (!el || el.__doboZoomBound) return; // idempotente
+    el.__doboZoomBound = true;
+
+    // evita que el navegador consuma el gesto
+    el.style.touchAction = "none";
+
     const MIN = 0.5, MAX = 2.5;
-    const clamp = v => Math.min(MAX, Math.max(MIN, v));
+    const clamp = v => Math.max(MIN, Math.min(MAX, v));
 
-    // estado interno
-    let zoom = typeof zoomRef?.current === "number" ? zoomRef.current : 0.5;
+    let z = typeof zoomRef?.current === "number" ? zoomRef.current : canvas.getZoom() || 0.5;
 
-    // aplica zoom central o a un punto
-    const apply = (z, cx, cy) => {
-      const next = clamp(z);
-      zoom = next;
+    const apply = (nz, cx, cy) => {
+      const next = clamp(nz);
+      if (next === z) return;
+
+      // zoom al punto del evento
+      const rect = el.getBoundingClientRect();
+      const px = (cx ?? rect.width / 2);
+      const py = (cy ?? rect.height / 2);
+      const point = new fabric.Point(px, py);
+
+      canvas.zoomToPoint(point, next);
+      z = next;
       if (zoomRef) zoomRef.current = next;
-
-      const centerPoint = new fabric.Point(
-        cx ?? c.getWidth() / 2,
-        cy ?? c.getHeight() / 2
-      );
-      c.zoomToPoint(centerPoint, next);
       stageRef?.current?.style?.setProperty("--zoom", String(next));
-      c.requestRenderAll();
+      canvas.requestRenderAll();
     };
 
-    // fija zoom inicial EXACTO = 0.5 sin salto
-    apply(zoom);
-
-    // rueda en desktop
+    // rueda normalizada: paso fijo, sin saltos por delta grande
     const onWheel = (e) => {
       e.preventDefault();
-      // ignora si ya estás en los límites
-      if (e.deltaY > 0 && zoom <= MIN) return;
-      if (e.deltaY < 0 && zoom >= MAX) return;
-
-      // step suave; con Ctrl acelera
-      const base = e.ctrlKey || e.metaKey ? 0.15 : 0.1;
-      const step = e.deltaY > 0 ? -base : base;
-
-      const rect = target.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-
-      apply(zoom + step, cx, cy);
+      e.stopPropagation();
+      const dir = Math.sign(e.deltaY);               // 1 afuera, -1 adentro
+      const step = dir > 0 ? -0.08 : 0.08;           // paso corto y suave
+      apply(z + step, e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
     };
 
     // pellizco en móvil
     let pinchDist = 0;
-    const dist = (t0, t1) =>
-      Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
 
     const onTouchStart = (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        pinchDist = dist(e.touches[0], e.touches[1]);
+        e.stopPropagation();
+        pinchDist = dist2(e.touches[0], e.touches[1]);
       }
     };
 
     const onTouchMove = (e) => {
-      if (e.touches.length === 2 && pinchDist > 0) {
+      if (e.touches.length === 2 && pinchDist) {
         e.preventDefault();
-        const d = dist(e.touches[0], e.touches[1]);
-        // ratio cercano a 1 para suavidad
-        const ratio = d / pinchDist;
+        e.stopPropagation();
+        const d = dist2(e.touches[0], e.touches[1]);
+        const ratio = d / pinchDist;                 // ~1 para suavidad
         pinchDist = d;
 
-        const rect = target.getBoundingClientRect();
-        const cx =
-          (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
-        const cy =
-          (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+        const rect = el.getBoundingClientRect();
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
 
-        apply(zoom * ratio, cx, cy);
+        apply(z * ratio, cx, cy);
       }
     };
 
-    const onTouchEnd = () => {
-      pinchDist = 0;
-    };
+    const onTouchEnd = () => { pinchDist = 0; };
 
-    // listeners
-    target.addEventListener("wheel", onWheel, { passive: false });
-    target.addEventListener("touchstart", onTouchStart, { passive: false });
-    target.addEventListener("touchmove", onTouchMove, { passive: false });
-    target.addEventListener("touchend", onTouchEnd, { passive: false });
-    target.addEventListener("touchcancel", onTouchEnd, { passive: false });
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
 
     return () => {
-      target.removeEventListener("wheel", onWheel);
-      target.removeEventListener("touchstart", onTouchStart);
-      target.removeEventListener("touchmove", onTouchMove);
-      target.removeEventListener("touchend", onTouchEnd);
-      target.removeEventListener("touchcancel", onTouchEnd);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+      el.__doboZoomBound = false;
     };
   }, [canvas, stageRef, zoomRef]);
 }
