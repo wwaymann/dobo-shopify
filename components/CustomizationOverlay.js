@@ -5,82 +5,6 @@ import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
 import { applyRelief2DFromURLs } from "../lib/relief2d";
 
-
-async function aplicarSobreRelieveEnCanvas(fabricCanvas){
-  const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
-    logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
-  });
-  fabric.Image.fromURL(url, (img)=>{
-    img.set({ selectable:false, evented:false });
-    fabricCanvas.add(img).bringToFront(img).renderAll();
-  });
-}
-
-// ===== Constantes =====
-const MAX_TEXTURE_DIM = 1600;
-const VECTOR_SAMPLE_DIM = 500;
-const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
-const Z_MENU   = 10000;  // menú fijo por encima de todo
-
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-// Fuentes visibles en el selector
-const FONT_OPTIONS = [
-  { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
-  { name: 'Georgia', css: 'Georgia, serif' },
-  { name: 'Times New Roman', css: '"Times New Roman", Times, serif' },
-  { name: 'Courier New', css: '"Courier New", Courier, monospace' },
-  { name: 'Trebuchet MS', css: '"Trebuchet MS", Tahoma, sans-serif' },
-  { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
-  { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
-];
-
-export default function CustomizationOverlay({
-  stageRef,
-  anchorRef,
-  visible = true,
-  zoom = 1,
-  setZoom,
-}) {
-  // ===== Refs y estado =====
-  const canvasRef = useRef(null);
-  const fabricCanvasRef = useRef(null);
-  const overlayRef = useRef(null);
-
-  const addInputRef = useRef(null);
-  const replaceInputRef = useRef(null);
-  const menuRef = useRef(null);
-
-  
-  
-  const designBoundsRef = useRef(null);
-const historyRef = useRef(null);
-  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
-const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
-
-  const [editing, setEditing] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
-
-  // Tipografía
-  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
-  const [fontSize, setFontSize] = useState(60);
-  const [isBold, setIsBold] = useState(false);
-  const [isItalic, setIsItalic] = useState(false);
-  const [isUnderline, setIsUnderline] = useState(false);
-  const [textAlign, setTextAlign] = useState('center');
-  const [showAlignMenu, setShowAlignMenu] = useState(false);
-
-  // Imagen/relieve
-  const [vecOffset, setVecOffset] = useState(1);     // 0..5
-  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
-  const [vecBias, setVecBias] = useState(0);         // -60..+60
-
-  const suppressSelectionRef = useRef(false);
-  const [anchorRect, setAnchorRect] = useState(null);
-  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
-  const [textEditing, setTextEditing] = useState(false);
-
 // props: { canvas, stageRef, zoomRef }
 export function useCanvasZoom(canvas, stageRef, zoomRef) {
   // 1) Zoom inicial EXACTO = 0.5, una sola vez
@@ -186,6 +110,82 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     };
   }, [canvas, stageRef, zoomRef]);
 }
+async function aplicarSobreRelieveEnCanvas(fabricCanvas){
+  const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
+    logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
+  });
+  fabric.Image.fromURL(url, (img)=>{
+    img.set({ selectable:false, evented:false });
+    fabricCanvas.add(img).bringToFront(img).renderAll();
+  });
+}
+
+// ===== Constantes =====
+const MAX_TEXTURE_DIM = 1600;
+const VECTOR_SAMPLE_DIM = 500;
+const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
+const Z_MENU   = 10000;  // menú fijo por encima de todo
+
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+// Fuentes visibles en el selector
+const FONT_OPTIONS = [
+  { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
+  { name: 'Georgia', css: 'Georgia, serif' },
+  { name: 'Times New Roman', css: '"Times New Roman", Times, serif' },
+  { name: 'Courier New', css: '"Courier New", Courier, monospace' },
+  { name: 'Trebuchet MS', css: '"Trebuchet MS", Tahoma, sans-serif' },
+  { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
+  { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
+];
+
+export default function CustomizationOverlay({
+  stageRef,
+  anchorRef,
+  visible = true,
+  zoom = 1,
+  setZoom,
+}) {
+  // ===== Refs y estado =====
+  const canvasRef = useRef(null);
+  const fabricCanvasRef = useRef(null);
+  const overlayRef = useRef(null);
+
+  const addInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
+  const menuRef = useRef(null);
+
+  
+  
+  const designBoundsRef = useRef(null);
+const historyRef = useRef(null);
+  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
+const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
+
+  const [editing, setEditing] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
+
+  // Tipografía
+  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
+  const [fontSize, setFontSize] = useState(60);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+  const [isUnderline, setIsUnderline] = useState(false);
+  const [textAlign, setTextAlign] = useState('center');
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
+
+  // Imagen/relieve
+  const [vecOffset, setVecOffset] = useState(1);     // 0..5
+  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
+  const [vecBias, setVecBias] = useState(0);         // -60..+60
+
+  const suppressSelectionRef = useRef(false);
+  const [anchorRect, setAnchorRect] = useState(null);
+  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
+  const [textEditing, setTextEditing] = useState(false);
+
+
 
 useEffect(() => {
   const c = fabricCanvasRef.current;
