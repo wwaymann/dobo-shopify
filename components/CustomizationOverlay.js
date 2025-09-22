@@ -1389,13 +1389,14 @@ useEffect(() => {
       {/* Menú fijo abajo */}
       {
       typeof document !== 'undefined' ? createPortal(
-        <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
-          <div style={{ pointerEvents:'auto', display:'inline-flex' }}>
-            <Menu />
-          </div>
-        </div>,
-        document.getElementById('dobo-menu-dock')
-      ) : null
+  <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
+    <div style={{ pointerEvents:'auto', display:'inline-flex' }}>
+      <Menu />
+    </div>
+  </div>,
+  document.getElementById('dobo-menu-dock')
+)
+ : null
     }
     </>
   );
