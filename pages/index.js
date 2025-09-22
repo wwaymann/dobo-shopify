@@ -935,17 +935,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
           </div>
 
-              {/* Dock menú DOBO debajo de carruseles */}
-              <div id="dobo-menu-dock" className={styles.menuDock} />
-
-
           {/* Escena */}
           <div
             className="position-relative"
             ref={sceneWrapRef}
             style={{
-              width: "500px",
-              height: "650px",
+              width: "100%", maxWidth: "500px",
+              aspectRatio: "500 / 650",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1070,10 +1066,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
        
         </div>
-
-{/* Dock menú DOBO debajo de carruseles */}
-<div id="dobo-menu-dock" className={styles.menuDock} />
-
 
         {/* Overlay de edición (restaurado) */}
         <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
