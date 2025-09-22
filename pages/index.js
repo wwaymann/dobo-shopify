@@ -920,6 +920,15 @@ useEffect(() => {
       if (!resp.ok) return;
       const payload = await resp.json();
       const snapshot = payload?.design || payload;
+
+      await (api.importDesignSnapshot ? api.importDesignSnapshot(snapshot)
+  : api.loadDesignSnapshot ? api.loadDesignSnapshot(snapshot)
+  : api.loadJSON ? api.loadJSON(snapshot)
+  : Promise.resolve());
+
+api?.normalizeObjectsForEditing?.();
+api?.setEditing?.(true);
+
 // guarda meta para sincronizar carruseles
 designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
       setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
