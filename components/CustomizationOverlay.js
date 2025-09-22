@@ -143,7 +143,7 @@ export default function CustomizationOverlay({
   stageRef,
   anchorRef,
   visible = true,
-  zoom = 1,
+  zoom = 0.5,
   setZoom,
 }) {
   // ===== Refs y estado =====
