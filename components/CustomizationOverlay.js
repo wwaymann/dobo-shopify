@@ -81,6 +81,108 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+  function useCanvasZoom(canvas, stageRef, zoomRef) {
+  useEffect(() => {
+    const c = canvas;
+    if (!c) return;
+
+    const target = c.upperCanvasEl;
+    if (!target) return;
+
+    // límites y helpers
+    const MIN = 0.5, MAX = 2.5;
+    const clamp = v => Math.min(MAX, Math.max(MIN, v));
+
+    // estado interno
+    let zoom = typeof zoomRef?.current === "number" ? zoomRef.current : 0.5;
+
+    // aplica zoom central o a un punto
+    const apply = (z, cx, cy) => {
+      const next = clamp(z);
+      zoom = next;
+      if (zoomRef) zoomRef.current = next;
+
+      const centerPoint = new fabric.Point(
+        cx ?? c.getWidth() / 2,
+        cy ?? c.getHeight() / 2
+      );
+      c.zoomToPoint(centerPoint, next);
+      stageRef?.current?.style?.setProperty("--zoom", String(next));
+      c.requestRenderAll();
+    };
+
+    // fija zoom inicial EXACTO = 0.5 sin salto
+    apply(zoom);
+
+    // rueda en desktop
+    const onWheel = (e) => {
+      e.preventDefault();
+      // ignora si ya estás en los límites
+      if (e.deltaY > 0 && zoom <= MIN) return;
+      if (e.deltaY < 0 && zoom >= MAX) return;
+
+      // step suave; con Ctrl acelera
+      const base = e.ctrlKey || e.metaKey ? 0.15 : 0.1;
+      const step = e.deltaY > 0 ? -base : base;
+
+      const rect = target.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+
+      apply(zoom + step, cx, cy);
+    };
+
+    // pellizco en móvil
+    let pinchDist = 0;
+    const dist = (t0, t1) =>
+      Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchDist = dist(e.touches[0], e.touches[1]);
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches.length === 2 && pinchDist > 0) {
+        e.preventDefault();
+        const d = dist(e.touches[0], e.touches[1]);
+        // ratio cercano a 1 para suavidad
+        const ratio = d / pinchDist;
+        pinchDist = d;
+
+        const rect = target.getBoundingClientRect();
+        const cx =
+          (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const cy =
+          (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+
+        apply(zoom * ratio, cx, cy);
+      }
+    };
+
+    const onTouchEnd = () => {
+      pinchDist = 0;
+    };
+
+    // listeners
+    target.addEventListener("wheel", onWheel, { passive: false });
+    target.addEventListener("touchstart", onTouchStart, { passive: false });
+    target.addEventListener("touchmove", onTouchMove, { passive: false });
+    target.addEventListener("touchend", onTouchEnd, { passive: false });
+    target.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+    return () => {
+      target.removeEventListener("wheel", onWheel);
+      target.removeEventListener("touchstart", onTouchStart);
+      target.removeEventListener("touchmove", onTouchMove);
+      target.removeEventListener("touchend", onTouchEnd);
+      target.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [canvas, stageRef, zoomRef]);
+}
+
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
