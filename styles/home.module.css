@@ -189,3 +189,16 @@
 @media (min-width: 577px) and (max-width: 768px){
   .sceneScalerInner{ transform: scale(0.92); transform-origin: top center; }
 }
+
+/* Ajuste responsivo sin tocar lógica interna */
+.sceneShell{ width:100%; display:flex; justify-content:center; height:650px; }
+.sceneFixed{ width:500px; height:650px; transform-origin:top center; }
+
+/* Fit-width solo en móvil: se escala TODO el bloque de escena */
+@media (max-width: 768px){
+  .sceneShell{ height: calc(650px * (100vw / 500)); }
+  .sceneFixed{ transform: scale(calc(100vw / 500)); }
+}
+
+/* Dock del menú debajo de los carruseles */
+.menuDock{ width:100%; display:flex; justify-content:center; }
