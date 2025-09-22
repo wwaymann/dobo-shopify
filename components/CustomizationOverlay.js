@@ -12,7 +12,7 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     if (!canvas) return;
     if (canvas.__doboInitZoomApplied) return;
 
-    const z = 0.5;
+    const z = 0.6;
     const center = new fabric.Point(canvas.getWidth() / 2, canvas.getHeight() / 2);
     canvas.zoomToPoint(center, z);
     canvas.__doboInitZoomApplied = true;
@@ -143,7 +143,7 @@ export default function CustomizationOverlay({
   stageRef,
   anchorRef,
   visible = true,
-  zoom = 0.5,
+  zoom = 0.6,
   setZoom,
 }) {
   // ===== Refs y estado =====
@@ -197,7 +197,7 @@ useEffect(() => {
   
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
-    const v = typeof zoom === 'number' ? zoom : 1;
+    const v = typeof zoom === 'number' ? zoom : 0.6;
     stageRef?.current?.style.setProperty('--zoom', String(v));
   }, [zoom, stageRef]);
 
@@ -925,7 +925,7 @@ useEffect(() => {
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
   const writeZ = (z) => {
-    const v = Math.max(0.8, Math.min(2.5, z));
+    const v = Math.max(0.6, Math.min(2.5, z));
     stageRef?.current?.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
   };
