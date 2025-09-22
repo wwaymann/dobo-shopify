@@ -469,37 +469,7 @@ useEffect(() => {
 
 
 
-  /* ---------- zoom rueda ---------- */
-  useEffect(() => {
-    const container = sceneWrapRef.current, stage = stageRef.current;
-    if (!container || !stage) return;
-    zoomRef.current = zoomRef.current || 1;
-    stage.style.setProperty("--zoom", String(zoomRef.current));
-    const MIN = 0.5, MAX = 2.5;
-    let target = zoomRef.current, raf = 0;
-    const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
-    const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        stage.style.setProperty("--zoom", String(target));
-        container.style.setProperty("--zoom", String(target));
-      });
-    };
-    const onWheel = (e) => {
-      if (!stage.contains(e.target)) return;
-      e.preventDefault();
-      const step = e.deltaY > 0 ? -0.08 : 0.08;
-      zoomRef.current = clamp(zoomRef.current + step);
-      target = zoomRef.current;
-      schedule();
-    };
-    container.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      container.removeEventListener("wheel", onWheel);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
+
 
 // ---------- RESTAURAR SELECCIÓN (una sola vez) desde meta o query ----------
 const restoredRef = useRef(false);
