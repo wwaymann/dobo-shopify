@@ -286,13 +286,7 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  // en el efecto de montaje inicial
-useEffect(() => {
-  const stage = stageRef.current;
-  if (!stage) return;
-  // expone el zoom inicial al CSS si usas --zoom
-  stage.style.setProperty("--zoom", String(zoomRef.current));
-}, []);
+  
 
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
 useEffect(() => {
@@ -920,15 +914,6 @@ useEffect(() => {
       if (!resp.ok) return;
       const payload = await resp.json();
       const snapshot = payload?.design || payload;
-
-      await (api.importDesignSnapshot ? api.importDesignSnapshot(snapshot)
-  : api.loadDesignSnapshot ? api.loadDesignSnapshot(snapshot)
-  : api.loadJSON ? api.loadJSON(snapshot)
-  : Promise.resolve());
-
-api?.normalizeObjectsForEditing?.();
-api?.setEditing?.(true);
-
 // guarda meta para sincronizar carruseles
 designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
       setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
