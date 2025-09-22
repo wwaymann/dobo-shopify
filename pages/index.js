@@ -286,7 +286,13 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  
+  // en el efecto de montaje inicial
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
+  // expone el zoom inicial al CSS si usas --zoom
+  stage.style.setProperty("--zoom", String(zoomRef.current));
+}, []);
 
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
 useEffect(() => {
