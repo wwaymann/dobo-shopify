@@ -123,7 +123,7 @@ async function aplicarSobreRelieveEnCanvas(fabricCanvas){
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
 const VECTOR_SAMPLE_DIM = 500;
-const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
+const Z_CANVAS = 99999;   // overlay de edición sobre la maceta
 const Z_MENU   = 10000;  // menú fijo por encima de todo
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -573,6 +573,14 @@ useEffect(() => {
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
+    // ← habilitar eventos en las capas de Fabric
+try {
+  c.upperCanvasEl.style.pointerEvents = 'auto';
+  c.upperCanvasEl.style.touchAction = 'none';
+  if (c.wrapperEl) c.wrapperEl.style.pointerEvents = 'auto';
+  if (c.lowerCanvasEl) c.lowerCanvasEl.style.pointerEvents = 'none';
+} catch {}
+
 
     // DOBO: exponer API global del editor
 if (typeof window !== 'undefined') {
@@ -599,6 +607,8 @@ if (typeof window !== 'undefined') {
       c.skipTargetFind = false;
       c.selection = true;
       c.requestRenderAll();
+      c.calcOffset?.();
+      
       // entra en modo edición tras cargar
       try { setEditing(true); } catch {}
       res(true);
@@ -615,6 +625,7 @@ loadDesignSnapshot: (snap) => new Promise(res => {
       });
       c.skipTargetFind = false; c.selection = true;
       c.requestRenderAll();
+      c.calcOffset?.();
       try { setEditing(true); } catch {}
       res(true);
     });
@@ -630,6 +641,7 @@ loadJSON: (snap) => new Promise(res => {
       });
       c.skipTargetFind = false; c.selection = true;
       c.requestRenderAll();
+      c.calcOffset?.();
       try { setEditing(true); } catch {}
       res(true);
     });
@@ -1062,10 +1074,12 @@ useEffect(() => {
       return [overlayRef.current, c?.upperCanvasEl].filter(Boolean);
     };
     const insideAllowed = (e) => {
-      const allowed = getAllowed();
-      const path = e.composedPath ? e.composedPath() : [];
-      return path.some(n => allowed.includes(n));
-    };
+     const getAllowed = () => {
+  const c = fabricCanvasRef.current;
+  // permitir el contenedor del overlay + todas las capas de Fabric
+  return [overlayRef.current, c?.upperCanvasEl, c?.lowerCanvasEl, c?.wrapperEl].filter(Boolean);
+};
+
 
     const stop = (e) => {
       if (!editing) return;
