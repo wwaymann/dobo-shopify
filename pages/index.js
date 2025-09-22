@@ -1,9 +1,9 @@
-// pages/index.js
 import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
+// pages/index.js
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
@@ -914,8 +914,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   
   return (
     <div className={`container mt-5 ${styles.container}`} style={{ paddingBottom: "150px" }}>
-      <div className="row align-items-start gx-4 gy-4">
-        <div className="col-12 col-md-6 text-center">
+      <div className="row justify-content-center align-items-start gx-5 gy-4">
+        <div className="col-lg-5 col-md-8 col-12 text-center">
           {/* Selector de tamaño */}
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
          {["Pequeño", "Mediano", "Grande"].map((s) => (
@@ -944,8 +944,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             className="position-relative"
             ref={sceneWrapRef}
             style={{
-              width: "100%", maxWidth: "500px",
-              aspectRatio: "500 / 650",
+              width: "500px",
+              height: "650px",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -1024,7 +1024,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, width: "100%", touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
@@ -1038,7 +1038,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                     const imageUrl = vImg || product.image;
                     return (
                       <div key={product.id} className={styles.carouselItem}>
-                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} style={{maxWidth:"100%",width:"100%",height:"auto",display:"block"}} />
+                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
                       </div>
                     );
                   })}
@@ -1079,7 +1079,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
         {/* Panel derecho */}
-        <div className="col-12 col-md-6">
+        <div className="col-lg-5 col-md-8 col-12">
           {pots.length > 0 && plants.length > 0 && (
             <div className="text-center">
               <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
