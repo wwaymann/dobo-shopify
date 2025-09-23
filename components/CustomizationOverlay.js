@@ -606,52 +606,88 @@ const makeEditable = () => {
       } catch {}
     }
 
-    // DOBO: exponer API global del editor
-    if (typeof window !== 'undefined') {
-      const api = {
-        // existentes
-        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-        toSVG: () => c.toSVG({ suppressPreamble: true }),
-        getCanvas: () => c,
-        // snapshot
-        exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-
-importDesignSnapshot: (snap) => new Promise(res => {
+// helper: marca TODO como editable/seleccionable y reactiva el hit-test
+function enableEditAll(c) {
   try {
-    c.loadFromJSON(snap, () => {
-      makeEditable();            // ⬅️ AÑADIDO
-      c.requestRenderAll();
-      res(true);
+    (c.getObjects?.() || []).forEach(o => {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+
+      // si es un grupo, aplicar a sus hijos también
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          ch.hasControls = true;
+          ch.hasBorders = true;
+          ch.lockMovementX = false;
+          ch.lockMovementY = false;
+          ch.hoverCursor = 'move';
+          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
+        });
+      }
     });
-  } catch { res(false); }
-}),
-
-loadDesignSnapshot: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      makeEditable();            // ⬅️ AÑADIDO
-      c.requestRenderAll();
-      res(true);
-    });
-  } catch { res(false); }
-}),
-
-loadJSON: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      makeEditable();            // ⬅️ AÑADIDO
-      c.requestRenderAll();
-      res(true);
-    });
-  } catch { res(false); }
-}),
-
-
-        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-      };
-      window.doboDesignAPI = api;
-      try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
+    c.skipTargetFind = false;
+    c.selection = true;
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.style.pointerEvents = 'auto';
+      c.upperCanvasEl.style.touchAction = 'none';
+      c.upperCanvasEl.tabIndex = 0;
     }
+    c.requestRenderAll?.();
+  } catch {}
+}
+
+// DOBO: exponer API global del editor (no toques nada más)
+if (typeof window !== 'undefined') {
+  const api = {
+    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+    toSVG: () => c.toSVG({ suppressPreamble: true }),
+    getCanvas: () => c,
+    exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
+
+    importDesignSnapshot: (snap) => new Promise(res => {
+      try {
+        c.loadFromJSON(snap, () => {
+          enableEditAll(c);
+          try { setEditing(true); } catch {}
+          res(true);
+        });
+      } catch { res(false); }
+    }),
+
+    loadDesignSnapshot: (snap) => new Promise(res => {
+      try {
+        c.loadFromJSON(snap, () => {
+          enableEditAll(c);
+          try { setEditing(true); } catch {}
+          res(true);
+        });
+      } catch { res(false); }
+    }),
+
+    loadJSON: (snap) => new Promise(res => {
+      try {
+        c.loadFromJSON(snap, () => {
+          enableEditAll(c);
+          try { setEditing(true); } catch {}
+          res(true);
+        });
+      } catch { res(false); }
+    }),
+
+    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+  };
+  window.doboDesignAPI = api;
+  try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
+}
+
 
     // ===== Delimitar área: margen 10 px por lado (ajustable) =====
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
