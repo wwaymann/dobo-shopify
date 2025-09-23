@@ -568,7 +568,40 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
-    
+
+    // --- helper: vuelve TODO editable/seleccionable (incluye hijos de grupos)
+const makeAllEditable = () => {
+  try {
+    const objs = (c.getObjects?.() || []);
+    for (const o of objs) {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          ch.hasControls = true;
+          ch.hasBorders = true;
+          ch.lockMovementX = false;
+          ch.lockMovementY = false;
+          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
+        });
+      }
+    }
+    c.skipTargetFind = false;
+    c.selection = true;
+    const upper = c.upperCanvasEl;
+    if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
+    c.requestRenderAll?.();
+  } catch {}
+};
+
 // ——— Helper: marca todos los objetos como editables/seleccionables
 const makeEditable = () => {
   const c = fabricCanvasRef.current;
@@ -697,23 +730,37 @@ if (typeof window !== 'undefined') {
     getCanvas: () => c,
     exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
 
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try {
-        c.loadFromJSON(snap, () => { rescue(c); try { setEditing(true); } catch {} res(true); });
-      } catch { res(false); }
-    }),
+  importDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeAllEditable();           // ← AÑADIR
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+loadDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeAllEditable();           // ← AÑADIR
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+loadJSON: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeAllEditable();           // ← AÑADIR
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
 
-    loadDesignSnapshot: (snap) => new Promise(res => {
-      try {
-        c.loadFromJSON(snap, () => { rescue(c); try { setEditing(true); } catch {} res(true); });
-      } catch { res(false); }
-    }),
-
-    loadJSON: (snap) => new Promise(res => {
-      try {
-        c.loadFromJSON(snap, () => { rescue(c); try { setEditing(true); } catch {} res(true); });
-      } catch { res(false); }
-    }),
 
     reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
   };
