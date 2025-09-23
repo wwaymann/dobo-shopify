@@ -926,6 +926,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
 
       if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
+        await api.importDesignSnapshot(snapshot);
       else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
       else if (api.loadJSON) await api.loadJSON(snapshot);
       else if (api.loadFromJSON) {
