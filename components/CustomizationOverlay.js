@@ -568,6 +568,34 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8,
     });
     fabricCanvasRef.current = c;
+    
+// ——— Helper: marca todos los objetos como editables/seleccionables
+const makeEditable = () => {
+  const cc = fabricCanvasRef.current;
+  if (!cc) return;
+  try {
+    cc.skipTargetFind = false;
+    cc.selection = true;
+    (cc.getObjects?.() || []).forEach(o => {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
+        });
+      }
+    });
+    cc.requestRenderAll?.();
+  } catch {}
+};
 
     // --- helper: vuelve todo editable/seleccionable tras cargar ---
     function enableEditAll() {
@@ -600,36 +628,36 @@ export default function CustomizationOverlay({
         // snapshot
         exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
 
-        importDesignSnapshot: (snap) => new Promise(res => {
-          try {
-            c.loadFromJSON(snap, () => {
-              enableEditAll();
-              try { setEditing(true); } catch {}
-              c.requestRenderAll();
-              res(true);
-            });
-          } catch { res(false); }
-        }),
-        loadDesignSnapshot: (snap) => new Promise(res => {
-          try {
-            c.loadFromJSON(snap, () => {
-              enableEditAll();
-              try { setEditing(true); } catch {}
-              c.requestRenderAll();
-              res(true);
-            });
-          } catch { res(false); }
-        }),
-        loadJSON: (snap) => new Promise(res => {
-          try {
-            c.loadFromJSON(snap, () => {
-              enableEditAll();
-              try { setEditing(true); } catch {}
-              c.requestRenderAll();
-              res(true);
-            });
-          } catch { res(false); }
-        }),
+importDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeEditable();            // ⬅️ AÑADIDO
+      c.requestRenderAll();
+      res(true);
+    });
+  } catch { res(false); }
+}),
+
+loadDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeEditable();            // ⬅️ AÑADIDO
+      c.requestRenderAll();
+      res(true);
+    });
+  } catch { res(false); }
+}),
+
+loadJSON: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeEditable();            // ⬅️ AÑADIDO
+      c.requestRenderAll();
+      res(true);
+    });
+  } catch { res(false); }
+}),
+
 
         reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
       };
