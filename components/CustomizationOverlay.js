@@ -5,7 +5,111 @@ import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
 import { applyRelief2DFromURLs } from "../lib/relief2d";
 
+// props: { canvas, stageRef, zoomRef }
+export function useCanvasZoom(canvas, stageRef, zoomRef) {
+  // 1) Zoom inicial EXACTO = 0.5, una sola vez
+  useEffect(() => {
+    if (!canvas) return;
+    if (canvas.__doboInitZoomApplied) return;
 
+    const z = 0.6;
+    const center = new fabric.Point(canvas.getWidth() / 2, canvas.getHeight() / 2);
+    canvas.zoomToPoint(center, z);
+    canvas.__doboInitZoomApplied = true;
+
+    if (zoomRef) zoomRef.current = z;
+    stageRef?.current?.style?.setProperty("--zoom", String(z));
+    canvas.requestRenderAll();
+  }, [canvas, stageRef, zoomRef]);
+
+  // 2) Rueda + pellizco sobre el canvas superior
+  useEffect(() => {
+    if (!canvas) return;
+
+    const el = canvas.upperCanvasEl;
+    if (!el || el.__doboZoomBound) return; // idempotente
+    el.__doboZoomBound = true;
+
+    // evita que el navegador consuma el gesto
+    el.style.touchAction = "none";
+
+    const MIN = 0.5, MAX = 2.5;
+    const clamp = v => Math.max(MIN, Math.min(MAX, v));
+
+    let z = typeof zoomRef?.current === "number" ? zoomRef.current : canvas.getZoom() || 0.5;
+
+    const apply = (nz, cx, cy) => {
+      const next = clamp(nz);
+      if (next === z) return;
+
+      // zoom al punto del evento
+      const rect = el.getBoundingClientRect();
+      const px = (cx ?? rect.width / 2);
+      const py = (cy ?? rect.height / 2);
+      const point = new fabric.Point(px, py);
+
+      canvas.zoomToPoint(point, next);
+      z = next;
+      if (zoomRef) zoomRef.current = next;
+      stageRef?.current?.style?.setProperty("--zoom", String(next));
+      canvas.requestRenderAll();
+    };
+
+    // rueda normalizada: paso fijo, sin saltos por delta grande
+    const onWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dir = Math.sign(e.deltaY);               // 1 afuera, -1 adentro
+      const step = dir > 0 ? -0.08 : 0.08;           // paso corto y suave
+      apply(z + step, e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
+    };
+
+    // pellizco en móvil
+    let pinchDist = 0;
+    const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+        pinchDist = dist2(e.touches[0], e.touches[1]);
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches.length === 2 && pinchDist) {
+        e.preventDefault();
+        e.stopPropagation();
+        const d = dist2(e.touches[0], e.touches[1]);
+        const ratio = d / pinchDist;                 // ~1 para suavidad
+        pinchDist = d;
+
+        const rect = el.getBoundingClientRect();
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+
+        apply(z * ratio, cx, cy);
+      }
+    };
+
+    const onTouchEnd = () => { pinchDist = 0; };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+      el.__doboZoomBound = false;
+    };
+  }, [canvas, stageRef, zoomRef]);
+}
 async function aplicarSobreRelieveEnCanvas(fabricCanvas){
   const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
     logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
@@ -39,7 +143,7 @@ export default function CustomizationOverlay({
   stageRef,
   anchorRef,
   visible = true,
-  zoom = 1,
+  zoom = 0.6,
   setZoom,
 }) {
   // ===== Refs y estado =====
@@ -81,6 +185,8 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [textEditing, setTextEditing] = useState(false);
 
+
+
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const upper = c?.upperCanvasEl;
@@ -91,7 +197,7 @@ useEffect(() => {
   
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
-    const v = typeof zoom === 'number' ? zoom : 1;
+    const v = typeof zoom === 'number' ? zoom : 0.6;
     stageRef?.current?.style.setProperty('--zoom', String(v));
   }, [zoom, stageRef]);
 
@@ -819,7 +925,7 @@ useEffect(() => {
     return Number.isFinite(n) && n > 0 ? n : 1;
   };
   const writeZ = (z) => {
-    const v = Math.max(0.8, Math.min(2.5, z));
+    const v = Math.max(0.6, Math.min(2.5, z));
     stageRef?.current?.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
   };
