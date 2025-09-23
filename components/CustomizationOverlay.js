@@ -633,26 +633,7 @@ const makeEditable = () => {
   c.requestRenderAll();
 };
 
-    // --- helper: vuelve todo editable/seleccionable tras cargar ---
-    function enableEditAll() {
-      try {
-        (c.getObjects?.() || []).forEach(o => {
-          o.selectable = true;
-          o.evented = true;
-          o.hasControls = true;
-          o.hasBorders = true;
-          o.lockMovementX = false;
-          o.lockMovementY = false;
-          o.hoverCursor = 'move';
-          if (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text') {
-            o.editable = true;
-          }
-        });
-        c.skipTargetFind = false;
-        c.selection = true;
-        c.requestRenderAll?.();
-      } catch {}
-    }
+ 
 
 // helper: marca TODO como editable/seleccionable y reactiva el hit-test
 function enableEditAll(c) {
