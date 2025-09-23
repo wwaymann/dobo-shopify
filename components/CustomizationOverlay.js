@@ -644,7 +644,52 @@ function enableEditAll(c) {
   } catch {}
 }
 
-// DOBO: exponer API global del editor (no toques nada más)
+// ---- helper mínimo: habilita interacción en TODOS los objetos del canvas
+function unlockAll(c) {
+  try {
+    (c.getObjects?.() || []).forEach(o => {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if ('editable' in o) o.editable = true;
+
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          ch.hasControls = true;
+          ch.hasBorders = true;
+          ch.lockMovementX = false;
+          ch.lockMovementY = false;
+          ch.hoverCursor = 'move';
+          if ('editable' in ch) ch.editable = true;
+        });
+      }
+    });
+    c.selection = true;
+    c.skipTargetFind = false;
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.style.pointerEvents = 'auto';
+      c.upperCanvasEl.style.touchAction = 'none';
+      c.upperCanvasEl.tabIndex = 0;
+    }
+    c.requestRenderAll?.();
+  } catch {}
+}
+
+// pequeño “rescate” por si Fabric tarda en montar
+function rescue(c) {
+  unlockAll(c);
+  setTimeout(() => unlockAll(c), 0);
+  setTimeout(() => unlockAll(c), 250);
+  setTimeout(() => unlockAll(c), 800);
+}
+
+// DOBO: exponer API global del editor
 if (typeof window !== 'undefined') {
   const api = {
     toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
@@ -654,39 +699,29 @@ if (typeof window !== 'undefined') {
 
     importDesignSnapshot: (snap) => new Promise(res => {
       try {
-        c.loadFromJSON(snap, () => {
-          enableEditAll(c);
-          try { setEditing(true); } catch {}
-          res(true);
-        });
+        c.loadFromJSON(snap, () => { rescue(c); try { setEditing(true); } catch {} res(true); });
       } catch { res(false); }
     }),
 
     loadDesignSnapshot: (snap) => new Promise(res => {
       try {
-        c.loadFromJSON(snap, () => {
-          enableEditAll(c);
-          try { setEditing(true); } catch {}
-          res(true);
-        });
+        c.loadFromJSON(snap, () => { rescue(c); try { setEditing(true); } catch {} res(true); });
       } catch { res(false); }
     }),
 
     loadJSON: (snap) => new Promise(res => {
       try {
-        c.loadFromJSON(snap, () => {
-          enableEditAll(c);
-          try { setEditing(true); } catch {}
-          res(true);
-        });
+        c.loadFromJSON(snap, () => { rescue(c); try { setEditing(true); } catch {} res(true); });
       } catch { res(false); }
     }),
 
     reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
   };
+
   window.doboDesignAPI = api;
   try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
 }
+
 
 
     // ===== Delimitar área: margen 10 px por lado (ajustable) =====
