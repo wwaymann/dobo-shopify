@@ -569,197 +569,207 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-    // === ÚNICA definición: vuelve todo editable/seleccionable ===
-    function makeAllEditable() {
-      const objs = c.getObjects();
+    // --- helper: vuelve TODO editable/seleccionable (incluye hijos de grupos)
+const makeAllEditable = () => {
+  try {
+    const objs = (c.getObjects?.() || []);
+    for (const o of objs) {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          ch.hasControls = true;
+          ch.hasBorders = true;
+          ch.lockMovementX = false;
+          ch.lockMovementY = false;
+          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
+        });
+      }
+    }
+    c.skipTargetFind = false;
+    c.selection = true;
+    const upper = c.upperCanvasEl;
+    if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
+    c.requestRenderAll?.();
+  } catch {}
+};
 
-      const ensureEditable = (o) => {
-        if (!o) return;
+// ——— Helper: marca todos los objetos como editables/seleccionables
+const makeEditable = () => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  c.getObjects().forEach(obj => {
+    obj.selectable = true;
+    obj.evented = true;
+    if (obj.type === 'textbox' || obj.type === 'i-text') {
+      obj.editable = true;
+    }
+  });
+  c.skipTargetFind = false;
+  c.selection = true;
+  c.requestRenderAll();
+};
 
-        // Desbloqueos generales
-        o.selectable = true;
-        o.evented = true;
-        o.lockMovementX = false;
-        o.lockMovementY = false;
-        o.lockScalingX = false;
-        o.lockScalingY = false;
-        o.lockRotation = false;
-
-        // Tipos
-        if (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text') {
-          o.editable = true;
-          o.excludeFromExport = false;
-        }
-        if (o.type === 'image') {
-          o.crossOrigin = o.crossOrigin || 'anonymous';
-          o.excludeFromExport = false;
-        }
-
-        // Anidados (por si quedaron en grupos)
-        if (o._objects?.length) o._objects.forEach(ensureEditable);
-      };
-
-      // Si hay grupos “pegados”, desagrupar suavemente
-      const groups = objs.filter(o => o.type === 'group' && o._objects?.length);
-      groups.forEach(g => {
-        const items = g._objects.slice();
-        g._restoreObjectsState?.();
-        c.remove(g);
-        items.forEach(it => { c.add(it); ensureEditable(it); });
-      });
-
-      // Resto
-      objs.forEach(ensureEditable);
-
-      c.discardActiveObject?.();
-      c.isDrawingMode = false;
-      c.skipTargetFind = false;
-      c.selection = true;
-      const upper = c.upperCanvasEl;
-      if (upper) { upper.style.pointerEvents = 'auto'; }
-      c.requestRenderAll?.();
+    // --- helper: vuelve todo editable/seleccionable tras cargar ---
+    function enableEditAll() {
+      try {
+        (c.getObjects?.() || []).forEach(o => {
+          o.selectable = true;
+          o.evented = true;
+          o.hasControls = true;
+          o.hasBorders = true;
+          o.lockMovementX = false;
+          o.lockMovementY = false;
+          o.hoverCursor = 'move';
+          if (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text') {
+            o.editable = true;
+          }
+        });
+        c.skipTargetFind = false;
+        c.selection = true;
+        c.requestRenderAll?.();
+      } catch {}
     }
 
-    // ——— Otros helpers opcionales (no toques si ya funcionan) ———
-    const makeEditable = () => {
-      const c = fabricCanvasRef.current;
-      if (!c) return;
-      c.getObjects().forEach(obj => {
-        obj.selectable = true;
-        obj.evented = true;
-        if (obj.type === 'textbox' || obj.type === 'i-text') {
-          obj.editable = true;
-        }
-      });
-      c.skipTargetFind = false;
-      c.selection = true;
+// helper: marca TODO como editable/seleccionable y reactiva el hit-test
+function enableEditAll(c) {
+  try {
+    (c.getObjects?.() || []).forEach(o => {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+
+      // si es un grupo, aplicar a sus hijos también
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          ch.hasControls = true;
+          ch.hasBorders = true;
+          ch.lockMovementX = false;
+          ch.lockMovementY = false;
+          ch.hoverCursor = 'move';
+          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
+        });
+      }
+    });
+    c.skipTargetFind = false;
+    c.selection = true;
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.style.pointerEvents = 'auto';
+      c.upperCanvasEl.style.touchAction = 'none';
+      c.upperCanvasEl.tabIndex = 0;
+    }
+    c.requestRenderAll?.();
+  } catch {}
+}
+
+// ---- helper mínimo: habilita interacción en TODOS los objetos del canvas
+function unlockAll(c) {
+  try {
+    (c.getObjects?.() || []).forEach(o => {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if ('editable' in o) o.editable = true;
+
+      if (Array.isArray(o._objects)) {
+        o._objects.forEach(ch => {
+          ch.selectable = true;
+          ch.evented = true;
+          ch.hasControls = true;
+          ch.hasBorders = true;
+          ch.lockMovementX = false;
+          ch.lockMovementY = false;
+          ch.hoverCursor = 'move';
+          if ('editable' in ch) ch.editable = true;
+        });
+      }
+    });
+    c.selection = true;
+    c.skipTargetFind = false;
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.style.pointerEvents = 'auto';
+      c.upperCanvasEl.style.touchAction = 'none';
+      c.upperCanvasEl.tabIndex = 0;
+    }
+    c.requestRenderAll?.();
+  } catch {}
+}
+
+// pequeño “rescate” por si Fabric tarda en montar
+function rescue(c) {
+  unlockAll(c);
+  setTimeout(() => unlockAll(c), 0);
+  setTimeout(() => unlockAll(c), 250);
+  setTimeout(() => unlockAll(c), 800);
+}
+
+// DOBO: exponer API global del editor
+if (typeof window !== 'undefined') {
+  const api = {
+    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+    toSVG: () => c.toSVG({ suppressPreamble: true }),
+    getCanvas: () => c,
+    exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
+
+  importDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeAllEditable();           // ← AÑADIR
       c.requestRenderAll();
-    };
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+loadDesignSnapshot: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeAllEditable();           // ← AÑADIR
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
+loadJSON: (snap) => new Promise(res => {
+  try {
+    c.loadFromJSON(snap, () => {
+      makeAllEditable();           // ← AÑADIR
+      c.requestRenderAll();
+      try { setEditing(true); } catch {}
+      res(true);
+    });
+  } catch { res(false); }
+}),
 
-    function enableEditAll(cnv) {
-      try {
-        (cnv.getObjects?.() || []).forEach(o => {
-          o.selectable = true;
-          o.evented = true;
-          o.hasControls = true;
-          o.hasBorders = true;
-          o.lockMovementX = false;
-          o.lockMovementY = false;
-          o.hoverCursor = 'move';
-          if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
 
-          if (Array.isArray(o._objects)) {
-            o._objects.forEach(ch => {
-              ch.selectable = true;
-              ch.evented = true;
-              ch.hasControls = true;
-              ch.hasBorders = true;
-              ch.lockMovementX = false;
-              ch.lockMovementY = false;
-              ch.hoverCursor = 'move';
-              if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
-            });
-          }
-        });
-        cnv.skipTargetFind = false;
-        cnv.selection = true;
-        if (cnv.upperCanvasEl) {
-          cnv.upperCanvasEl.style.pointerEvents = 'auto';
-          cnv.upperCanvasEl.style.touchAction = 'none';
-          cnv.upperCanvasEl.tabIndex = 0;
-        }
-        cnv.requestRenderAll?.();
-      } catch {}
-    }
+    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+  };
 
-    function unlockAll(cnv) {
-      try {
-        (cnv.getObjects?.() || []).forEach(o => {
-          o.selectable = true;
-          o.evented = true;
-          o.hasControls = true;
-          o.hasBorders = true;
-          o.lockMovementX = false;
-          o.lockMovementY = false;
-          o.hoverCursor = 'move';
-          if ('editable' in o) o.editable = true;
+  window.doboDesignAPI = api;
+  try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
+}
 
-          if (Array.isArray(o._objects)) {
-            o._objects.forEach(ch => {
-              ch.selectable = true;
-              ch.evented = true;
-              ch.hasControls = true;
-              ch.hasBorders = true;
-              ch.lockMovementX = false;
-              ch.lockMovementY = false;
-              ch.hoverCursor = 'move';
-              if ('editable' in ch) ch.editable = true;
-            });
-          }
-        });
-        cnv.selection = true;
-        cnv.skipTargetFind = false;
-        if (cnv.upperCanvasEl) {
-          cnv.upperCanvasEl.style.pointerEvents = 'auto';
-          cnv.upperCanvasEl.style.touchAction = 'none';
-          cnv.upperCanvasEl.tabIndex = 0;
-        }
-        cnv.requestRenderAll?.();
-      } catch {}
-    }
 
-    function rescue(cnv) {
-      unlockAll(cnv);
-      setTimeout(() => unlockAll(cnv), 0);
-      setTimeout(() => unlockAll(cnv), 250);
-      setTimeout(() => unlockAll(cnv), 800);
-    }
-
-    // DOBO: exponer API global del editor
-    if (typeof window !== 'undefined') {
-      const api = {
-        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-        toSVG: () => c.toSVG({ suppressPreamble: true }),
-        getCanvas: () => c,
-        exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-
-        importDesignSnapshot: (snap) => new Promise(res => {
-          try {
-            c.loadFromJSON(snap, () => {
-              makeAllEditable();
-              c.requestRenderAll?.();
-              try { setEditing(true); } catch {}
-              res(true);
-            });
-          } catch { res(false); }
-        }),
-        loadDesignSnapshot: (snap) => new Promise(res => {
-          try {
-            c.loadFromJSON(snap, () => {
-              makeAllEditable();
-              c.requestRenderAll?.();
-              try { setEditing(true); } catch {}
-              res(true);
-            });
-          } catch { res(false); }
-        }),
-        loadJSON: (snap) => new Promise(res => {
-          try {
-            c.loadFromJSON(snap, () => {
-              makeAllEditable();
-              c.requestRenderAll?.();
-              try { setEditing(true); } catch {}
-              res(true);
-            });
-          } catch { res(false); }
-        }),
-
-        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-      };
-
-      window.doboDesignAPI = api;
-      try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
-    }
 
     // ===== Delimitar área: margen 10 px por lado (ajustable) =====
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
@@ -1005,6 +1015,7 @@ export default function CustomizationOverlay({
     setTimeout(() => {
       try { tb.enterEditing?.(); } catch {}
       try { tb.hiddenTextarea?.focus(); } catch {}
+      // reintento corto por si el primero no abre el teclado
       setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
     }, 0);
 
@@ -1012,7 +1023,7 @@ export default function CustomizationOverlay({
       const newText = tb.text || '';
       const finalPose = {
         left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
-        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle || 0
+        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
       };
       try { c.remove(tb); } catch {}
 
@@ -1034,7 +1045,7 @@ export default function CustomizationOverlay({
     const onExit = () => { tb.off('editing:exited', onExit); finish(); };
     tb.on('editing:exited', onExit);
 
-    // Safety net
+    // Safety net por si no dispara editing:exited (móvil raras veces)
     const safety = setTimeout(() => {
       try { tb.off('editing:exited', onExit); } catch {}
       finish();
@@ -1053,6 +1064,7 @@ export default function CustomizationOverlay({
       if (!editing || e.pointerType !== 'touch') return;
       const now = Date.now();
       if (now - lastTap < 320) {
+        // segundo tap: buscar target de Fabric y editar si es textGroup
         try {
           const target = c.findTarget?.(e, false);
           if (target && target._kind === 'textGroup') {
@@ -1068,7 +1080,8 @@ export default function CustomizationOverlay({
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
 
-  // Zoom SIEMPRE activo en stage
+  // Zoom SIEMPRE activo (PC y móvil) sobre el stage.
+  // Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const target = stageRef?.current || c?.upperCanvasEl;
@@ -1086,12 +1099,14 @@ export default function CustomizationOverlay({
       if (typeof setZoom === 'function') setZoom(v);
     };
 
+    // PC: rueda
     const onWheel = (e) => {
       if (textEditing) return;
       e.preventDefault();
       writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
     };
 
+    // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
     let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
     const park = () => {
       if (parked || !c) return;
@@ -1312,6 +1327,7 @@ export default function CustomizationOverlay({
       if (!g || g._kind !== 'textGroup') return;
       const { base, shadow, highlight } = g._textChildren || {};
       [base, shadow, highlight].forEach(o => o && mutator(o));
+      // re-sincronizar offsets del relieve
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
       const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
       const ox = 1 / sx, oy = 1 / sy;
@@ -1398,6 +1414,7 @@ export default function CustomizationOverlay({
         touchAction: editing ? "none" : "auto",
         overscrollBehavior: "contain",
       }}
+      // Evita que un toque en canvas active botones del menú
       onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
     >
       <canvas
@@ -1437,11 +1454,12 @@ export default function CustomizationOverlay({
           fontSize: 12,
           userSelect: 'none'
         }}
+        // Los eventos del menú nunca deben tocar el canvas
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* LÍNEA 1: Historial + zoom + modos */}
+        {/* LÍNEA 1: Zoom + modos */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
             <button type="button" className="btn btn-outline-secondary"
@@ -1638,7 +1656,7 @@ export default function CustomizationOverlay({
           </>
         )}
 
-         {/* Inputs ocultos */}
+        {/* Inputs ocultos */}
         <input ref={addInputRef} type="file" accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
@@ -1666,4 +1684,4 @@ export default function CustomizationOverlay({
       ) : null }
     </>
   );
-} 
+}
