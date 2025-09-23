@@ -932,6 +932,83 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 }, []);
 // === /DOBO loader ===
 
+  // === HOTFIX: re-habilitar edición (texto e imagen) cuando el diseño ya está en el canvas ===
+useEffect(() => {
+  let stopped = false;
+
+  const enableEditing = () => {
+    const api = window.doboDesignAPI;
+    const c = api?.getCanvas?.();
+    if (!c) return false;
+
+    try {
+      // permitir seleccionar/editar en canvas
+      c.skipTargetFind = false;
+      c.selection = true;
+      const upper = c.upperCanvasEl;
+      if (upper) {
+        upper.style.pointerEvents = 'auto';
+        upper.style.touchAction = 'none';
+        upper.tabIndex = 0;
+      }
+
+      // normalizar objetos existentes
+      const F = window.fabric;
+      (c.getObjects?.() || []).forEach((o0) => {
+        let o = o0;
+
+        // si viniera como 'text', convertir a Textbox editable (no rompe layouts)
+        if (o.type === 'text' && F?.Textbox) {
+          const tb = new F.Textbox(o.text || '', {
+            left: o.left, top: o.top, originX: o.originX, originY: o.originY,
+            angle: o.angle, scaleX: o.scaleX, scaleY: o.scaleY, flipX: o.flipX, flipY: o.flipY,
+            width: Math.max(120, o.width || 220),
+            fontFamily: o.fontFamily, fontSize: o.fontSize, fontWeight: o.fontWeight,
+            fontStyle: o.fontStyle, underline: o.underline, textAlign: o.textAlign || 'center',
+            editable: true, selectable: true, evented: true, objectCaching: false,
+          });
+          try { c.remove(o); } catch {}
+          c.add(tb);
+          o = tb;
+        }
+
+        // habilitar edición/selección en cualquier objeto
+        o.selectable = true;
+        o.evented = true;
+        o.hasControls = true;
+        o.hasBorders = true;
+        o.lockMovementX = false;
+        o.lockMovementY = false;
+        o.hoverCursor = 'move';
+        if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
+      });
+
+      c.requestRenderAll?.();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // intentar ahora, cuando el editor avisa que está listo, y reintentar un poco
+  const tryEnable = () => {
+    if (stopped) return;
+    if (enableEditing()) return;              // ya quedó editable
+    setTimeout(tryEnable, 150);               // reintento leve por si el JSON aún se está cargando
+  };
+
+  // si tu editor emite el evento custom (muchas veces sí)
+  const onReady = () => tryEnable();
+  window.addEventListener('dobo:ready', onReady);
+  // primer intento inmediato
+  tryEnable();
+
+  return () => {
+    stopped = true;
+    window.removeEventListener('dobo:ready', onReady);
+  };
+}, []);
+
 
   
   return (
