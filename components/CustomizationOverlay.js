@@ -582,16 +582,41 @@ if (typeof window !== 'undefined') {
     toSVG: () => c.toSVG({ suppressPreamble: true }),
     getCanvas: () => c,
     // snapshot
-    exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    loadDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    loadJSON: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
+ exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
+
+// --- NUEVO helper: deja todo seleccionable/editable tras cargar ---
+const enableEditAll = () => {
+  try {
+    (c.getObjects?.() || []).forEach(o => {
+      o.selectable = true;
+      o.evented = true;
+      o.hasControls = true;
+      o.hasBorders = true;
+      o.lockMovementX = false;
+      o.lockMovementY = false;
+      o.hoverCursor = 'move';
+      if (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text') {
+        o.editable = true;
+      }
+    });
+    c.skipTargetFind = false;
+    c.selection = true;
+    c.discardActiveObject?.();
+    c.requestRenderAll?.();
+  } catch {}
+};
+
+// --- Usa el helper en TODAS las cargas ---
+importDesignSnapshot: (snap) => new Promise(res => {
+  try { c.loadFromJSON(snap, () => { enableEditAll(); res(true); }); } catch { res(false); }
+}),
+loadDesignSnapshot: (snap) => new Promise(res => {
+  try { c.loadFromJSON(snap, () => { enableEditAll(); res(true); }); } catch { res(false); }
+}),
+loadJSON: (snap) => new Promise(res => {
+  try { c.loadFromJSON(snap, () => { enableEditAll(); res(true); }); } catch { res(false); }
+}),
+
     reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
   };
   window.doboDesignAPI = api;
