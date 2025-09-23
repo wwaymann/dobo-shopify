@@ -5,9 +5,8 @@ import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
 import { applyRelief2DFromURLs } from "../lib/relief2d";
 
-// props: { canvas, stageRef, zoomRef }
+// ============ Zoom opcional por canvas ============
 export function useCanvasZoom(canvas, stageRef, zoomRef) {
-  // 1) Zoom inicial EXACTO = 0.6, una sola vez
   useEffect(() => {
     if (!canvas) return;
     if (canvas.__doboInitZoomApplied) return;
@@ -22,32 +21,26 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     canvas.requestRenderAll();
   }, [canvas, stageRef, zoomRef]);
 
-  // 2) Rueda + pellizco sobre el canvas superior
   useEffect(() => {
     if (!canvas) return;
 
     const el = canvas.upperCanvasEl;
-    if (!el || el.__doboZoomBound) return; // idempotente
+    if (!el || el.__doboZoomBound) return;
     el.__doboZoomBound = true;
 
-    // evita que el navegador consuma el gesto
     el.style.touchAction = "none";
 
     const MIN = 0.5, MAX = 2.5;
     const clamp = v => Math.max(MIN, Math.min(MAX, v));
-
     let z = typeof zoomRef?.current === "number" ? zoomRef.current : canvas.getZoom() || 0.5;
 
     const apply = (nz, cx, cy) => {
       const next = clamp(nz);
       if (next === z) return;
-
-      // zoom al punto del evento
       const rect = el.getBoundingClientRect();
       const px = (cx ?? rect.width / 2);
       const py = (cy ?? rect.height / 2);
       const point = new fabric.Point(px, py);
-
       canvas.zoomToPoint(point, next);
       z = next;
       if (zoomRef) zoomRef.current = next;
@@ -55,16 +48,14 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
       canvas.requestRenderAll();
     };
 
-    // rueda normalizada: paso fijo, sin saltos por delta grande
     const onWheel = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const dir = Math.sign(e.deltaY);               // 1 afuera, -1 adentro
-      const step = dir > 0 ? -0.08 : 0.08;           // paso corto y suave
+      const dir = Math.sign(e.deltaY);
+      const step = dir > 0 ? -0.08 : 0.08;
       apply(z + step, e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
     };
 
-    // pellizco en móvil
     let pinchDist = 0;
     const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
 
@@ -81,7 +72,7 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
         e.preventDefault();
         e.stopPropagation();
         const d = dist2(e.touches[0], e.touches[1]);
-        const ratio = d / pinchDist;                 // ~1 para suavidad
+        const ratio = d / pinchDist;
         pinchDist = d;
 
         const rect = el.getBoundingClientRect();
@@ -110,6 +101,7 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     };
   }, [canvas, stageRef, zoomRef]);
 }
+
 async function aplicarSobreRelieveEnCanvas(fabricCanvas){
   const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
     logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
@@ -123,12 +115,11 @@ async function aplicarSobreRelieveEnCanvas(fabricCanvas){
 // ===== Constantes =====
 const MAX_TEXTURE_DIM = 1600;
 const VECTOR_SAMPLE_DIM = 500;
-const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
-const Z_MENU   = 10000;  // menú fijo por encima de todo
+const Z_CANVAS = 4000;
+const Z_MENU   = 10000;
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
-// Fuentes visibles en el selector
 const FONT_OPTIONS = [
   { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
   { name: 'Georgia', css: 'Georgia, serif' },
@@ -145,6 +136,10 @@ export default function CustomizationOverlay({
   visible = true,
   zoom = 0.6,
   setZoom,
+  // nuevos para cargar/guardar
+  productHandle,
+  variantId,
+  customerAccessToken
 }) {
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
@@ -174,9 +169,9 @@ export default function CustomizationOverlay({
   const [showAlignMenu, setShowAlignMenu] = useState(false);
 
   // Imagen/relieve
-  const [vecOffset, setVecOffset] = useState(1);     // 0..5
-  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
-  const [vecBias, setVecBias] = useState(0);         // -60..+60
+  const [vecOffset, setVecOffset] = useState(1);
+  const [vecInvert, setVecInvert] = useState(false);
+  const [vecBias, setVecBias] = useState(0);
 
   const suppressSelectionRef = useRef(false);
   const [anchorRect, setAnchorRect] = useState(null);
@@ -190,7 +185,6 @@ export default function CustomizationOverlay({
     upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
   }, [textEditing, editing]);
 
-  // Mantén --zoom siempre actualizado para leerlo en tiempo real
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 0.6;
     stageRef?.current?.style.setProperty('--zoom', String(v));
@@ -205,7 +199,6 @@ export default function CustomizationOverlay({
     return () => { try { el.style.position = prev; } catch {} };
   }, [anchorRef]);
 
-  // Medida exacta del área de la maceta en coords locales del stage
   useLayoutEffect(() => {
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
@@ -242,7 +235,6 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, anchorRef]);
 
-  // Posiciona el menú dentro de la columna de carruseles
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -259,7 +251,7 @@ export default function CustomizationOverlay({
     };
   }, [anchorRef]);
 
-  // ===== Helpers de relieve =====
+  // ===== Helpers de relieve y vectorizado =====
   const makeTextGroup = (text, opts = {}) => {
     const base = new fabric.Textbox(text, {
       ...opts,
@@ -334,7 +326,6 @@ export default function CustomizationOverlay({
     group._imgChildren = { base, shadow, highlight };
     group._debossOffset = offset;
 
-    // pose inicial desde baseObj
     group.left    = baseObj.left ?? 0;
     group.top     = baseObj.top ?? 0;
     group.scaleX  = baseObj.scaleX ?? 1;
@@ -502,17 +493,18 @@ export default function CustomizationOverlay({
     return bm;
   };
 
-  // ===== Historial: helpers seguros =====
+  // ===== Historial =====
   const getSnapshot = () => {
     const c = fabricCanvasRef.current;
     if (!c) return null;
-    return c.toJSON(['_kind','_meta','_textChildren']);
+    return c.toJSON(['_kind','_meta','_textChildren','_imgChildren','_debossOffset','_vecSourceEl','_vecMeta']);
   };
   const applySnapshot = (snap) => {
     const c = fabricCanvasRef.current;
     if (!c || !snap) return;
     c._skipHistory = true;
     c.loadFromJSON(snap, () => {
+      makeAllEditable(c);
       c._skipHistory = false;
       c.requestRenderAll();
     });
@@ -534,8 +526,7 @@ export default function CustomizationOverlay({
     };
   })();
 
-
-  // ===== Área de trabajo (bounds) =====
+  // ===== Área de trabajo =====
   const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
 
   const clampObjectToBounds = (obj) => {
@@ -554,6 +545,49 @@ export default function CustomizationOverlay({
     }
   };
 
+  // ===== Helpers edición =====
+  function unlockAll(c) {
+    try {
+      (c.getObjects?.() || []).forEach(o => {
+        o.selectable = true;
+        o.evented = true;
+        o.hasControls = true;
+        o.hasBorders = true;
+        o.lockMovementX = false;
+        o.lockMovementY = false;
+        o.hoverCursor = 'move';
+        if ('editable' in o) o.editable = true;
+
+        if (Array.isArray(o._objects)) {
+          o._objects.forEach(ch => {
+            ch.selectable = true;
+            ch.evented = true;
+            ch.hasControls = true;
+            ch.hasBorders = true;
+            ch.lockMovementX = false;
+            ch.lockMovementY = false;
+            ch.hoverCursor = 'move';
+            if ('editable' in ch) ch.editable = true;
+          });
+        }
+      });
+      c.selection = true;
+      c.skipTargetFind = false;
+      if (c.upperCanvasEl) {
+        c.upperCanvasEl.style.pointerEvents = 'auto';
+        c.upperCanvasEl.style.touchAction = 'none';
+        c.upperCanvasEl.tabIndex = 0;
+      }
+      c.requestRenderAll?.();
+    } catch {}
+  }
+  function makeAllEditable(c) { unlockAll(c); }
+  function rescue(c) {
+    unlockAll(c);
+    setTimeout(() => unlockAll(c), 0);
+    setTimeout(() => unlockAll(c), 250);
+    setTimeout(() => unlockAll(c), 800);
+  }
 
   // ===== Inicializar Fabric =====
   useEffect(() => {
@@ -569,226 +603,52 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-    // --- helper: vuelve TODO editable/seleccionable (incluye hijos de grupos)
-const makeAllEditable = () => {
-  try {
-    const objs = (c.getObjects?.() || []);
-    for (const o of objs) {
-      o.selectable = true;
-      o.evented = true;
-      o.hasControls = true;
-      o.hasBorders = true;
-      o.lockMovementX = false;
-      o.lockMovementY = false;
-      o.hoverCursor = 'move';
-      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
-      if (Array.isArray(o._objects)) {
-        o._objects.forEach(ch => {
-          ch.selectable = true;
-          ch.evented = true;
-          ch.hasControls = true;
-          ch.hasBorders = true;
-          ch.lockMovementX = false;
-          ch.lockMovementY = false;
-          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
-        });
-      }
-    }
-    c.skipTargetFind = false;
-    c.selection = true;
-    const upper = c.upperCanvasEl;
-    if (upper) { upper.style.pointerEvents = 'auto'; upper.style.touchAction = 'none'; upper.tabIndex = 0; }
-    c.requestRenderAll?.();
-  } catch {}
-};
-
-// ——— Helper: marca todos los objetos como editables/seleccionables
-const makeEditable = () => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-  c.getObjects().forEach(obj => {
-    obj.selectable = true;
-    obj.evented = true;
-    if (obj.type === 'textbox' || obj.type === 'i-text') {
-      obj.editable = true;
-    }
-  });
-  c.skipTargetFind = false;
-  c.selection = true;
-  c.requestRenderAll();
-};
-
-    // --- helper: vuelve todo editable/seleccionable tras cargar ---
-    function enableEditAll() {
-      try {
-        (c.getObjects?.() || []).forEach(o => {
-          o.selectable = true;
-          o.evented = true;
-          o.hasControls = true;
-          o.hasBorders = true;
-          o.lockMovementX = false;
-          o.lockMovementY = false;
-          o.hoverCursor = 'move';
-          if (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text') {
-            o.editable = true;
-          }
-        });
-        c.skipTargetFind = false;
-        c.selection = true;
-        c.requestRenderAll?.();
-      } catch {}
+    // Exponer API global
+    if (typeof window !== 'undefined') {
+      const api = {
+        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+        toSVG: () => c.toSVG({ suppressPreamble: true }),
+        getCanvas: () => c,
+        exportDesignSnapshot: () => { try { return c.toJSON(['_kind','_meta','_textChildren','_imgChildren','_debossOffset','_vecSourceEl','_vecMeta']); } catch { return null; } },
+        importDesignSnapshot: (snap) => new Promise(res => {
+          try {
+            c.loadFromJSON(snap, () => {
+              makeAllEditable(c);
+              c.requestRenderAll();
+              try { setEditing(true); } catch {}
+              res(true);
+            });
+          } catch { res(false); }
+        }),
+        loadDesignSnapshot: (snap) => new Promise(res => {
+          try {
+            c.loadFromJSON(snap, () => {
+              makeAllEditable(c);
+              c.requestRenderAll();
+              try { setEditing(true); } catch {}
+              res(true);
+            });
+          } catch { res(false); }
+        }),
+        loadJSON: (snap) => new Promise(res => {
+          try {
+            c.loadFromJSON(snap, () => {
+              makeAllEditable(c);
+              c.requestRenderAll();
+              try { setEditing(true); } catch {}
+              res(true);
+            });
+          } catch { res(false); }
+        }),
+        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+      };
+      window.doboDesignAPI = api;
+      try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
     }
 
-// helper: marca TODO como editable/seleccionable y reactiva el hit-test
-function enableEditAll(c) {
-  try {
-    (c.getObjects?.() || []).forEach(o => {
-      o.selectable = true;
-      o.evented = true;
-      o.hasControls = true;
-      o.hasBorders = true;
-      o.lockMovementX = false;
-      o.lockMovementY = false;
-      o.hoverCursor = 'move';
-      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
-
-      // si es un grupo, aplicar a sus hijos también
-      if (Array.isArray(o._objects)) {
-        o._objects.forEach(ch => {
-          ch.selectable = true;
-          ch.evented = true;
-          ch.hasControls = true;
-          ch.hasBorders = true;
-          ch.lockMovementX = false;
-          ch.lockMovementY = false;
-          ch.hoverCursor = 'move';
-          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
-        });
-      }
-    });
-    c.skipTargetFind = false;
-    c.selection = true;
-    if (c.upperCanvasEl) {
-      c.upperCanvasEl.style.pointerEvents = 'auto';
-      c.upperCanvasEl.style.touchAction = 'none';
-      c.upperCanvasEl.tabIndex = 0;
-    }
-    c.requestRenderAll?.();
-  } catch {}
-}
-
-// ---- helper mínimo: habilita interacción en TODOS los objetos del canvas
-function unlockAll(c) {
-  try {
-    (c.getObjects?.() || []).forEach(o => {
-      o.selectable = true;
-      o.evented = true;
-      o.hasControls = true;
-      o.hasBorders = true;
-      o.lockMovementX = false;
-      o.lockMovementY = false;
-      o.hoverCursor = 'move';
-      if ('editable' in o) o.editable = true;
-
-      if (Array.isArray(o._objects)) {
-        o._objects.forEach(ch => {
-          ch.selectable = true;
-          ch.evented = true;
-          ch.hasControls = true;
-          ch.hasBorders = true;
-          ch.lockMovementX = false;
-          ch.lockMovementY = false;
-          ch.hoverCursor = 'move';
-          if ('editable' in ch) ch.editable = true;
-        });
-      }
-    });
-    c.selection = true;
-    c.skipTargetFind = false;
-    if (c.upperCanvasEl) {
-      c.upperCanvasEl.style.pointerEvents = 'auto';
-      c.upperCanvasEl.style.touchAction = 'none';
-      c.upperCanvasEl.tabIndex = 0;
-    }
-    c.requestRenderAll?.();
-  } catch {}
-}
-
-// pequeño “rescate” por si Fabric tarda en montar
-function rescue(c) {
-  unlockAll(c);
-  setTimeout(() => unlockAll(c), 0);
-  setTimeout(() => unlockAll(c), 250);
-  setTimeout(() => unlockAll(c), 800);
-}
-
-// DOBO: exponer API global del editor
-if (typeof window !== 'undefined') {
-  const api = {
-    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-    toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-
-  importDesignSnapshot: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      makeAllEditable();           // ← AÑADIR
-      c.requestRenderAll();
-      try { setEditing(true); } catch {}
-      res(true);
-    });
-  } catch { res(false); }
-}),
-loadDesignSnapshot: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      makeAllEditable();           // ← AÑADIR
-      c.requestRenderAll();
-      try { setEditing(true); } catch {}
-      res(true);
-    });
-  } catch { res(false); }
-}),
-loadJSON: (snap) => new Promise(res => {
-  try {
-    c.loadFromJSON(snap, () => {
-      makeAllEditable();           // ← AÑADIR
-      c.requestRenderAll();
-      try { setEditing(true); } catch {}
-      res(true);
-    });
-  } catch { res(false); }
-}),
-
-
-    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-  };
-
-  window.doboDesignAPI = api;
-  try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
-}
-
-
-
-    // ===== Delimitar área: margen 10 px por lado (ajustable) =====
+    // Bounds
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
 
-    // Overlay visual opcional
-    const SHOW_BOUNDS = false;
-    let __boundsOverlay = null;
-    if (SHOW_BOUNDS && designBoundsRef.current) {
-      const { x, y, w, h } = designBoundsRef.current;
-      __boundsOverlay = new fabric.Rect({
-        left: x, top: y, width: w, height: h,
-        fill: 'rgba(0,0,0,0)',
-        stroke: '#999', strokeDashArray: [5,5],
-        selectable: false, evented: false, excludeFromExport: true
-      });
-      c.add(__boundsOverlay); __boundsOverlay.sendToBack();
-    }
-
-    // Enforcers
     const __bounds_onMove   = (e) => clampObjectToBounds(e.target);
     const __bounds_onScale  = (e) => clampObjectToBounds(e.target);
     const __bounds_onRotate = (e) => clampObjectToBounds(e.target);
@@ -798,15 +658,9 @@ loadJSON: (snap) => new Promise(res => {
     c.on('object:rotating', __bounds_onRotate);
     c.on('object:added',    __bounds_onAdded);
 
-    // Reaccionar a cambios de tamaño
     const __bounds_ro = new ResizeObserver(() => {
       const cw = c.getWidth(), ch = c.getHeight();
       setDesignBounds({ x: 10, y: 10, w: cw - 10, h: ch - 10 });
-      if (__boundsOverlay && designBoundsRef.current) {
-        const { x, y, w, h } = designBoundsRef.current;
-        __boundsOverlay.set({ left: x, top: y, width: w, height: h });
-        __boundsOverlay.setCoords(); c.requestRenderAll();
-      }
       const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
     });
     __bounds_ro.observe(c.upperCanvasEl);
@@ -826,7 +680,7 @@ loadJSON: (snap) => new Promise(res => {
     c.on('object:removed', __hist_onRemoved);
     c.on('path:created', __hist_onPath);
 
-    // Helpers de tipo
+    // Clasificación selección
     const classify = (a) => {
       if (!a) return 'none';
       if (a._kind === 'imgGroup')  return 'image';
@@ -840,7 +694,6 @@ loadJSON: (snap) => new Promise(res => {
       if (a.type === 'i-text' || a.type === 'textbox' || a.type === 'text') return 'text';
       return 'none';
     };
-
     const isTextObj = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text');
 
     const reflectTypo = () => {
@@ -878,7 +731,7 @@ loadJSON: (snap) => new Promise(res => {
     c.on('selection:updated', onSel);
     c.on('selection:cleared', () => setSelType('none'));
 
-    // Doble-click (desktop) → editar texto del grupo
+    // Doble click para texto
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
       if (!t) return;
@@ -890,6 +743,7 @@ loadJSON: (snap) => new Promise(res => {
     });
 
     setReady(true);
+    rescue(c);
 
     return () => {
       c.off('mouse:dblclick');
@@ -906,14 +760,13 @@ loadJSON: (snap) => new Promise(res => {
       c.off('object:rotating', __bounds_onRotate);
       c.off('object:added',    __bounds_onAdded);
       try { __bounds_ro.disconnect(); } catch {}
-      if (__boundsOverlay) { try { c.remove(__boundsOverlay); } catch {} }
       try { c.dispose(); } catch {}
       try { delete window.doboDesignAPI; } catch {}
       fabricCanvasRef.current = null;
     };
   }, [visible]);
 
-  // Ajusta tamaño de lienzo
+  // Ajuste tamaño
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -978,13 +831,11 @@ loadJSON: (snap) => new Promise(res => {
     return () => { c.off('object:added', onAdded); };
   }, [editing]);
 
-  // Anunciar cambio de modo
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
   }, [editing]);
 
-  // === Edición inline de texto (móvil/desktop) ===
-  // Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group.
+  // === Edición inline de texto ===
   const startInlineTextEdit = (group) => {
     const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
     const base = group._textChildren?.base; if (!base) return;
@@ -1008,14 +859,11 @@ loadJSON: (snap) => new Promise(res => {
     c.setActiveObject(tb);
     c.requestRenderAll();
 
-    // Estamos editando: libera touch-action y desactiva pinch/zoom
     setTextEditing(true);
 
-    // iOS: dar tiempo a crear el textarea y luego enfocar
     setTimeout(() => {
       try { tb.enterEditing?.(); } catch {}
       try { tb.hiddenTextarea?.focus(); } catch {}
-      // reintento corto por si el primero no abre el teclado
       setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
     }, 0);
 
@@ -1037,15 +885,12 @@ loadJSON: (snap) => new Promise(res => {
       c.setActiveObject(group2);
       c.requestRenderAll();
       setSelType('text');
-
-      // Salimos de edición: reactivar pinch/zoom y volver a touch-action previa
       setTextEditing(false);
     };
 
     const onExit = () => { tb.off('editing:exited', onExit); finish(); };
     tb.on('editing:exited', onExit);
 
-    // Safety net por si no dispara editing:exited (móvil raras veces)
     const safety = setTimeout(() => {
       try { tb.off('editing:exited', onExit); } catch {}
       finish();
@@ -1053,7 +898,7 @@ loadJSON: (snap) => new Promise(res => {
     tb.on('removed', () => { clearTimeout(safety); });
   };
 
-  // Doble-tap móvil: detectar y abrir edición de texto
+  // Doble tap móvil
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -1064,7 +909,6 @@ loadJSON: (snap) => new Promise(res => {
       if (!editing || e.pointerType !== 'touch') return;
       const now = Date.now();
       if (now - lastTap < 320) {
-        // segundo tap: buscar target de Fabric y editar si es textGroup
         try {
           const target = c.findTarget?.(e, false);
           if (target && target._kind === 'textGroup') {
@@ -1079,101 +923,6 @@ loadJSON: (snap) => new Promise(res => {
     upper.addEventListener('pointerup', onTap, { passive: false, capture: true });
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
   }, [editing]);
-
-  // Zoom SIEMPRE activo (PC y móvil) sobre el stage.
-  // Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    const target = stageRef?.current || c?.upperCanvasEl;
-    if (!target) return;
-
-    const readZ = () => {
-      const el = stageRef?.current;
-      const v = el?.style.getPropertyValue('--zoom') || (el ? getComputedStyle(el).getPropertyValue('--zoom') : '1');
-      const n = parseFloat((v || '1').trim());
-      return Number.isFinite(n) && n > 0 ? n : 1;
-    };
-    const writeZ = (z) => {
-      const v = Math.max(0.6, Math.min(2.5, z));
-      stageRef?.current?.style.setProperty('--zoom', String(v));
-      if (typeof setZoom === 'function') setZoom(v);
-    };
-
-    // PC: rueda
-    const onWheel = (e) => {
-      if (textEditing) return;
-      e.preventDefault();
-      writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
-    };
-
-    // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
-    let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
-    const park = () => {
-      if (parked || !c) return;
-      saved = { selection: c.selection, skip: c.skipTargetFind };
-      c.selection = false;
-      c.skipTargetFind = true;
-      parked = true;
-    };
-    const unpark = () => {
-      if (!c) return;
-      if (saved) { c.selection = saved.selection; c.skipTargetFind = saved.skip; saved = null; }
-      parked = false;
-      c.requestRenderAll?.();
-    };
-
-    const onPD = (e) => {
-      if (textEditing) return;
-      if (e.pointerType !== 'touch') return;
-      if (!pA) { pA = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
-      if (!pB && e.pointerId !== pA.id) {
-        pB = { id: e.pointerId, x: e.clientX, y: e.clientY };
-        startDist = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-        startScale = readZ();
-        park();
-      }
-    };
-
-    const onPM = (e) => {
-      if (textEditing) return;
-      if (e.pointerType !== 'touch') return;
-      if (pA && e.pointerId === pA.id) { pA.x = e.clientX; pA.y = e.clientY; }
-      if (pB && e.pointerId === pB.id) { pB.x = e.clientX; pB.y = e.clientY; }
-      if (pA && pB && startDist) {
-        e.preventDefault();
-        const d = Math.hypot(pA.x - pB.x, pA.y - pB.y);
-        writeZ(startScale * Math.pow(d / startDist, 0.9));
-      }
-    };
-
-    const onPU = (e) => {
-      if (textEditing) return;
-      if (e.pointerType !== 'touch') return;
-      if (pA && e.pointerId === pA.id) pA = null;
-      if (pB && e.pointerId === pB.id) pB = null;
-      if (!(pA && pB)) { startDist = 0; startScale = 1; unpark(); }
-    };
-
-    const onCancel = () => { pA = pB = null; startDist = 0; startScale = 1; unpark(); };
-
-    target.addEventListener('wheel', onWheel, { passive: false });
-    target.addEventListener('pointerdown', onPD, { passive: true });
-    target.addEventListener('pointermove', onPM, { passive: false, capture: true });
-    window.addEventListener('pointerup', onPU, { passive: true });
-    window.addEventListener('pointercancel', onCancel, { passive: true });
-    document.addEventListener('visibilitychange', onCancel);
-    window.addEventListener('blur', onCancel);
-
-    return () => {
-      target.removeEventListener('wheel', onWheel);
-      target.removeEventListener('pointerdown', onPD);
-      target.removeEventListener('pointermove', onPM, { capture: true });
-      window.removeEventListener('pointerup', onPU);
-      window.removeEventListener('pointercancel', onCancel);
-      document.removeEventListener('visibilitychange', onCancel);
-      window.removeEventListener('blur', onCancel);
-    };
-  }, [stageRef, setZoom, textEditing]);
 
   // Bloquear clicks externos mientras se diseña
   useEffect(() => {
@@ -1271,7 +1020,6 @@ loadJSON: (snap) => new Promise(res => {
     imgEl.src = url;
   };
 
-  // Borrar selección (grupos)
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -1318,7 +1066,6 @@ loadJSON: (snap) => new Promise(res => {
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
   };
 
-  // Aplicar cambios tipográficos a selección (grupos de texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -1327,7 +1074,6 @@ loadJSON: (snap) => new Promise(res => {
       if (!g || g._kind !== 'textGroup') return;
       const { base, shadow, highlight } = g._textChildren || {};
       [base, shadow, highlight].forEach(o => o && mutator(o));
-      // re-sincronizar offsets del relieve
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
       const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
       const ox = 1 / sx, oy = 1 / sy;
@@ -1346,7 +1092,6 @@ loadJSON: (snap) => new Promise(res => {
     c.requestRenderAll();
   };
 
-  // Re-vectorizar imagen al cambiar Detalles/Invertir
   useEffect(() => {
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -1387,7 +1132,6 @@ loadJSON: (snap) => new Promise(res => {
     c.requestRenderAll();
   }, [vecBias, vecInvert, editing, selType]);
 
-  // Offset de relieve en caliente
   useEffect(() => {
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -1396,9 +1140,65 @@ loadJSON: (snap) => new Promise(res => {
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
   }, [vecOffset, editing, selType]);
 
+  // ===== Carga desde metafields (Customer+Variant → respaldo Producto) =====
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!ready || !c) return;
+    if (!productHandle) return;
+
+    const params = new URLSearchParams({
+      handle: productHandle || "",
+      variantId: variantId || "",
+      customerAccessToken: customerAccessToken || ""
+    });
+    fetch(`/api/design/load?${params.toString()}`)
+      .then(r => r.json())
+      .then(j => {
+        const snap = j?.design;
+        if (snap) {
+          c.loadFromJSON(snap, () => {
+            makeAllEditable(c);
+            c.requestRenderAll();
+            rescue(c);
+          });
+        } else {
+          makeAllEditable(c);
+          c.requestRenderAll();
+        }
+      })
+      .catch(() => {
+        makeAllEditable(c);
+        c.requestRenderAll();
+      });
+  }, [ready, productHandle, variantId, customerAccessToken]);
+
+  // ===== Guardar en metafield (Customer+Variant + fallback Producto) =====
+  const saveDesign = async () => {
+    const c = fabricCanvasRef.current; if (!c) return;
+    if (!variantId && !productHandle) return;
+    const designJSON = c.toJSON(['_kind','_meta','_textChildren','_imgChildren','_debossOffset','_vecSourceEl','_vecMeta']);
+    try {
+      const payload = {
+        variantId: variantId || null,
+        productId: null,              // opcional: puedes pasar productId si lo tienes
+        designJSON,
+        customerAccessToken: customerAccessToken || null
+      };
+      const r = await fetch('/api/design/save', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (!j.ok) console.error('save error', j);
+    } catch (e) {
+      console.error('save error', e);
+    }
+  };
+
   if (!visible) return null;
 
-  // ===== Overlay Canvas dentro de la maceta =====
+  // ===== UI =====
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -1414,7 +1214,6 @@ loadJSON: (snap) => new Promise(res => {
         touchAction: editing ? "none" : "auto",
         overscrollBehavior: "contain",
       }}
-      // Evita que un toque en canvas active botones del menú
       onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
     >
       <canvas
@@ -1433,7 +1232,6 @@ loadJSON: (snap) => new Promise(res => {
     </div>
   );
 
-  // ===== Menú fijo =====
   function Menu() {
     return (
       <div
@@ -1454,12 +1252,11 @@ loadJSON: (snap) => new Promise(res => {
           fontSize: 12,
           userSelect: 'none'
         }}
-        // Los eventos del menú nunca deben tocar el canvas
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* LÍNEA 1: Zoom + modos */}
+        {/* LÍNEA 1: Historial + Zoom + Modos */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
             <button type="button" className="btn btn-outline-secondary"
@@ -1535,6 +1332,17 @@ loadJSON: (snap) => new Promise(res => {
               title="Eliminar seleccionado"
             >
               Borrar
+            </button>
+            {/* Guardar en metafields */}
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={saveDesign}
+              disabled={!ready || (!variantId && !productHandle)}
+              title="Guardar diseño"
+            >
+              Guardar
             </button>
           </div>
         )}
@@ -1672,12 +1480,9 @@ loadJSON: (snap) => new Promise(res => {
   // ===== Render =====
   return (
     <>
-      {/* Overlay dentro de la maceta */}
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-
-      {/* Menú fijo abajo */}
       { anchorRef?.current ?  createPortal(
-        <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
+        <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8, zIndex: Z_MENU }}>
           <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
         </div>,
         document.getElementById('dobo-menu-dock')
