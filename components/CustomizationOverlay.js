@@ -571,30 +571,18 @@ export default function CustomizationOverlay({
     
 // ——— Helper: marca todos los objetos como editables/seleccionables
 const makeEditable = () => {
-  const cc = fabricCanvasRef.current;
-  if (!cc) return;
-  try {
-    cc.skipTargetFind = false;
-    cc.selection = true;
-    (cc.getObjects?.() || []).forEach(o => {
-      o.selectable = true;
-      o.evented = true;
-      o.hasControls = true;
-      o.hasBorders = true;
-      o.lockMovementX = false;
-      o.lockMovementY = false;
-      o.hoverCursor = 'move';
-      if (o.type === 'i-text' || o.type === 'textbox') o.editable = true;
-      if (Array.isArray(o._objects)) {
-        o._objects.forEach(ch => {
-          ch.selectable = true;
-          ch.evented = true;
-          if (ch.type === 'i-text' || ch.type === 'textbox') ch.editable = true;
-        });
-      }
-    });
-    cc.requestRenderAll?.();
-  } catch {}
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  c.getObjects().forEach(obj => {
+    obj.selectable = true;
+    obj.evented = true;
+    if (obj.type === 'textbox' || obj.type === 'i-text') {
+      obj.editable = true;
+    }
+  });
+  c.skipTargetFind = false;
+  c.selection = true;
+  c.requestRenderAll();
 };
 
     // --- helper: vuelve todo editable/seleccionable tras cargar ---
