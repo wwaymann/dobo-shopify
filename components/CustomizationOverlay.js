@@ -569,6 +569,52 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
+function makeAllEditable() {
+  const objs = c.getObjects();
+
+  const ensureEditable = (o) => {
+    if (!o) return;
+
+    // Desbloqueos generales
+    o.selectable = true;
+    o.evented = true;
+    o.lockMovementX = false;
+    o.lockMovementY = false;
+    o.lockScalingX = false;
+    o.lockScalingY = false;
+    o.lockRotation = false;
+
+    // Tipos
+    if (o.type === 'textbox' || o.type === 'i-text' || o.type === 'text') {
+      o.editable = true;
+      o.excludeFromExport = false;
+    }
+    if (o.type === 'image') {
+      o.crossOrigin = o.crossOrigin || 'anonymous';
+      o.excludeFromExport = false;
+    }
+
+    // Anidados (por si quedaron en grupos)
+    if (o._objects?.length) o._objects.forEach(ensureEditable);
+  };
+
+  // Si hay grupos “pegados”, desagrupar suavemente
+  const groups = objs.filter(o => o.type === 'group' && o._objects?.length);
+  groups.forEach(g => {
+    const items = g._objects.slice();
+    g._restoreObjectsState();
+    c.remove(g);
+    items.forEach(it => { c.add(it); ensureEditable(it); });
+  });
+
+  // Resto
+  objs.forEach(ensureEditable);
+
+  c.discardActiveObject();
+  c.isDrawingMode = false;
+}
+
+    
     // --- helper: vuelve TODO editable/seleccionable (incluye hijos de grupos)
 const makeAllEditable = () => {
   try {
