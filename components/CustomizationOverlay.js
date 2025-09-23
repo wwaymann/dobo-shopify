@@ -574,6 +574,16 @@ useEffect(() => {
     });
     fabricCanvasRef.current = c;
 
+
+    
+    // DOBO: exponer API global del editor
+if (typeof window !== 'undefined') {
+  const api = {
+    // existentes
+    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+    toSVG: () => c.toSVG({ suppressPreamble: true }),
+    getCanvas: () => c,
+
 // Deja todos los objetos editables/seleccionables tras cargar un JSON
 function enableEditAll() {
   try {
@@ -594,19 +604,6 @@ function enableEditAll() {
     c.requestRenderAll?.();
   } catch {}
 }
-
-    
-    // DOBO: exponer API global del editor
-if (typeof window !== 'undefined') {
-  const api = {
-    // existentes
-    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-    toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    // snapshot
- exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
-
-
 // --- Usa el helper en TODAS las cargas ---
 importDesignSnapshot: (snap) => new Promise(res => {
   try { c.loadFromJSON(snap, () => { enableEditAll(); res(true); }); } catch { res(false); }
@@ -623,6 +620,12 @@ loadJSON: (snap) => new Promise(res => {
   window.doboDesignAPI = api;
   try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
 }
+    
+    // snapshot
+ exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
+
+
+
 
     // ===== Delimitar área: margen 40 px por lado (ajustable) =====
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
