@@ -842,81 +842,90 @@ async function waitDesignerReady(timeout = 20000) {
   }
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
+  
   async function buyNow() {
-     // 1) obtén el variantId que ya usas
-  const variantId = currentVariantId; // usa tu variable real
-  await addToCartFromApp(variantId, quantity || 1);
-}
-    try {
-      const attrs = await prepareDesignAttributes();
-      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-      const plantPrice = productMin(plants[selectedPlantIndex]);
-      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-      const dpRes = await fetch("/api/design-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
-          price: basePrice,
-          color: selectedColor || "Único",
-          size: activeSize || "Único",
-          designId: attrs.find((a) => a.key === "_DesignId")?.value,
-          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-          potTitle: pots[selectedPotIndex]?.title || "Maceta",
-        }),
-      });
-      const dp = await dpRes.json();
-      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-      const apiReady = await waitDesignerReady(20000);
-      if (!apiReady) throw new Error("designer-not-ready");
-      const pub = await publishDesignForVariant(dp.variantId);
-      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-    
-      const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
-    } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e.message}`);
-    }
+     try {
+    await addToCart();   
+       
+       // prepara atributos/capas del diseño
+    const attrs = await prepareDesignAttributes(); // tu helper existente
+    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quantity,
+        attributes: attrs,
+        basePrice,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle: pots[selectedPotIndex]?.title || "Maceta",
+      }),
+    });
+
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    const apiReady = await waitDesignerReady(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
+
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    const accIds = getAccessoryVariantIds?.() || [];
+    // si usas postMessage al tema:
+    await addToCartFromApp(dp.variantId, quantity);
+    for (const id of accIds) await addToCartFromApp(id, 1);
+
+    alert("Añadido al carrito");
+  } catch (e) {
+    alert(`No se pudo añadir: ${e.message}`);
   }
-  async function addToCart() {
-     // 1) obtén el variantId que ya usas
-  const variantId = currentVariantId; // usa tu variable real
-  await addToCartFromApp(variantId, quantity || 1);
-    // el theme redirige a /checkout
 }
-    try {
-      const attrs = await prepareDesignAttributes();
-      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-      const plantPrice = productMin(plants[selectedPlantIndex]);
-      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-      const dpRes = await fetch("/api/design-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
-          price: basePrice,
-          color: selectedColor || "Único",
-          size: activeSize || "Único",
-          designId: attrs.find((a) => a.key === "_DesignId")?.value,
-          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-          potTitle: pots[selectedPotIndex]?.title || "Maceta",
-        }),
-      });
-     const dp = await dpRes.json();
-      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-      const apiReady = await waitDesignerReady(20000);
-      if (!apiReady) throw new Error("designer-not-ready");
-      const pub = await publishDesignForVariant(dp.variantId);
-      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-     
-      const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
-    } catch (e) {
-      alert(`No se pudo añadir: ${e.message}`);
-    }
+
+
+async function addToCart() {
+  try {
+    // prepara atributos/capas del diseño
+    const attrs = await prepareDesignAttributes(); // tu helper existente
+    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quantity,
+        attributes: attrs,
+        basePrice,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle: pots[selectedPotIndex]?.title || "Maceta",
+      }),
+    });
+
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    const apiReady = await waitDesignerReady(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
+
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    const accIds = getAccessoryVariantIds?.() || [];
+    // si usas postMessage al tema:
+    await addToCartFromApp(dp.variantId, quantity);
+    for (const id of accIds) await addToCartFromApp(id, 1);
+
+    alert("Añadido al carrito");
+  } catch (e) {
+    alert(`No se pudo añadir: ${e.message}`);
   }
+}
+
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
