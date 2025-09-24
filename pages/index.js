@@ -6,6 +6,107 @@ import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
 
+// ===== Helpers obligatorios =====
+function required(val, name) {
+  if (val === undefined || val === null || val === "" || Number.isNaN(val)) {
+    throw new Error(`Missing field: ${name}`);
+  }
+  return val;
+}
+
+// Construye las properties del diseño para la línea del carrito y para /api/design-product
+async function prepareDesignAttributes() {
+  const api = window.doboDesignAPI;
+  required(api, "doboDesignAPI");
+
+  const svgText  = api.toSVG?.() || "";
+  const jsonSnap = api.exportDesignSnapshot?.() || {};
+  const previewUrl  = window.doboPreviewUrl  || "";
+  const layerAllUrl = window.doboLayerAllUrl || "";
+  const layers      = window.doboLayers || null; // [{name,url}]
+
+  // Requisitos mínimos: preview o capa + snapshot
+  if (!previewUrl && !layerAllUrl) throw new Error("Missing field: preview or layerAll url");
+  if (!svgText && !jsonSnap) throw new Error("Missing field: design snapshot");
+
+  const attrs = {
+    dobo_preview_url: previewUrl,
+    dobo_layer_all_url: layerAllUrl,
+    dobo_design_svg: svgText,
+    dobo_design_json: JSON.stringify(jsonSnap)
+  };
+  if (Array.isArray(layers) && layers.length) {
+    attrs.dobo_layers_manifest = JSON.stringify(layers);
+  }
+  return attrs;
+}
+
+// Precio seguro
+function firstVariantPrice(product) {
+  const v = product?.variants?.[0]?.price || product?.variants?.[0]?.priceAmount;
+  return Number(v || 0);
+}
+function num(x){ return Number(x || 0); }
+
+// ===== Handlers =====
+async function addToCart() {
+  try {
+    // 1) Validaciones de selección
+    required(pots?.[selectedPotIndex], "selected pot");
+    required(plants?.[selectedPlantIndex], "selected plant");
+    required(quantity, "quantity");
+
+    // 2) Atributos de diseño
+    const attributes = await prepareDesignAttributes();
+
+    // 3) Cálculo de precio base (ajusta si usas otra lógica)
+    const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = num(productMin(plants[selectedPlantIndex]));
+    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    required(basePrice, "basePrice");
+
+    // 4) Crear o preparar el producto variante para DOBO
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quantity: required(quantity, "quantity"),
+        attributes,
+        basePrice,
+        plantTitle: required(plants[selectedPlantIndex]?.title, "plantTitle"),
+        potTitle:   required(pots[selectedPotIndex]?.title, "potTitle"),
+      }),
+    });
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    // 5) Asegura editor listo y publica assets de la variante
+    const apiReady = await waitDesignerReady?.(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
+    const pub = await publishDesignForVariant?.(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    // 6) Añade al carrito + accesorios
+    await addToCartFromApp(dp.variantId, quantity);
+    const accIds = getAccessoryVariantIds?.() || [];
+    for (const id of accIds) { await addToCartFromApp(id, 1); }
+
+    alert("Añadido al carrito");
+  } catch (e) {
+    alert(`No se pudo añadir: ${e.message || e}`);
+  }
+}
+
+async function buyNow() {
+  try {
+    await addToCart(); // el theme redirige a /checkout tras /cart/add.js
+  } catch (e) {
+    alert(`No se pudo comprar: ${e.message || e}`);
+  }
+}
+
+
 // Construye las properties del diseño para la línea del carrito
 function buildDesignProperties() {
   const api = window.doboDesignAPI;
