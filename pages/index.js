@@ -56,36 +56,41 @@ async function addToCartFromApp(variantId, quantity = 1) {
 }
 
 // ===== Handlers =====
+// addToCart SIN 'pots' ni 'plants'
 async function addToCart() {
   try {
-    required(pots?.[selectedPotIndex], "selected pot");
-    required(plants?.[selectedPlantIndex], "selected plant");
-    required(quantity, "quantity");
+    // validaciones mínimas
+    if (!selectedPotVariant && !selectedPlantVariant) throw new Error("No hay variantes seleccionadas");
+    if (!quantity) throw new Error("Missing field: quantity");
 
+    // atributos de diseño
     const attributes = await prepareDesignAttributes();
 
-    const potPrice   = selectedPotVariant?.price
-      ? priceNumSafe(selectedPotVariant.price)
-      : priceFirstVariantSafe(pots[selectedPotIndex]);
+    // precios seguros
+    const potPrice   = Number(selectedPotVariant?.price ?? 0);
+    const plantPrice = Number(selectedPlantVariant?.price ?? 0);
+    const basePrice  = Number(((potPrice + plantPrice) * (quantity || 1)).toFixed(2));
 
-    const plantPrice = priceNumSafe(productMin(plants[selectedPlantIndex]));
-    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-    required(basePrice, "basePrice");
+    // títulos seguros
+    const plantTitle = selectedPlantVariant?.product?.title || selectedPlantVariant?.title || "Planta";
+    const potTitle   = selectedPotVariant?.product?.title   || selectedPotVariant?.title   || "Maceta";
 
+    // crea producto DOBO para esta variante
     const dpRes = await fetch("/api/design-product", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        quantity: required(quantity, "quantity"),
+        quantity,
         attributes,
         basePrice,
-        plantTitle: required(plants[selectedPlantIndex]?.title, "plantTitle"),
-        potTitle:   required(pots[selectedPotIndex]?.title, "potTitle"),
+        plantTitle,
+        potTitle,
       }),
     });
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
+    // publica assets y agrega al carrito
     const apiReady = await (waitDesignerReady?.(20000));
     if (!apiReady) throw new Error("designer-not-ready");
 
@@ -93,6 +98,8 @@ async function addToCart() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
     await addToCartFromApp(dp.variantId, quantity);
+
+    // accesorios opcionales
     const accIds = getAccessoryVariantIds?.() || [];
     for (const id of accIds) { await addToCartFromApp(id, 1); }
 
@@ -101,6 +108,7 @@ async function addToCart() {
     alert(`No se pudo añadir: ${e.message || e}`);
   }
 }
+
 
 async function buyNow() {
   try {
