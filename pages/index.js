@@ -5,6 +5,37 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
+
+// Construye las properties del diseño para la línea del carrito
+function buildDesignProperties() {
+  const api = window.doboDesignAPI;
+  const svg = api?.toSVG?.() || "";
+  const json = JSON.stringify(api?.exportDesignSnapshot?.() || {});
+  const previewUrl  = window.doboPreviewUrl  || "";
+  const layerAllUrl = window.doboLayerAllUrl || "";
+  const layers      = window.doboLayers || null; // [{name,url}]
+
+  const props = {
+    dobo_preview_url: previewUrl,
+    dobo_layer_all_url: layerAllUrl,
+    dobo_design_svg: svg,
+    dobo_design_json: json
+  };
+  if (Array.isArray(layers) && layers.length) {
+    props.dobo_layers_manifest = JSON.stringify(layers);
+  }
+  return props;
+}
+
+// Envía a Shopify Theme por postMessage para /cart/add.js
+async function addToCartFromApp(variantId, quantity = 1) {
+  const properties = buildDesignProperties();
+  window.parent.postMessage({
+    type: 'dobo:addToCart',
+    payload: { variantId, quantity, properties }
+  }, '*');
+}
+
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
@@ -812,6 +843,10 @@ async function waitDesignerReady(timeout = 20000) {
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
   async function buyNow() {
+     // 1) obtén el variantId que ya usas
+  const variantId = currentVariantId; // usa tu variable real
+  await addToCartFromApp(variantId, quantity || 1);
+}
     try {
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
@@ -845,6 +880,11 @@ async function waitDesignerReady(timeout = 20000) {
     }
   }
   async function addToCart() {
+     // 1) obtén el variantId que ya usas
+  const variantId = currentVariantId; // usa tu variable real
+  await addToCartFromApp(variantId, quantity || 1);
+    // el theme redirige a /checkout
+}
     try {
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
