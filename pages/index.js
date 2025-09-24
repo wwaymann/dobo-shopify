@@ -6,12 +6,18 @@ import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
 
-// ===== Helpers obligatorios =====
+// ===== Helpers obligatorios (sin colisión) =====
 function required(val, name) {
   if (val === undefined || val === null || val === "" || Number.isNaN(val)) {
     throw new Error(`Missing field: ${name}`);
   }
   return val;
+}
+
+function priceNumSafe(v) { return Number(typeof v === "object" ? v?.amount : v || 0); }
+function priceFirstVariantSafe(p) {
+  const v = p?.variants?.[0]?.price ?? p?.variants?.[0]?.priceAmount;
+  return priceNumSafe(v);
 }
 
 // Construye las properties del diseño para la línea del carrito y para /api/design-product
@@ -25,7 +31,6 @@ async function prepareDesignAttributes() {
   const layerAllUrl = window.doboLayerAllUrl || "";
   const layers      = window.doboLayers || null; // [{name,url}]
 
-  // Requisitos mínimos: preview o capa + snapshot
   if (!previewUrl && !layerAllUrl) throw new Error("Missing field: preview or layerAll url");
   if (!svgText && !jsonSnap) throw new Error("Missing field: design snapshot");
 
@@ -41,32 +46,32 @@ async function prepareDesignAttributes() {
   return attrs;
 }
 
-// Precio seguro
-function firstVariantPrice(product) {
-  const v = product?.variants?.[0]?.price || product?.variants?.[0]?.priceAmount;
-  return Number(v || 0);
+// Envía a Shopify Theme por postMessage para /cart/add.js
+async function addToCartFromApp(variantId, quantity = 1) {
+  const properties = await prepareDesignAttributes(); // reutiliza attrs
+  window.parent.postMessage({
+    type: 'dobo:addToCart',
+    payload: { variantId, quantity, properties }
+  }, '*');
 }
-function num(x){ return Number(x || 0); }
 
 // ===== Handlers =====
 async function addToCart() {
   try {
-    // 1) Validaciones de selección
     required(pots?.[selectedPotIndex], "selected pot");
     required(plants?.[selectedPlantIndex], "selected plant");
     required(quantity, "quantity");
 
-    // 2) Atributos de diseño
     const attributes = await prepareDesignAttributes();
 
-    // 3) Cálculo de precio base (ajusta si usas otra lógica)
-    const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = num(productMin(plants[selectedPlantIndex]));
-    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+    const potPrice   = selectedPotVariant?.price
+      ? priceNumSafe(selectedPotVariant.price)
+      : priceFirstVariantSafe(pots[selectedPotIndex]);
 
+    const plantPrice = priceNumSafe(productMin(plants[selectedPlantIndex]));
+    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
     required(basePrice, "basePrice");
 
-    // 4) Crear o preparar el producto variante para DOBO
     const dpRes = await fetch("/api/design-product", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -81,13 +86,12 @@ async function addToCart() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // 5) Asegura editor listo y publica assets de la variante
-    const apiReady = await waitDesignerReady?.(20000);
+    const apiReady = await (waitDesignerReady?.(20000));
     if (!apiReady) throw new Error("designer-not-ready");
-    const pub = await publishDesignForVariant?.(dp.variantId);
+
+    const pub = await (publishDesignForVariant?.(dp.variantId));
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 6) Añade al carrito + accesorios
     await addToCartFromApp(dp.variantId, quantity);
     const accIds = getAccessoryVariantIds?.() || [];
     for (const id of accIds) { await addToCartFromApp(id, 1); }
@@ -105,6 +109,7 @@ async function buyNow() {
     alert(`No se pudo comprar: ${e.message || e}`);
   }
 }
+
 
 
 // Construye las properties del diseño para la línea del carrito
@@ -944,88 +949,7 @@ async function waitDesignerReady(timeout = 20000) {
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
   
-  async function buyNow() {
-     try {
-    await addToCart();   
-       
-       // prepara atributos/capas del diseño
-    const attrs = await prepareDesignAttributes(); // tu helper existente
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = productMin(plants[selectedPlantIndex]);
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
 
-    const dpRes = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        quantity,
-        attributes: attrs,
-        basePrice,
-        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-        potTitle: pots[selectedPotIndex]?.title || "Maceta",
-      }),
-    });
-
-    const dp = await dpRes.json();
-    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
-    const apiReady = await waitDesignerReady(20000);
-    if (!apiReady) throw new Error("designer-not-ready");
-
-    const pub = await publishDesignForVariant(dp.variantId);
-    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-
-    const accIds = getAccessoryVariantIds?.() || [];
-    // si usas postMessage al tema:
-    await addToCartFromApp(dp.variantId, quantity);
-    for (const id of accIds) await addToCartFromApp(id, 1);
-
-    alert("Añadido al carrito");
-  } catch (e) {
-    alert(`No se pudo añadir: ${e.message}`);
-  }
-}
-
-
-async function addToCart() {
-  try {
-    // prepara atributos/capas del diseño
-    const attrs = await prepareDesignAttributes(); // tu helper existente
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = productMin(plants[selectedPlantIndex]);
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-
-    const dpRes = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        quantity,
-        attributes: attrs,
-        basePrice,
-        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-        potTitle: pots[selectedPotIndex]?.title || "Maceta",
-      }),
-    });
-
-    const dp = await dpRes.json();
-    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
-    const apiReady = await waitDesignerReady(20000);
-    if (!apiReady) throw new Error("designer-not-ready");
-
-    const pub = await publishDesignForVariant(dp.variantId);
-    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-
-    const accIds = getAccessoryVariantIds?.() || [];
-    // si usas postMessage al tema:
-    await addToCartFromApp(dp.variantId, quantity);
-    for (const id of accIds) await addToCartFromApp(id, 1);
-
-    alert("Añadido al carrito");
-  } catch (e) {
-    alert(`No se pudo añadir: ${e.message}`);
-  }
-}
 
 
   /* ---------- handlers swipe ---------- */
