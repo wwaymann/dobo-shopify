@@ -5,144 +5,6 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
-
-// ===== Helpers obligatorios (sin colisión) =====
-function required(val, name) {
-  if (val === undefined || val === null || val === "" || Number.isNaN(val)) {
-    throw new Error(`Missing field: ${name}`);
-  }
-  return val;
-}
-
-function priceNumSafe(v) { return Number(typeof v === "object" ? v?.amount : v || 0); }
-function priceFirstVariantSafe(p) {
-  const v = p?.variants?.[0]?.price ?? p?.variants?.[0]?.priceAmount;
-  return priceNumSafe(v);
-}
-
-// Construye las properties del diseño para la línea del carrito y para /api/design-product
-async function prepareDesignAttributes() {
-  const api = window.doboDesignAPI;
-  required(api, "doboDesignAPI");
-
-  const svgText  = api.toSVG?.() || "";
-  const jsonSnap = api.exportDesignSnapshot?.() || {};
-  const previewUrl  = window.doboPreviewUrl  || "";
-  const layerAllUrl = window.doboLayerAllUrl || "";
-  const layers      = window.doboLayers || null; // [{name,url}]
-
-  if (!previewUrl && !layerAllUrl) throw new Error("Missing field: preview or layerAll url");
-  if (!svgText && !jsonSnap) throw new Error("Missing field: design snapshot");
-
-  const attrs = {
-    dobo_preview_url: previewUrl,
-    dobo_layer_all_url: layerAllUrl,
-    dobo_design_svg: svgText,
-    dobo_design_json: JSON.stringify(jsonSnap)
-  };
-  if (Array.isArray(layers) && layers.length) {
-    attrs.dobo_layers_manifest = JSON.stringify(layers);
-  }
-  return attrs;
-}
-
-// Envía a Shopify Theme por postMessage para /cart/add.js
-async function addToCartFromApp(variantId, quantity = 1) {
-  const properties = await prepareDesignAttributes(); // reutiliza attrs
-  window.parent.postMessage({
-    type: 'dobo:addToCart',
-    payload: { variantId, quantity, properties }
-  }, '*');
-}
-
-// ===== Handlers =====
-// addToCart SIN 'pots' ni 'plants'
-async function addToCart() {
-  try {
-    // validaciones mínimas
-    if (!selectedPotVariant && !selectedPlantVariant) throw new Error("No hay variantes seleccionadas");
-    if (!quantity) throw new Error("Missing field: quantity");
-
-    // atributos de diseño
-    const attributes = await prepareDesignAttributes();
-
-    // precios seguros
-    const potPrice   = Number(selectedPotVariant?.price ?? 0);
-    const plantPrice = Number(selectedPlantVariant?.price ?? 0);
-    const basePrice  = Number(((potPrice + plantPrice) * (quantity || 1)).toFixed(2));
-
-    // títulos seguros
-    const plantTitle = selectedPlantVariant?.product?.title || selectedPlantVariant?.title || "Planta";
-    const potTitle   = selectedPotVariant?.product?.title   || selectedPotVariant?.title   || "Maceta";
-
-    // crea producto DOBO para esta variante
-    const dpRes = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        quantity,
-        attributes,
-        basePrice,
-        plantTitle,
-        potTitle,
-      }),
-    });
-    const dp = await dpRes.json();
-    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
-    // publica assets y agrega al carrito
-    const apiReady = await (waitDesignerReady?.(20000));
-    if (!apiReady) throw new Error("designer-not-ready");
-
-    const pub = await (publishDesignForVariant?.(dp.variantId));
-    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-
-    await addToCartFromApp(dp.variantId, quantity);
-
-    // accesorios opcionales
-    const accIds = getAccessoryVariantIds?.() || [];
-    for (const id of accIds) { await addToCartFromApp(id, 1); }
-
-    alert("Añadido al carrito");
-  } catch (e) {
-    alert(`No se pudo añadir: ${e.message || e}`);
-  }
-}
-
-
-async function buyNow() {
-  try {
-    await addToCart(); // el theme redirige a /checkout tras /cart/add.js
-  } catch (e) {
-    alert(`No se pudo comprar: ${e.message || e}`);
-  }
-}
-
-
-
-// Construye las properties del diseño para la línea del carrito
-function buildDesignProperties() {
-  const api = window.doboDesignAPI;
-  const svg = api?.toSVG?.() || "";
-  const json = JSON.stringify(api?.exportDesignSnapshot?.() || {});
-  const previewUrl  = window.doboPreviewUrl  || "";
-  const layerAllUrl = window.doboLayerAllUrl || "";
-  const layers      = window.doboLayers || null; // [{name,url}]
-
-  const props = {
-    dobo_preview_url: previewUrl,
-    dobo_layer_all_url: layerAllUrl,
-    dobo_design_svg: svg,
-    dobo_design_json: json
-  };
-  if (Array.isArray(layers) && layers.length) {
-    props.dobo_layers_manifest = JSON.stringify(layers);
-  }
-  return props;
-}
-
-
-
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
@@ -949,9 +811,79 @@ async function waitDesignerReady(timeout = 20000) {
   }
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
-  
+  async function buyNow() {
+    try {
+      const attrs = await prepareDesignAttributes();
+      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const plantPrice = productMin(plants[selectedPlantIndex]);
+      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+      const dpRes = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find((a) => a.key === "_DesignId")?.value,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+      const dp = await dpRes.json();
+      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
+      // si el backend devuelve la capa, adjúntala a las properties de línea
+if (pub.layerUrl) {
+  // 'attrs' es el array que generaste antes con prepareDesignAttributes()
+  attrs.push({ key: "_DesignLayerUrl", value: pub.layerUrl });
+}
 
+      
+      const accIds = getAccessoryVariantIds();
+      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+    } catch (e) {
+      alert(`No se pudo iniciar el checkout: ${e.message}`);
+    }
+  }
+  async function addToCart() {
+    try {
+      const attrs = await prepareDesignAttributes();
+      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const plantPrice = productMin(plants[selectedPlantIndex]);
+      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+      const dpRes = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find((a) => a.key === "_DesignId")?.value,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+     const dp = await dpRes.json();
+      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+     
+      const accIds = getAccessoryVariantIds();
+      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+    } catch (e) {
+      alert(`No se pudo añadir: ${e.message}`);
+    }
+  }
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
