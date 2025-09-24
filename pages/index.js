@@ -133,14 +133,7 @@ function buildDesignProperties() {
   return props;
 }
 
-// Envía a Shopify Theme por postMessage para /cart/add.js
-async function addToCartFromApp(variantId, quantity = 1) {
-  const properties = buildDesignProperties();
-  window.parent.postMessage({
-    type: 'dobo:addToCart',
-    payload: { variantId, quantity, properties }
-  }, '*');
-}
+
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
