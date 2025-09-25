@@ -660,10 +660,26 @@ useEffect(() => {
       { key: "_LinePriority", value: "0" },
     ];
   }
+async function exportDesignLayerPNG() {
+  const api = window.doboDesignAPI;
+  const c = api?.getCanvas?.();
+  if (!c) return null;
+  const objs = c.getObjects?.() || [];
+  const vis = objs.map(o => o.visible);
+  // deja visibles solo los objetos de diseño; ajusta si tienes flags propios
+  objs.forEach(o => { o.visible = true; });
+  c.requestRenderAll?.();
+  const dataURL = c.toDataURL({ format: 'png', multiplier: 2, backgroundColor: 'transparent' });
+  // restaura
+  objs.forEach((o,i)=> o.visible = vis[i]);
+  c.requestRenderAll?.();
+  return dataURL;
+}
 
 async function publishDesignForVariant(variantId) {
   try {
     const api = await waitDesignerReady(20000);
+    const layerDataURL = await exportDesignLayerPNG();
     if (!api) return { ok:false, error:'designer-not-ready' };
 
     // snapshot
@@ -707,6 +723,7 @@ const meta = {
     body: JSON.stringify({
   variantId,
   previewDataURL,
+      layerDataURL, 
   design: snap,   // el snapshot actual
   meta            // ← importante
 })
@@ -877,7 +894,10 @@ if (pub.layerUrl) {
       if (!apiReady) throw new Error("designer-not-ready");
       const pub = await publishDesignForVariant(dp.variantId);
       if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-     
+     if (pub.layerUrl) {
+  attrs.push({ key: "_DesignLayerUrl", value: pub.layerUrl });
+}
+
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
     } catch (e) {
