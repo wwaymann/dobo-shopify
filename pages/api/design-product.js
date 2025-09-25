@@ -1,5 +1,7 @@
 // pages/api/design-product.js
-const ADMIN_VER = '2024-07';
+const ADMIN_VER = '2025-07';
+
+
 
 async function adminGQL(shop, token, query, variables = {}) {
   const r = await fetch(`https://${shop}/admin/api/${ADMIN_VER}/graphql.json`, {
@@ -75,3 +77,4 @@ export default async function handler(req, res) {
     return res.status(200).json({ productId, variantId });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
+
