@@ -5,7 +5,57 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function withTimeout(promise, ms = 2000) {
+  let t; const timeout = new Promise((_, rej) => t = setTimeout(() => rej(new Error('timeout')), ms));
+  try { return await Promise.race([promise, timeout]); }
+  finally { clearTimeout(t); }
+}
 
+async function sendEmailLayers() {
+  const api = typeof window !== 'undefined' ? window.doboDesignAPI : null;
+  if (!api) throw new Error('Editor no listo');
+
+  const canvas = api.getCanvas?.() || api.canvas;
+  const preview = exportPreviewDataURL(canvas, { multiplier: 2 });
+  const { all, text, image } = await api.exportLayerPNGs(3);
+
+  const attachments = [];
+  const push = async (dataURL, filename, contentType='image/png') => {
+    if (!dataURL) return;
+    attachments.push({ filename, contentType, base64: await dataURLtoBase64Attachment(dataURL) });
+  };
+  await push(preview, 'preview.png');
+  await push(all,    'layer-all.png');
+  await push(text,   'layer-text.png');
+  await push(image,  'layer-image.png');
+
+  // intenta /api/design/email-now; si no existe, cae a /api/order-assets
+  const tryEmailNow = fetch('/api/design/email-now', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subject: 'DOBO – Capas de diseño', html: '<p>Adjunto preview y capas.</p>', attachments })
+  });
+
+  const res = await tryEmailNow.catch(() => null);
+  if (res && res.ok) return;
+
+  const order = { id: `local-${Date.now()}`, name: 'DesignSnapshot', line_items: [{
+    product_title: 'DOBO diseño',
+    variant_title: '',
+    quantity: 1,
+    properties: [
+      { name: 'DesignPreview', value: preview },
+      { name: 'DesignLayer',   value: all },
+      { name: 'dobo_layer_text_url',  value: text },
+      { name: 'dobo_layer_image_url', value: image },
+    ],
+  }]};
+
+  await fetch('/api/order-assets', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(order),
+  });
+}
 
 async function sendEmailLayers() {
   const api = window.doboDesignAPI;
@@ -910,6 +960,12 @@ if (pub.layerUrl) {
   }
   async function addToCart() {
     try {
+      async function onPagar() {
+  try { await withTimeout(sendEmailLayers(), 2000); } catch (_) {}
+  await addToCart(); // existente
+  await goToCheckout(); // existente
+}
+
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
