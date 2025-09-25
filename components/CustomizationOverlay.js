@@ -610,6 +610,26 @@ export default function CustomizationOverlay({
         toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
         toSVG: () => c.toSVG({ suppressPreamble: true }),
         getCanvas: () => c,
+        exportLayerPNGs: async (mult = 3) => {
+  const c = fabricCanvasRef.current;
+  if (!c) return { all: null, text: null, image: null };
+
+  const snapshot = c.getObjects().map(o => ({ o, vis: o.visible }));
+  const render = (predicate) => {
+    snapshot.forEach(({ o }) => { o.visible = predicate ? !!predicate(o) : true; });
+    c.discardActiveObject(); c.requestRenderAll();
+    const png = c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: null });
+    snapshot.forEach(({ o, vis }) => { o.visible = vis; });
+    c.requestRenderAll();
+    return png;
+  };
+
+  const isText  = (o) => o?._kind === 'textGroup' || ['i-text','textbox','text'].includes(o?.type);
+  const isImage = (o) => o?._kind === 'imgGroup'  || o?.type === 'image';
+
+  return { all: render(null), text: render(isText), image: render(isImage) };
+},
+
         exportDesignSnapshot: () => { try { return c.toJSON(['_kind','_meta','_textChildren','_imgChildren','_debossOffset','_vecSourceEl','_vecMeta']); } catch { return null; } },
         exportLayerPNGs: async (mult = 3) => {
   const c = fabricCanvasRef.current;
