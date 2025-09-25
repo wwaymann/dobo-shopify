@@ -38,13 +38,14 @@ async function shopifyFetch(query, variables) {
   });
   const text = await r.text();
   let j = null; try { j = JSON.parse(text); } catch {}
-  if (!r.ok || !j || j.errors) {
-    console.error('GRAPHQL_ERROR', { status: r.status, body: text });
-    const e = new Error('shopify-graphql-error');
-    e.stage = 'graphql';
-    e.details = { status: r.status, body: text };
-    throw e;
-  }
+if (!r.ok || !j || j.errors) {
+  console.error('GRAPHQL_ERROR/design-product', { status: r.status, body: text });
+  const e = new Error('shopify-graphql-error');
+  e.stage = 'graphql';
+  e.details = { status: r.status, body: text };
+  throw e;
+}
+
   return j.data;
 }
 
@@ -112,12 +113,12 @@ export default async function handler(req, res) {
 
 // 2) Publicar en el canal indicado por env (no bloquear checkout si falla)
 try {
-  const pubRes = await shopifyFetch(GQL_PUBLISH, {
-    id: productId,
-    input: [{ publicationId: toGid('Publication', publicationId) }]
-  });
-  const pubErr = pubRes?.publishablePublish?.userErrors || [];
-  if (pubErr.length) console.warn('publishablePublish userErrors', pubErr);
+//  const pubRes = await shopifyFetch(GQL_PUBLISH, {
+  //  id: productId,
+//    input: [{ publicationId: toGid('Publication', publicationId) }]
+//  });
+//  const pubErr = pubRes?.publishablePublish?.userErrors || [];
+//  if (pubErr.length) console.warn('publishablePublish userErrors', pubErr);
 } catch (e) {
   console.warn('publish step skipped:', e?.details || e?.message || e);
 }
@@ -145,5 +146,6 @@ try {
     });
   }
 }
+
 
 
