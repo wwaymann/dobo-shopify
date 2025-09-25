@@ -5,7 +5,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
-import { exportPreviewDataURL, dataURLtoBase64Attachment } from '../lib/designStore';
+
 
 async function sendEmailLayers() {
   const api = window.doboDesignAPI;
