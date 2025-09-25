@@ -2,6 +2,11 @@
 export const runtime = 'nodejs';
 export const config = { api: { bodyParser: { sizeLimit: '10mb' } } };
 
+const toGid = (kind, id) => {
+  const s = String(id||'').trim();
+  return s.startsWith('gid://') ? s : `gid://shopify/${kind}/${s}`;
+};
+
 // --- Admin API version (override with env if needed)
 const ADMIN_VER = process.env.SHOPIFY_ADMIN_API_VERSION || '2025-07';
 
@@ -104,16 +109,17 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok:false, error:'missing-product-or-variant' });
     }
 
-    // 2) Publicar en el canal indicado por env
-    const pubRes = await shopifyFetch(GQL_PUBLISH, {
-      id: productId,
-      input: [{ publicationId }]
-    });
-    const pubErr = pubRes?.publishablePublish?.userErrors || [];
-    if (pubErr.length) {
-      // no bloqueamos: devolvemos variante igualmente
-      console.warn('publishablePublish userErrors', pubErr);
-    }
+   // 2) Publicar en el canal indicado por env
+try {
+  const pubRes = await shopifyFetch(GQL_PUBLISH, {
+    id: productId,
+    input: [{ publicationId: toGid('Publication', publicationId) }]
+  });
+  const pubErr = pubRes?.publishablePublish?.userErrors || [];
+  if (pubErr.length) console.warn('publishablePublish userErrors', pubErr);
+} catch (e) {
+  console.warn('publish step skipped:', e?.details || e?.message || e);
+}
 
     // Devuelve datos esenciales al front
     return res.status(200).json({
@@ -138,3 +144,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
