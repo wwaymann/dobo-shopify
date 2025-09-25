@@ -12,9 +12,12 @@ async function withTimeout(promise, ms = 2000) {
   finally { clearTimeout(t); }
 }
 
+// ÚNICA definición válida en pages/index.js
+import { exportPreviewDataURL, dataURLtoBase64Attachment } from '../lib/designStore';
+
 async function sendEmailLayers() {
   const api = typeof window !== 'undefined' ? window.doboDesignAPI : null;
-  if (!api) throw new Error('Editor no listo');
+  if (!api) return;
 
   const canvas = api.getCanvas?.() || api.canvas;
   const preview = exportPreviewDataURL(canvas, { multiplier: 2 });
@@ -30,69 +33,35 @@ async function sendEmailLayers() {
   await push(text,   'layer-text.png');
   await push(image,  'layer-image.png');
 
-  // intenta /api/design/email-now; si no existe, cae a /api/order-assets
-  const tryEmailNow = fetch('/api/design/email-now', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ subject: 'DOBO – Capas de diseño', html: '<p>Adjunto preview y capas.</p>', attachments })
-  });
+  // intenta endpoint directo
+  try {
+    const r = await fetch('/api/design/email-now', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject: 'DOBO – Capas de diseño', html: '<p>Adjunto preview y capas.</p>', attachments })
+    });
+    if (r.ok) return;
+  } catch {}
 
-  const res = await tryEmailNow.catch(() => null);
-  if (res && res.ok) return;
-
-  const order = { id: `local-${Date.now()}`, name: 'DesignSnapshot', line_items: [{
-    product_title: 'DOBO diseño',
-    variant_title: '',
-    quantity: 1,
-    properties: [
-      { name: 'DesignPreview', value: preview },
-      { name: 'DesignLayer',   value: all },
-      { name: 'dobo_layer_text_url',  value: text },
-      { name: 'dobo_layer_image_url', value: image },
-    ],
-  }]};
-
+  // fallback a /api/order-assets
+  const order = {
+    id: `local-${Date.now()}`, name: 'DesignSnapshot',
+    line_items: [{
+      product_title: 'DOBO diseño', variant_title: '', quantity: 1,
+      properties: [
+        { name: 'DesignPreview', value: preview },
+        { name: 'DesignLayer',   value: all },
+        { name: 'dobo_layer_text_url',  value: text },
+        { name: 'dobo_layer_image_url', value: image },
+      ],
+    }]
+  };
   await fetch('/api/order-assets', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(order),
   });
 }
 
-async function sendEmailLayers() {
-  const api = window.doboDesignAPI;
-  if (!api) { alert('Editor no listo'); return; }
 
-  const canvas = api.getCanvas?.() || api.canvas;
-  const preview = exportPreviewDataURL(canvas, { multiplier: 2 });
-  const { all, text, image } = await api.exportLayerPNGs(3);
-
-  const attachments = [];
-  const push = async (dataURL, filename, contentType='image/png') => {
-    if (!dataURL) return;
-    attachments.push({
-      filename,
-      contentType,
-      base64: await dataURLtoBase64Attachment(dataURL)
-    });
-  };
-  await push(preview, 'preview.png');
-  await push(all,    'layer-all.png');
-  await push(text,   'layer-text.png');
-  await push(image,  'layer-image.png');
-
-  const r = await fetch('/api/design/email-now', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      // opcional: to: 'destino@tu-dominio.cl',
-      subject: 'DOBO – Capas de diseño',
-      html: '<p>Adjunto preview y capas.</p>',
-      attachments
-    })
-  });
-  const j = await r.json();
-  if (!r.ok) { console.error(j); alert('Fallo el envío'); return; }
-  alert('Enviado');
-}
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
