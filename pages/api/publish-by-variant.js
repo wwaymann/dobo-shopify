@@ -43,43 +43,21 @@ async function shopifyFetch(query, variables) {
 }
 
 /* ================ GQL ================== */
-const GQL_STAGED_UPLOADS_CREATE = `
-mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
-  stagedUploadsCreate(input: $input) {
-    stagedTargets { url resourceUrl parameters { name value } }
-    userErrors { field message }
-  }
-}`;
-const GQL_FILE_CREATE = `
-mutation fileCreate($files: [FileCreateInput!]!) {
-  fileCreate(files: $files) {
-    files {
-      id __typename createdAt
-      ... on MediaImage { image { url } }
-      ... on GenericFile { url }
-    }
-    userErrors { field message }
-  }
-}`;
-const GQL_FILES_BY_ID = `
-query filesById($ids: [ID!]!) {
-  nodes(ids: $ids) {
-    id __typename
-    ... on MediaImage { image { url } }
-    ... on GenericFile { url }
-  }
-}`;
-const GQL_VARIANT_PARENT = `
-query($id: ID!) {
-  productVariant(id: $id) { id product { id handle } }
-}`;
-const GQL_METAFIELDS_SET = `
-mutation metafieldsSet($metafields: [MetafieldsSetInput!]!] {
-  metafieldsSet(metafields: $metafields) {
-    metafields { id key namespace }
-    userErrors { field message }
-  }
-}`;
+const GQL_STAGED_UPLOADS_CREATE =
+  "mutation stagedUploadsCreate($input: [StagedUploadInput!]!) { stagedUploadsCreate(input: $input) { stagedTargets { url resourceUrl parameters { name value } } userErrors { field message } } }";
+
+const GQL_FILE_CREATE =
+  "mutation fileCreate($files: [FileCreateInput!]!) { fileCreate(files: $files) { files { id __typename createdAt ... on MediaImage { image { url } } ... on GenericFile { url } } userErrors { field message } } }";
+
+const GQL_FILES_BY_ID =
+  "query filesById($ids: [ID!]!) { nodes(ids: $ids) { id __typename ... on MediaImage { image { url } } ... on GenericFile { url } } }";
+
+const GQL_VARIANT_PARENT =
+  "query($id: ID!) { productVariant(id: $id) { id product { id handle } } }";
+
+const GQL_METAFIELDS_SET =
+  "mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { metafields { id key namespace } userErrors { field message } } }";
+
 
 /* =============== helpers =============== */
 const toGid = (kind, id) => {
