@@ -87,16 +87,26 @@ export default async function handler(req, res) {
     const title = `${potTitle} + ${plantTitle}`.trim();
     const price = toMoney(basePrice);
 
-    // 1) Crear producto con 1 variante y precio
-    const create = await shopifyFetch(GQL_PRODUCT_CREATE, {
-      input: {
-        title,
-        status: 'DRAFT',
-        variants: [{ price, requiresShipping: true }],
-        // opcional: tags para rastrear
-        tags: ['DOBO', 'custom-design']
-      }
-    });
+//    // 1) Crear producto con 1 variante y precio
+//    const create = await shopifyFetch(GQL_PRODUCT_CREATE, {
+//      input: {
+//        title,
+//        status: 'DRAFT',
+//        variants: [{ price, requiresShipping: true }],
+//        // opcional: tags para rastrear
+//        tags: ['DOBO', 'custom-design']
+//      }
+//    });
+
+    // 1) Crear producto mínimo con 1 variante
+const create = await shopifyFetch(GQL_PRODUCT_CREATE, {
+  input: {
+    title,
+    variants: [{ price: String(price) }], // solo precio
+  }
+});
+
+    
 
     const uerr = create?.productCreate?.userErrors || [];
     if (uerr.length) {
@@ -146,6 +156,7 @@ try {
     });
   }
 }
+
 
 
 
