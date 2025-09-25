@@ -50,6 +50,13 @@ if (!r.ok || !j || j.errors) {
 }
 
 /* ================ GQL ================== */
+const GQL_PRODUCT_UPDATE =
+  "mutation productUpdate($id: ID!, $input: ProductInput!) { productUpdate(id:$id, input:$input) { userErrors { field message } } }";
+
+const GQL_TAGS_ADD =
+  "mutation tagsAdd($id: ID!, $tags: [String!]!) { tagsAdd(id:$id, tags:$tags) { userErrors { field message } } }";
+
+
 const GQL_PRODUCT_CREATE =
   "mutation productCreate($input: ProductInput!) { productCreate(input: $input) { product { id handle variants(first:1) { nodes { id } } } userErrors { field message } } }";
 
@@ -113,25 +120,30 @@ const create = await shopifyFetch(GQL_PRODUCT_CREATE, {
       return res.status(400).json({ ok:false, error:'productCreate-errors', details:uerr });
     }
 
-    const productId = create?.productCreate?.product?.id || null;
-    const handle    = create?.productCreate?.product?.handle || '';
-    const variantId = create?.productCreate?.product?.variants?.nodes?.[0]?.id || null;
+  const productId = create?.productCreate?.product?.id || null;
+const variantId = create?.productCreate?.product?.variants?.nodes?.[0]?.id || null;
+if (!productId || !variantId) return res.status(500).json({ ok:false, error:'missing-product-or-variant' });
 
-    if (!productId || !variantId) {
-      return res.status(500).json({ ok:false, error:'missing-product-or-variant' });
-    }
-
-// 2) Publicar en el canal indicado por env (no bloquear checkout si falla)
+// 2a) status (ej: 'DRAFT' | 'ACTIVE' | 'ARCHIVED')
 try {
-//  const pubRes = await shopifyFetch(GQL_PUBLISH, {
-  //  id: productId,
-//    input: [{ publicationId: toGid('Publication', publicationId) }]
-//  });
-//  const pubErr = pubRes?.publishablePublish?.userErrors || [];
-//  if (pubErr.length) console.warn('publishablePublish userErrors', pubErr);
-} catch (e) {
-  console.warn('publish step skipped:', e?.details || e?.message || e);
-}
+  const upd = await shopifyFetch(GQL_PRODUCT_UPDATE, {
+    id: productId,
+    input: { status: 'DRAFT' }   // ← cambia a lo que necesites
+  });
+  const e = upd?.productUpdate?.userErrors || [];
+  if (e.length) console.warn('productUpdate', e);
+} catch (e) { console.warn('productUpdate skipped', e?.details || e?.message); }
+
+// 2b) tags
+try {
+  const tagRes = await shopifyFetch(GQL_TAGS_ADD, {
+    id: productId,
+    tags: ['DOBO','custom-design']  // ← tus tags
+  });
+  const e = tagRes?.tagsAdd?.userErrors || [];
+  if (e.length) console.warn('tagsAdd', e);
+} catch (e) { console.warn('tagsAdd skipped', e?.details || e?.message); }
+
 
     // Devuelve datos esenciales al front
     return res.status(200).json({
@@ -156,6 +168,7 @@ try {
     });
   }
 }
+
 
 
 
