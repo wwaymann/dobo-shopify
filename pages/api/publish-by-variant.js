@@ -74,7 +74,7 @@ query($id: ID!) {
   productVariant(id: $id) { id product { id handle } }
 }`;
 const GQL_METAFIELDS_SET = `
-mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+mutation metafieldsSet($metafields: [MetafieldsSetInput!]!] {
   metafieldsSet(metafields: $metafields) {
     metafields { id key namespace }
     userErrors { field message }
@@ -106,7 +106,7 @@ async function stagedUpload({ filename, mimeType, buffer, resource }) {
     e.stage = 'stagedUploadsCreate'; e.details = errs; throw e;
   }
   const form = new FormData();
-  for (const p of target.parameters || []) form.append(p.name, p.value);
+  for (const p of (target.parameters || [])) form.append(p.name, p.value);
   form.append('file', new Blob([buffer]), filename);
   const r = await fetch(target.url, { method:'POST', body: form });
   if (!r.ok) {
@@ -173,13 +173,16 @@ async function getProductFromVariant(variantId) {
   return { productId: pv.product.id, handle: pv.product.handle || '' };
 }
 
-async function setProductMetafields(productId, previewUrl, jsonUrl) {
+async function setProductMetafields(productId, previewUrl, jsonUrl, layerUrl) {
   const metafields = [];
   if (previewUrl) metafields.push({
     ownerId: productId, namespace:'dobo', key:'design_preview', type:'url', value: previewUrl
   });
   if (jsonUrl) metafields.push({
     ownerId: productId, namespace:'dobo', key:'design_json_url', type:'url', value: jsonUrl
+  });
+  if (layerUrl) metafields.push({
+    ownerId: productId, namespace:'dobo', key:'design_layer_url', type:'url', value: layerUrl
   });
   if (!metafields.length) return;
   const r = await shopifyFetch(GQL_METAFIELDS_SET, { metafields });
@@ -198,13 +201,23 @@ export default async function handler(req, res) {
     const { token, url } = pickEnv();
     if (!token || !url) return res.status(400).json({ ok:false, error:'env-missing' });
 
-    const { variantId, previewDataURL, design, meta = {} } = req.body || {};
+    const { variantId, previewDataURL, layerDataURL, design, meta = {} } = req.body || {};
     if (!variantId) return res.status(400).json({ ok:false, error:'missing-variantId' });
 
-    // PNG desde dataURL
+    // PNG preview desde dataURL (requerido)
     const png = dataUrlToBuffer(previewDataURL);
     if (!png?.buf || !/image\/png/i.test(png.mime||'')) {
       const e = new Error('invalid-preview'); e.stage = 'decodePreview'; throw e;
+    }
+
+    // PNG capa desde dataURL (opcional)
+    let layerBuf = null;
+    if (layerDataURL) {
+      const L = dataUrlToBuffer(layerDataURL);
+      if (!L?.buf || !/image\/png/i.test(L.mime||'')) {
+        const e = new Error('invalid-layer'); e.stage = 'decodeLayer'; throw e;
+      }
+      layerBuf = L.buf;
     }
 
     // JSON diseño + meta
@@ -213,35 +226,57 @@ export default async function handler(req, res) {
     const jsonBuf = Buffer.from(JSON.stringify(payload), 'utf8');
 
     const ts = Date.now();
-    const pngName = `dobo-${ts}.png`;
-    const jsonName = `dobo-${ts}.json`;
+    const pngName   = `dobo-${ts}.png`;
+    const jsonName  = `dobo-${ts}.json`;
+    const layerName = `dobo-layer-${ts}.png`;
 
-    // subir a staged uploads con tipo correcto
-    const [pngResourceUrl, jsonResourceUrl] = await Promise.all([
-      stagedUpload({ filename: pngName,  mimeType: 'image/png',         buffer: png.buf,  resource: 'IMAGE' }),
-      stagedUpload({ filename: jsonName, mimeType: 'application/json',  buffer: jsonBuf,  resource: 'FILE'  }),
-    ]);
+    // subir a staged uploads
+    const tasks = [
+      stagedUpload({ filename: pngName,   mimeType: 'image/png',        buffer: png.buf,   resource: 'IMAGE' }),
+      stagedUpload({ filename: jsonName,  mimeType: 'application/json', buffer: jsonBuf,   resource: 'FILE'  }),
+    ];
+    if (layerBuf) {
+      tasks.push(stagedUpload({ filename: layerName, mimeType: 'image/png', buffer: layerBuf, resource: 'IMAGE' }));
+    }
+    const resourceUrls = await Promise.all(tasks);
 
     // crear Files públicos y esperar URLs
-    const created = await fileCreateFromResourceUrls([
-      { resourceUrl: pngResourceUrl,  contentType: 'IMAGE', alt: `preview-${ts}` },
-      { resourceUrl: jsonResourceUrl, contentType: 'FILE',  alt: `design-${ts}`  },
-    ]);
-    const [previewUrl, jsonUrl] = created.urls;
-    if (!previewUrl || !jsonUrl) {
+    const createInputs = [
+      { resourceUrl: resourceUrls[0], contentType: 'IMAGE', alt: `preview-${ts}` },
+      { resourceUrl: resourceUrls[1], contentType: 'FILE',  alt: `design-${ts}`  },
+    ];
+    if (layerBuf) {
+      createInputs.push({ resourceUrl: resourceUrls[2], contentType: 'IMAGE', alt: `layer-${ts}` });
+    }
+    const created = await fileCreateFromResourceUrls(createInputs);
+
+    // mapear URLs
+    const previewUrl = created.urls[0] || '';
+    const jsonUrl    = created.urls[1] || '';
+    const layerUrl   = layerBuf ? (created.urls[2] || '') : '';
+
+    if (!previewUrl || !jsonUrl || (layerBuf && !layerUrl)) {
       const e = new Error('missing file urls'); e.stage = 'fileCreate'; e.details = created; throw e;
     }
 
     // producto padre
     const { productId, handle } = await getProductFromVariant(variantId);
 
-    // escribir metafields en PRODUCTO
-    await setProductMetafields(productId, previewUrl, jsonUrl);
+    // metafields en PRODUCTO (incluye layer si existe)
+    await setProductMetafields(productId, previewUrl, jsonUrl, layerUrl || null);
 
-    res.status(200).json({ ok:true, variantId, productId, handle, previewUrl, jsonUrl });
+    return res.status(200).json({
+      ok: true,
+      variantId,
+      productId,
+      handle,
+      previewUrl,
+      jsonUrl,
+      layerUrl: layerUrl || null
+    });
   } catch (err) {
     const code = err?.stage === 'env' ? 400 : 500;
-    res.status(code).json({
+    return res.status(code).json({
       ok:false,
       error:String(err?.message||err||'error'),
       stage:err?.stage||null,
