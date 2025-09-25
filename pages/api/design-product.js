@@ -2,14 +2,15 @@
 export const runtime = 'nodejs';
 export const config = { api: { bodyParser: { sizeLimit: '10mb' } } };
 
-const toGid = (kind, id) => {
-  const s = String(id||'').trim();
-  return s.startsWith('gid://') ? s : `gid://shopify/${kind}/${s}`;
-};
+
 
 // --- Admin API version (override with env if needed)
 const ADMIN_VER = process.env.SHOPIFY_ADMIN_API_VERSION || '2025-07';
 
+const toGid = (kind, id) => {
+  const s = String(id||'').trim();
+  return s.startsWith('gid://') ? s : `gid://shopify/${kind}/${s}`;
+};
 /* ================= env ================= */
 function pickEnv() {
   const token =
@@ -109,7 +110,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok:false, error:'missing-product-or-variant' });
     }
 
-   // 2) Publicar en el canal indicado por env
+// 2) Publicar en el canal indicado por env (no bloquear checkout si falla)
 try {
   const pubRes = await shopifyFetch(GQL_PUBLISH, {
     id: productId,
@@ -144,4 +145,5 @@ try {
     });
   }
 }
+
 
