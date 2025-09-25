@@ -13,7 +13,6 @@ async function withTimeout(promise, ms = 2000) {
 }
 
 // ÚNICA definición válida en pages/index.js
-import { exportPreviewDataURL, dataURLtoBase64Attachment } from '../lib/designStore';
 
 async function sendEmailLayers() {
   const api = typeof window !== 'undefined' ? window.doboDesignAPI : null;
