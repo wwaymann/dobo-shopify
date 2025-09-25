@@ -5,6 +5,45 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
+import { exportPreviewDataURL, dataURLtoBase64Attachment } from '../lib/designStore';
+
+async function sendEmailLayers() {
+  const api = window.doboDesignAPI;
+  if (!api) { alert('Editor no listo'); return; }
+
+  const canvas = api.getCanvas?.() || api.canvas;
+  const preview = exportPreviewDataURL(canvas, { multiplier: 2 });
+  const { all, text, image } = await api.exportLayerPNGs(3);
+
+  const attachments = [];
+  const push = async (dataURL, filename, contentType='image/png') => {
+    if (!dataURL) return;
+    attachments.push({
+      filename,
+      contentType,
+      base64: await dataURLtoBase64Attachment(dataURL)
+    });
+  };
+  await push(preview, 'preview.png');
+  await push(all,    'layer-all.png');
+  await push(text,   'layer-text.png');
+  await push(image,  'layer-image.png');
+
+  const r = await fetch('/api/design/email-now', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      // opcional: to: 'destino@tu-dominio.cl',
+      subject: 'DOBO – Capas de diseño',
+      html: '<p>Adjunto preview y capas.</p>',
+      attachments
+    })
+  });
+  const j = await r.json();
+  if (!r.ok) { console.error(j); alert('Fallo el envío'); return; }
+  alert('Enviado');
+}
+
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
