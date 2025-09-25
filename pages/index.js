@@ -853,6 +853,7 @@ async function waitDesignerReady(timeout = 20000) {
       const apiReady = await waitDesignerReady(20000);
       if (!apiReady) throw new Error("designer-not-ready");
       const pub = await publishDesignForVariant(dp.variantId);
+      if (pub.layerUrl) attrs.push({ key: "_DesignLayerUrl", value: pub.layerUrl });
       if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
       // si el backend devuelve la capa, adjúntala a las properties de línea
