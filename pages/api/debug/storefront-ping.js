@@ -1,4 +1,4 @@
-import { SHOP_DOMAIN, STOREFRONT_TOKEN } from '../../lib/shopifyEnv';
+import { SHOP_DOMAIN, STOREFRONT_TOKEN } from '../../../lib/shopifyEnv';
 export default async function handler(_, res){
   try{
     const q = `query{ shop{name primaryDomain{url}} }`;
