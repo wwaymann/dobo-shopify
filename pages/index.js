@@ -907,17 +907,19 @@ async function waitDesignerReady(timeout = 20000) {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-      const apiReady = await waitDesignerReady(20000);
-      if (!apiReady) throw new Error("designer-not-ready");
-      const pub = await publishDesignForVariant(dp.variantId);
-      if (pub.layerUrl) attrs.push({ key: "_DesignLayerUrl", value: pub.layerUrl });
-      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-
-      // si el backend devuelve la capa, adjúntala a las properties de línea
-if (pub.layerUrl) {
-  // 'attrs' es el array que generaste antes con prepareDesignAttributes()
-  attrs.push({ key: "_DesignLayerUrl", value: pub.layerUrl });
+    const apiReady = await waitDesignerReady(20000);
+if (apiReady) {
+  try {
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) console.warn('publish failed:', pub?.error, pub?.stage || '');
+  } catch (e) {
+    console.warn('publish exception:', e);
+  }
 }
+// siga o no el publish, continuamos al checkout
+const accIds = getAccessoryVariantIds();
+postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+
 
       
       const accIds = getAccessoryVariantIds();
@@ -954,20 +956,18 @@ if (pub.layerUrl) {
       });
      const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-      const apiReady = await waitDesignerReady(20000);
-      if (!apiReady) throw new Error("designer-not-ready");
-      const pub = await publishDesignForVariant(dp.variantId);
-      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-     if (pub.layerUrl) {
-  attrs.push({ key: "_DesignLayerUrl", value: pub.layerUrl });
-}
-
-      const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
-    } catch (e) {
-      alert(`No se pudo añadir: ${e.message}`);
-    }
+    const apiReady = await waitDesignerReady(20000);
+if (apiReady) {
+  try {
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) console.warn('publish failed:', pub?.error, pub?.stage || '');
+  } catch (e) {
+    console.warn('publish exception:', e);
   }
+}
+// siga o no el publish, añadimos al carro
+const accIds = getAccessoryVariantIds();
+postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
