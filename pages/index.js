@@ -1102,49 +1102,7 @@ useEffect(() => {
 }, []);
 
 
-    // esperar API del editor
-    const wait = async (ms = 20000) => {
-      const t0 = Date.now();
-      while (Date.now() - t0 < ms) {
-        const a = window.doboDesignAPI;
-        const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
-        if (ok) return a;
-        await new Promise(r => setTimeout(r, 100));
-      }
-      return null;
-    };
-    const api = await wait();
-    if (!api) return;
-
-    try {
-      api?.reset?.();
-      const resp = await fetch(designUrl, { cache: "no-store" });
-      if (!resp.ok) return;
-      const payload = await resp.json();
-      const snapshot = payload?.design || payload;
-// guarda meta para sincronizar carruseles
-designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
-      setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
-
-
-if (api.importDesignSnapshot) {
-  await api.importDesignSnapshot(snapshot);
-} else if (api.loadDesignSnapshot) {
-  await api.loadDesignSnapshot(snapshot);
-} else if (api.loadJSON) {
-  await api.loadJSON(snapshot);
-} else if (api.loadFromJSON) {
-  await new Promise(res =>
-    api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); })
-  );
-}
-
-
-    } catch (e) {
-      console.error("load designUrl failed", e);
-    }
-  })();
-}, []);
+ 
 // === /DOBO loader ===
 
 
