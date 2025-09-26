@@ -12,8 +12,74 @@ async function withTimeout(promise, ms = 2000) {
   finally { clearTimeout(t); }
 }
 
-// ÚNICA definición válida en pages/index.js
+async function uploadDataUrl(dataUrl, filename) {
+  const r = await fetch("/api/upload-design", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataUrl, filename })
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j?.error || "upload failed");
+  return j.url;
+}
 
+async function exportLayerAllPNG() {
+  const api = window.doboDesignAPI;
+  const c = api?.getCanvas?.();
+  if (!c) return null;
+  return c.toDataURL({ format: "png", multiplier: 2, backgroundColor: null });
+}
+
+async function exportOnly(type) {
+  // type: "text" | "image"
+  const api = window.doboDesignAPI;
+  const c = api?.getCanvas?.();
+  if (!c) return null;
+
+  const objs = c.getObjects();
+  const keep = objs.map(o => o.visible);
+  objs.forEach(o => {
+    const isText = o.type === "i-text" || o.type === "textbox";
+    const isImage = o.type === "image";
+    o.visible = (type === "text") ? isText : isImage;
+  });
+  c.requestRenderAll();
+  const url = c.toDataURL({ format: "png", multiplier: 2, backgroundColor: null });
+  // restore
+  objs.forEach((o, i) => (o.visible = keep[i]));
+  c.requestRenderAll();
+  return url;
+}
+
+async function buildDesignAttributes({ selectedColor, activeSize }) {
+  // 1) preview combinado (tu rutina actual)
+  const previewDataUrl = await captureDesignPreview(); // ya la tienes en tu index.js
+  const layerAllDataUrl = await exportLayerAllPNG();
+  const layerTextDataUrl = await exportOnly("text");
+  const layerImageDataUrl = await exportOnly("image");
+
+  const [previewUrl, layerAllUrl, layerTextUrl, layerImageUrl] = await Promise.all([
+    previewDataUrl ? uploadDataUrl(previewDataUrl, `preview-${Date.now()}.png`) : "",
+    layerAllDataUrl ? uploadDataUrl(layerAllDataUrl, `layer-all-${Date.now()}.png`) : "",
+    layerTextDataUrl ? uploadDataUrl(layerTextDataUrl, `layer-text-${Date.now()}.png`) : "",
+    layerImageDataUrl ? uploadDataUrl(layerImageDataUrl, `layer-image-${Date.now()}.png`) : "",
+  ]);
+
+  const designId = `dobo-${Date.now()}`;
+
+  return [
+    { key: "DesignPreview", value: previewUrl || "" },
+    { key: "DesignLayer", value: layerAllUrl || "" },
+    { key: "dobo_layer_text_url", value: layerTextUrl || "" },
+    { key: "dobo_layer_image_url", value: layerImageUrl || "" },
+    { key: "DesignColor", value: selectedColor || "" },
+    { key: "DesignSize", value: activeSize || "" },
+    { key: "DesignId", value: designId }
+  ];
+}
+
+
+// ÚNICA definición válida en pages/index.js
 async function sendEmailLayers() {
   const api = typeof window !== 'undefined' ? window.doboDesignAPI : null;
   if (!api) return;
