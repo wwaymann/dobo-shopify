@@ -1035,12 +1035,6 @@ useEffect(() => {
   })();
 }, []);
 
- 
-useEffect(() => {
-  (async () => {
-    const params = new URLSearchParams(window.location.search);
-    const designUrl = params.get("designUrl");
-    if (!designUrl) return;
 
     // esperar API del editor
     const wait = async (ms = 20000) => {
