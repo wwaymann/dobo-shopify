@@ -1466,7 +1466,5 @@ useEffect(() => {
   );
 }
 
-export async function getServerSideProps() {
-  return { props: {} };
-}
+
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
