@@ -306,6 +306,8 @@ if (typeof window !== 'undefined') {
 
 
 function Home() {
+  const isBrowser = typeof window !== 'undefined';
+  if (!isBrowser) return null;   // evita usar window en SSR
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
@@ -1467,4 +1469,6 @@ useEffect(() => {
 }
 
 
-export default dynamic(() => Promise.resolve(Home), { ssr: false });
+// AL FINAL de pages/index.js
+export default Home;
+
