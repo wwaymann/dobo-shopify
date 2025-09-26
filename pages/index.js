@@ -984,7 +984,7 @@ postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   const totalNow = getTotalPrice() * quantity;
   const totalBase = getTotalComparePrice() * quantity;
 
-// === // === DOBO loader desde ?designUrl ===
+// === DOBO loader desde ?designUrl ===
 useEffect(() => {
   (async () => {
     try {
@@ -1034,6 +1034,7 @@ useEffect(() => {
     }
   })();
 }, []);
+
  
 useEffect(() => {
   (async () => {
