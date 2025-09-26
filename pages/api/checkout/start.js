@@ -1,4 +1,5 @@
-import { SHOP_DOMAIN, STOREFRONT_TOKEN } from '../../lib/shopifyEnv';
+import { SHOP_DOMAIN, STOREFRONT_TOKEN } from '../../../lib/shopifyEnv';
+
 
 export default async function handler(req, res) {
   if (!SHOP_DOMAIN || !STOREFRONT_TOKEN)
