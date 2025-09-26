@@ -305,7 +305,7 @@ if (typeof window !== 'undefined') {
 }
 
 
-function Home() {
+export default function Home() {
   const isBrowser = typeof window !== 'undefined';
   if (!isBrowser) return null;   // evita usar window en SSR
   const [plants, setPlants] = useState([]);
@@ -1469,6 +1469,5 @@ useEffect(() => {
 }
 
 
-// AL FINAL de pages/index.js
-export default Home;
+
 
