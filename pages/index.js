@@ -984,7 +984,57 @@ postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   const totalNow = getTotalPrice() * quantity;
   const totalBase = getTotalComparePrice() * quantity;
 
-// === DOBO loader desde ?designUrl ===
+// === // === DOBO loader desde ?designUrl ===
+useEffect(() => {
+  (async () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const designUrl = params.get("designUrl");
+      if (!designUrl) return;
+
+      // esperar API del editor
+      const wait = async (ms = 20000) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < ms) {
+          const a = window.doboDesignAPI;
+          const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
+          if (ok) return a;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        return null;
+      };
+
+      const api = await wait();
+      if (!api) return;
+
+      api?.reset?.();
+
+      const resp = await fetch(designUrl, { cache: "no-store" });
+      if (!resp.ok) return;
+
+      const payload = await resp.json();
+      const snapshot = payload?.design || payload;
+
+      // meta para sincronizar carruseles (planta/maceta/tamaño/color)
+      designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
+
+      if (api.importDesignSnapshot) {
+        await api.importDesignSnapshot(snapshot);
+      } else if (api.loadDesignSnapshot) {
+        await api.loadDesignSnapshot(snapshot);
+      } else if (api.loadJSON) {
+        await api.loadJSON(snapshot);
+      } else if (api.loadFromJSON) {
+        await new Promise(res =>
+          api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); })
+        );
+      }
+    } catch (e) {
+      console.error("load designUrl failed", e);
+    }
+  })();
+}, []);
+ ===
 useEffect(() => {
   (async () => {
     const params = new URLSearchParams(window.location.search);
