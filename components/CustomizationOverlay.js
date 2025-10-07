@@ -131,7 +131,7 @@ const FONT_OPTIONS = [
 ];
 
 export default function CustomizationOverlay({
-stageRef,
+  stageRef,
   anchorRef,
   visible = true,
   zoom = 0.6,
@@ -139,15 +139,15 @@ stageRef,
   // nuevos para cargar/guardar
   productHandle,
   variantId,
-  customerAccessToken,
-  zoomRef
+  customerAccessToken
 }) {
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
-  // enable pinch and wheel zoom
-  useCanvasZoom(fabricCanvasRef.current, stageRef, zoomRef);
-  const overlayRef = useRef(null);
+  
+  // Habilitar zoom táctil y wheel
+  useCanvasZoom(fabricCanvasRef.current, stageRef, null);
+const overlayRef = useRef(null);
 
   const addInputRef = useRef(null);
   const replaceInputRef = useRef(null);
