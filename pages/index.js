@@ -958,10 +958,14 @@ async function waitDesignerReady(timeout = 20000) {
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
 async function buyNow() {
   try {
+    // Enviar capas (no bloquea el checkout si falla)
     try { await withTimeout(sendEmailLayers(), 8000); } catch {}
+
     const attrs = await prepareDesignAttributes();
 
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const potPrice = selectedPotVariant?.price
+      ? num(selectedPotVariant.price)
+      : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
 
@@ -982,9 +986,11 @@ async function buyNow() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
+    // Publicación best-effort
     const apiReady = await waitDesignerReady(20000).catch(() => false);
     if (apiReady) { try { await publishDesignForVariant(dp.variantId); } catch {} }
 
+    // Checkout
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
@@ -992,13 +998,6 @@ async function buyNow() {
   }
 }
 
-// siga o no el publish, continuamos al checkout
-const accIds = getAccessoryVariantIds();
-postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
-} catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e.message}`);
-    }
-  }
   
 async function addToCart() {
   try {
