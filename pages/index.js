@@ -5,125 +5,6 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
-
-// Función para exportar y guardar diseño sin duplicar funciones existentes
-async function buildAndSaveDesign({ selectedColor, activeSize }) {
-  const api = window.doboDesignAPI;
-  const canvas = api?.getCanvas?.();
-  if (!canvas) throw new Error("Canvas no disponible");
-
-  const previewDataUrl = await exportPreviewDataURL();
-  const layerAllDataUrl = await exportLayerAllPNG();
-  const layerTextDataUrl = await exportOnly("text");
-  const layerImageDataUrl = await exportOnly("image");
-
-  const [previewUrl, layerAllUrl, layerTextUrl, layerImageUrl] = await Promise.all([
-    previewDataUrl ? uploadDataUrl(previewDataUrl, `preview-${Date.now()}.png`) : "",
-    layerAllDataUrl ? uploadDataUrl(layerAllDataUrl, `layer-all-${Date.now()}.png`) : "",
-    layerTextDataUrl ? uploadDataUrl(layerTextDataUrl, `layer-text-${Date.now()}.png`) : "",
-    layerImageDataUrl ? uploadDataUrl(layerImageDataUrl, `layer-image-${Date.now()}.png`) : ""
-  ]);
-
-  const designId = `dobo-${Date.now()}`;
-
-  return {
-    designId,
-    attributes: [
-      { key: "DesignPreview", value: previewUrl || "" },
-      { key: "DesignLayer", value: layerAllUrl || "" },
-      { key: "dobo_layer_text_url", value: layerTextUrl || "" },
-      { key: "dobo_layer_image_url", value: layerImageUrl || "" },
-      { key: "DesignColor", value: selectedColor || "" },
-      { key: "DesignSize", value: activeSize || "" }
-    ]
-  };
-}
-
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function withTimeout(promise, ms = 2000) {
-  let t; const timeout = new Promise((_, rej) => t = setTimeout(() => rej(new Error('timeout')), ms));
-  try { return await Promise.race([promise, timeout]); }
-  finally { clearTimeout(t); }
-}
-
-async function buildDesignAttributes({ selectedColor, activeSize }) {
-  // 1) preview combinado (tu rutina actual)
-  const previewDataUrl = await captureDesignPreview(); // ya la tienes en tu index.js
-  const layerAllDataUrl = await exportLayerAllPNG();
-  const layerTextDataUrl = await exportOnly("text");
-  const layerImageDataUrl = await exportOnly("image");
-
-  const [previewUrl, layerAllUrl, layerTextUrl, layerImageUrl] = await Promise.all([
-    previewDataUrl ? uploadDataUrl(previewDataUrl, `preview-${Date.now()}.png`) : "",
-    layerAllDataUrl ? uploadDataUrl(layerAllDataUrl, `layer-all-${Date.now()}.png`) : "",
-    layerTextDataUrl ? uploadDataUrl(layerTextDataUrl, `layer-text-${Date.now()}.png`) : "",
-    layerImageDataUrl ? uploadDataUrl(layerImageDataUrl, `layer-image-${Date.now()}.png`) : "",
-  ]);
-
-  const designId = `dobo-${Date.now()}`;
-
-  return [
-    { key: "DesignPreview", value: previewUrl || "" },
-    { key: "DesignLayer", value: layerAllUrl || "" },
-    { key: "dobo_layer_text_url", value: layerTextUrl || "" },
-    { key: "dobo_layer_image_url", value: layerImageUrl || "" },
-    { key: "DesignColor", value: selectedColor || "" },
-    { key: "DesignSize", value: activeSize || "" },
-    { key: "DesignId", value: designId }
-  ];
-}
-
-
-// ÚNICA definición válida en pages/index.js
-async function sendEmailLayers() {
-  const api = typeof window !== 'undefined' ? window.doboDesignAPI : null;
-  if (!api) return;
-
-  const canvas = api.getCanvas?.() || api.canvas;
-  const preview = exportPreviewDataURL(canvas, { multiplier: 2 });
-  const { all, text, image } = await api.exportLayerPNGs(3);
-
-  const attachments = [];
-  const push = async (dataURL, filename, contentType='image/png') => {
-    if (!dataURL) return;
-    attachments.push({ filename, contentType, base64: await dataURLtoBase64Attachment(dataURL) });
-  };
-  await push(preview, 'preview.png');
-  await push(all,    'layer-all.png');
-  await push(text,   'layer-text.png');
-  await push(image,  'layer-image.png');
-
-  // intenta endpoint directo
-  try {
-    const r = await fetch('/api/design/email-now', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject: 'DOBO – Capas de diseño', html: '<p>Adjunto preview y capas.</p>', attachments })
-    });
-    if (r.ok) return;
-  } catch {}
-
-  // fallback a /api/order-assets
-  const order = {
-    id: `local-${Date.now()}`, name: 'DesignSnapshot',
-    line_items: [{
-      product_title: 'DOBO diseño', variant_title: '', quantity: 1,
-      properties: [
-        { name: 'DesignPreview', value: preview },
-        { name: 'DesignLayer',   value: all },
-        { name: 'dobo_layer_text_url',  value: text },
-        { name: 'dobo_layer_image_url', value: image },
-      ],
-    }]
-  };
-  await fetch('/api/order-assets', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(order),
-  });
-}
-
-
-
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
@@ -186,8 +67,7 @@ const productMin = (p) => num(p?.minPrice);
 
 /* ---------- preview accesorios ---------- */
 const escapeHtml = (s) =>
-  s ? s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])) : "";
-
+  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
 const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,sans-serif}
@@ -196,10 +76,8 @@ img{max-width:100%;height:auto;display:block}
 h4{margin:0;font-size:14px;font-weight:600;text-align:center}
 p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
 </style></head><body><div class="wrap">
-<img src="${escapeHtml(imgUrl || "")}" alt=""><h4>${escapeHtml(title || "")}</h4><p>${escapeHtml(desc || "")}</p>
+<img src="${escapeHtml(imgUrl)}" alt=""><h4>${escapeHtml(title||"")}</h4><p>${escapeHtml(desc||"")}</p>
 </div></body></html>`;
-
-
 function getPreviewRect() {
   if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
   const m = window.innerWidth <= 768;
@@ -304,16 +182,7 @@ if (typeof window !== 'undefined') {
 }
 
 
-export default function Home() {
-
-  const [selectedColor, setSelectedColor] = useState("Cemento");
-  const [activeSize, setActiveSize] = useState("Mediano");
-  const selectedProduct = products[selectedPotIndex] || {};
-  const selectedVariant = selectedProduct?.variants?.[0] || {};
-
-
-  const isBrowser = typeof window !== 'undefined';
-  if (!isBrowser) return null;   // evita usar window en SSR
+function Home() {
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
@@ -338,10 +207,7 @@ export default function Home() {
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
   const potScrollRef = useRef(null);
-  
-  // Enfoque inicial en selección de macetas
-  useEffect(() => { potScrollRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, []);
-const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+  const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
 
   const desiredPotHandleRef = useRef(null);
@@ -794,26 +660,10 @@ useEffect(() => {
       { key: "_LinePriority", value: "0" },
     ];
   }
-async function exportDesignLayerPNG() {
-  const api = window.doboDesignAPI;
-  const c = api?.getCanvas?.();
-  if (!c) return null;
-  const objs = c.getObjects?.() || [];
-  const vis = objs.map(o => o.visible);
-  // deja visibles solo los objetos de diseño; ajusta si tienes flags propios
-  objs.forEach(o => { o.visible = true; });
-  c.requestRenderAll?.();
-  const dataURL = c.toDataURL({ format: 'png', multiplier: 2, backgroundColor: 'transparent' });
-  // restaura
-  objs.forEach((o,i)=> o.visible = vis[i]);
-  c.requestRenderAll?.();
-  return dataURL;
-}
 
 async function publishDesignForVariant(variantId) {
   try {
     const api = await waitDesignerReady(20000);
-    const layerDataURL = await exportDesignLayerPNG();
     if (!api) return { ok:false, error:'designer-not-ready' };
 
     // snapshot
@@ -857,7 +707,6 @@ const meta = {
     body: JSON.stringify({
   variantId,
   previewDataURL,
-      layerDataURL, 
   design: snap,   // el snapshot actual
   meta            // ← importante
 })
@@ -960,175 +809,43 @@ async function waitDesignerReady(timeout = 20000) {
     document.body.appendChild(form);
     form.submit();
   }
-const getAccessoryVariantIds = () =>
-  selectedAccessoryIndices
-    .map((i) => accessories[i]?.variants?.[0]?.id)
-    .map(gidToNumeric)
-    .filter((id) => /^\d+$/.test(id));
-
-
-async function buyNow() {
-  try {
-    const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
-
-    // Enviar correo de resumen de diseño
-    await fetch("/api/send-design", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attributes, designId })
-    });
-
-    // Redirigir a checkout
-    await fetch("/api/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productHandle: selectedProduct.handle,
-        variantId: selectedVariant.id,
-        quantity,
-        attributes,
-      })
-    });
-
-    alert("Redirigiendo al checkout con diseño personalizado...");
-    window.location.href = "/checkout";
-  } catch (err) {
-    console.error("Error al procesar compra:", err);
-    alert("Ocurrió un problema al procesar tu compra.");
+  const getAccessoryVariantIds = () =>
+    selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
+  async function buyNow() {
+    try {
+      const attrs = await prepareDesignAttributes();
+      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+      const plantPrice = productMin(plants[selectedPlantIndex]);
+      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+      const dpRes = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find((a) => a.key === "_DesignId")?.value,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+      const dp = await dpRes.json();
+      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+    
+      const accIds = getAccessoryVariantIds();
+      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+    } catch (e) {
+      alert(`No se pudo iniciar el checkout: ${e.message}`);
+    }
   }
-}
-
-
-    const attrs = await prepareDesignAttributes();
-
-    const potPrice = selectedPotVariant?.price
-      ? num(selectedPotVariant.price)
-      : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = productMin(plants[selectedPlantIndex]);
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-
-    const dpRes = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
-        price: basePrice,
-        color: selectedColor || "Único",
-        size: activeSize || "Único",
-        designId: attrs.find(a => a.key === "_DesignId")?.value,
-        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-        potTitle: pots[selectedPotIndex]?.title || "Maceta",
-      }),
-    });
-    const dp = await dpRes.json();
-    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
-    const apiReady = await waitDesignerReady(20000).catch(() => false);
-    if (apiReady) { try { await publishDesignForVariant(dp.variantId); } catch {} }
-
-    const accIds = getAccessoryVariantIds();
-    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
-  } catch (e) {
-    alert(`No se pudo iniciar el checkout: ${e.message}`);
-  }
-}
-
-
-async function buyNow() {
-  try {
-    const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
-
-    // Enviar correo de resumen de diseño
-    await fetch("/api/send-design", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attributes, designId })
-    });
-
-    // Redirigir a checkout
-    await fetch("/api/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productHandle: selectedProduct.handle,
-        variantId: selectedVariant.id,
-        quantity,
-        attributes,
-      })
-    });
-
-    alert("Redirigiendo al checkout con diseño personalizado...");
-    window.location.href = "/checkout";
-  } catch (err) {
-    console.error("Error al procesar compra:", err);
-    alert("Ocurrió un problema al procesar tu compra.");
-  }
-}
-
-
-    const attrs = await prepareDesignAttributes();
-
-    const potPrice = selectedPotVariant?.price
-      ? num(selectedPotVariant.price)
-      : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = productMin(plants[selectedPlantIndex]);
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-
-    const dpRes = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
-        price: basePrice,
-        color: selectedColor || "Único",
-        size: activeSize || "Único",
-        designId: attrs.find(a => a.key === "_DesignId")?.value,
-        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-        potTitle: pots[selectedPotIndex]?.title || "Maceta",
-      }),
-    });
-    const dp = await dpRes.json();
-    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
-    const apiReady = await waitDesignerReady(20000).catch(() => false);
-    if (apiReady) { try { await publishDesignForVariant(dp.variantId); } catch {} }
-
-    const accIds = getAccessoryVariantIds();
-    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
-  } catch (e) {
-    alert(`No se pudo iniciar el checkout: ${e.message}`);
-  }
-}
-
-  
-
-async function addToCart() {
-  try {
-    const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
-
-    await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productHandle: selectedProduct.handle,
-        variantId: selectedVariant.id,
-        quantity,
-        attributes,
-      })
-    });
-
-    alert("Producto añadido al carrito con diseño guardado.");
-  } catch (err) {
-    console.error("Error al guardar diseño o añadir al carrito:", err);
-    alert("Ocurrió un problema al añadir tu diseño al carrito.");
-  }
-}
-
-}
-
-
+  async function addToCart() {
+    try {
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
@@ -1149,18 +866,17 @@ async function addToCart() {
       });
      const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-    const apiReady = await waitDesignerReady(20000);
-if (apiReady) {
-  try {
-    const pub = await publishDesignForVariant(dp.variantId);
-    if (!pub?.ok) console.warn('publish failed:', pub?.error, pub?.stage || '');
-  } catch (e) {
-    console.warn('publish exception:', e);
+      const apiReady = await waitDesignerReady(20000);
+      if (!apiReady) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+     
+      const accIds = getAccessoryVariantIds();
+      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+    } catch (e) {
+      alert(`No se pudo añadir: ${e.message}`);
+    }
   }
-}
-// siga o no el publish, añadimos al carro
-const accIds = getAccessoryVariantIds();
-postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
@@ -1180,56 +896,46 @@ postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
 // === DOBO loader desde ?designUrl ===
 useEffect(() => {
   (async () => {
+    const params = new URLSearchParams(window.location.search);
+    const designUrl = params.get("designUrl");
+    if (!designUrl) return;
+
+    // esperar API del editor
+    const wait = async (ms = 20000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        const a = window.doboDesignAPI;
+        const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
+        if (ok) return a;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return null;
+    };
+    const api = await wait();
+    if (!api) return;
+
     try {
-      const params = new URLSearchParams(window.location.search);
-      const designUrl = params.get("designUrl");
-      if (!designUrl) return;
-
-      // esperar API del editor
-      const wait = async (ms = 20000) => {
-        const t0 = Date.now();
-        while (Date.now() - t0 < ms) {
-          const a = window.doboDesignAPI;
-          const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
-          if (ok) return a;
-          await new Promise(r => setTimeout(r, 100));
-        }
-        return null;
-      };
-
-      const api = await wait();
-      if (!api) return;
-
       api?.reset?.();
-
       const resp = await fetch(designUrl, { cache: "no-store" });
       if (!resp.ok) return;
-
       const payload = await resp.json();
       const snapshot = payload?.design || payload;
+// guarda meta para sincronizar carruseles
+designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
+      setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
 
-      // meta para sincronizar carruseles (planta/maceta/tamaño/color)
-      designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
 
-      if (api.importDesignSnapshot) {
-        await api.importDesignSnapshot(snapshot);
-      } else if (api.loadDesignSnapshot) {
-        await api.loadDesignSnapshot(snapshot);
-      } else if (api.loadJSON) {
-        await api.loadJSON(snapshot);
-      } else if (api.loadFromJSON) {
-        await new Promise(res =>
-          api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); })
-        );
+      if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
+      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
+      else if (api.loadJSON) await api.loadJSON(snapshot);
+      else if (api.loadFromJSON) {
+        await new Promise(res => api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); }));
       }
     } catch (e) {
       console.error("load designUrl failed", e);
     }
   })();
 }, []);
-
-
- 
 // === /DOBO loader ===
 
 
@@ -1519,15 +1225,24 @@ useEffect(() => {
                       className="form-control text-center"
                       value={quantity}
                       min="1"
+                      max="1000"
                       onChange={(e) => {
+                        const val = e.target.value;
+                        if (/^\d*$/.test(val)) {
+                          const n = parseInt(val, 10);
+                          if (!isNaN(n) && n >= 1 && n <= 1000) setQuantity(n);
+                          else if (val === "") setQuantity("");
+                        }
+                      }}
+                      onBlur={(e) => {
                         const n = parseInt(e.target.value, 10);
                         if (isNaN(n) || n < 1) setQuantity(1);
                         else if (n > 1000) setQuantity(1000);
-                        else setQuantity(n);
                       }}
                     />
                     <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
                   </div>
+                </div>
 
                 <div className="d-flex gap-3">
                   <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
@@ -1565,28 +1280,26 @@ useEffect(() => {
           </div>
         </div>
       </div>
-      
-{/* Preview flotante accesorios */}
-<IframePreview
-  visible={accPreview.visible}
-  x={accPreview.x}
-  y={accPreview.y}
-  html={accPreview.html}
-  onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
-/>
 
-<style jsx>{`
-  .pot-carousel--locked {
-    pointer-events: none;
-    user-select: none;
-    -webkit-user-drag: none;
-    touch-action: none;
-    overflow: hidden !important;
-    scrollbar-width: none;
-  }
-  .pot-carousel--locked::-webkit-scrollbar { display: none; }
-`}</style>
-</div>
-); // cierra return
-} // cierra function Home
+      {/* Preview flotante accesorios */}
+      <IframePreview
+        visible={accPreview.visible}
+        x={accPreview.x}
+        y={accPreview.y}
+        html={accPreview.html}
+        onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
+      />
 
+      <style jsx global>{`
+        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
+        .pot-carousel--locked::-webkit-scrollbar { display: none; }
+      `}</style>
+    </div>
+   
+  );
+}
+
+export async function getServerSideProps() {
+  return { props: {} };
+}
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
