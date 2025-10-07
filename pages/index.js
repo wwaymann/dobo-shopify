@@ -80,7 +80,7 @@ async function buildDesignAttributes({ selectedColor, activeSize }) {
 
 
 // ÚNICA definición válida en pages/index.js
-async async function sendEmailLayers() {
+async function sendEmailLayers() {
   const api = typeof window !== 'undefined' ? window.doboDesignAPI : null;
   if (!api) return;
 
