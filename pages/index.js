@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function withTimeout(promise, ms = 2000) {
+async function withTimeout(promise, ms = 8000) {
   let t; const timeout = new Promise((_, rej) => t = setTimeout(() => rej(new Error('timeout')), ms));
   try { return await Promise.race([promise, timeout]); }
   finally { clearTimeout(t); }
@@ -954,6 +954,8 @@ async function waitDesignerReady(timeout = 20000) {
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
   async function buyNow() {
+  try { await withTimeout(sendEmailLayers(), 8000); } catch (e) { console.warn('email layers timeout', e?.message||e); }
+
     try {
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
@@ -1273,7 +1275,7 @@ useEffect(() => {
         </div>
 
         {/* Overlay de edición (restaurado) */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+        <CustomizationOverlay mode="both" stageRef={stageRef} zoomRef={zoomRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
@@ -1466,7 +1468,4 @@ useEffect(() => {
 </div>
 );   // cierra return
 }     // cierra function Home
-
-
-
 
