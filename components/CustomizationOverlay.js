@@ -141,6 +141,11 @@ export default function CustomizationOverlay({
   variantId,
   customerAccessToken
 }) {
+  useEffect(() => {
+    document.body.style.overflowY = editing ? 'auto' : 'auto';
+    return () => { document.body.style.overflowY = 'auto'; };
+  }, [editing]);
+
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
@@ -158,7 +163,7 @@ const overlayRef = useRef(null);
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
-  const [editing, setEditing] = useState(true);
+  const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
@@ -1381,16 +1386,7 @@ const overlayRef = useRef(null);
               Borrar
             </button>
             {/* Guardar en metafields */}
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={saveDesign}
-              disabled={!ready || (!variantId && !productHandle)}
-              title="Guardar diseño"
-            >
-              Guardar
-            </button>
+            
           </div>
         )}
 
