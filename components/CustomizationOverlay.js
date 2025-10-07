@@ -136,6 +136,7 @@ export default function CustomizationOverlay({
   visible = true,
   zoom = 0.6,
   setZoom,
+  zoomRef,
   // nuevos para cargar/guardar
   productHandle,
   variantId,
@@ -144,6 +145,8 @@ export default function CustomizationOverlay({
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
+  // activar zoom en canvas y móvil
+  useCanvasZoom(fabricCanvasRef.current, stageRef, zoomRef);
   const overlayRef = useRef(null);
 
   const addInputRef = useRef(null);
@@ -155,7 +158,7 @@ export default function CustomizationOverlay({
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
-  const [editing, setEditing] = useState(true);
+  const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
