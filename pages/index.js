@@ -203,6 +203,7 @@ p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
 <img src="${escapeHtml(imgUrl || "")}" alt=""><h4>${escapeHtml(title || "")}</h4><p>${escapeHtml(desc || "")}</p>
 </div></body></html>`;
 
+
 function getPreviewRect() {
   if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
   const m = window.innerWidth <= 768;
@@ -960,6 +961,7 @@ async function waitDesignerReady(timeout = 20000) {
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
 async function buyNow() {
   try {
+    // enviar capas sin bloquear el checkout
     try { await withTimeout(sendEmailLayers(), 8000); } catch {}
 
     const attrs = await prepareDesignAttributes();
@@ -996,6 +998,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e.message}`);
   }
 }
+
 
 
   
@@ -1466,7 +1469,7 @@ useEffect(() => {
         </div>
       </div>
       
-     {/* Preview flotante accesorios */}
+  {/* Preview flotante accesorios */}
 <IframePreview
   visible={accPreview.visible}
   x={accPreview.x}
@@ -1487,5 +1490,6 @@ useEffect(() => {
   .pot-carousel--locked::-webkit-scrollbar { display: none; }
 `}</style>
 </div>
-  );
-}
+); // cierra return
+} // cierra function Home
+
