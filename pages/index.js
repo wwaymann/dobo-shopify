@@ -5,50 +5,46 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
 
+
+// Función para exportar y guardar diseño sin duplicar funciones existentes
+async function buildAndSaveDesign({ selectedColor, activeSize }) {
+  const api = window.doboDesignAPI;
+  const canvas = api?.getCanvas?.();
+  if (!canvas) throw new Error("Canvas no disponible");
+
+  const previewDataUrl = await exportPreviewDataURL();
+  const layerAllDataUrl = await exportLayerAllPNG();
+  const layerTextDataUrl = await exportOnly("text");
+  const layerImageDataUrl = await exportOnly("image");
+
+  const [previewUrl, layerAllUrl, layerTextUrl, layerImageUrl] = await Promise.all([
+    previewDataUrl ? uploadDataUrl(previewDataUrl, `preview-${Date.now()}.png`) : "",
+    layerAllDataUrl ? uploadDataUrl(layerAllDataUrl, `layer-all-${Date.now()}.png`) : "",
+    layerTextDataUrl ? uploadDataUrl(layerTextDataUrl, `layer-text-${Date.now()}.png`) : "",
+    layerImageDataUrl ? uploadDataUrl(layerImageDataUrl, `layer-image-${Date.now()}.png`) : ""
+  ]);
+
+  const designId = `dobo-${Date.now()}`;
+
+  return {
+    designId,
+    attributes: [
+      { key: "DesignPreview", value: previewUrl || "" },
+      { key: "DesignLayer", value: layerAllUrl || "" },
+      { key: "dobo_layer_text_url", value: layerTextUrl || "" },
+      { key: "dobo_layer_image_url", value: layerImageUrl || "" },
+      { key: "DesignColor", value: selectedColor || "" },
+      { key: "DesignSize", value: activeSize || "" }
+    ]
+  };
+}
+
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function withTimeout(promise, ms = 2000) {
   let t; const timeout = new Promise((_, rej) => t = setTimeout(() => rej(new Error('timeout')), ms));
   try { return await Promise.race([promise, timeout]); }
   finally { clearTimeout(t); }
-}
-
-async function uploadDataUrl(dataUrl, filename) {
-  const r = await fetch("/api/upload-design", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataUrl, filename })
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.error || "upload failed");
-  return j.url;
-}
-
-async function exportLayerAllPNG() {
-  const api = window.doboDesignAPI;
-  const c = api?.getCanvas?.();
-  if (!c) return null;
-  return c.toDataURL({ format: "png", multiplier: 2, backgroundColor: null });
-}
-
-async function exportOnly(type) {
-  // type: "text" | "image"
-  const api = window.doboDesignAPI;
-  const c = api?.getCanvas?.();
-  if (!c) return null;
-
-  const objs = c.getObjects();
-  const keep = objs.map(o => o.visible);
-  objs.forEach(o => {
-    const isText = o.type === "i-text" || o.type === "textbox";
-    const isImage = o.type === "image";
-    o.visible = (type === "text") ? isText : isImage;
-  });
-  c.requestRenderAll();
-  const url = c.toDataURL({ format: "png", multiplier: 2, backgroundColor: null });
-  // restore
-  objs.forEach((o, i) => (o.visible = keep[i]));
-  c.requestRenderAll();
-  return url;
 }
 
 async function buildDesignAttributes({ selectedColor, activeSize }) {
@@ -309,6 +305,13 @@ if (typeof window !== 'undefined') {
 
 
 export default function Home() {
+
+  const [selectedColor, setSelectedColor] = useState("Cemento");
+  const [activeSize, setActiveSize] = useState("Mediano");
+  const selectedProduct = products[selectedPotIndex] || {};
+  const selectedVariant = selectedProduct?.variants?.[0] || {};
+
+
   const isBrowser = typeof window !== 'undefined';
   if (!isBrowser) return null;   // evita usar window en SSR
   const [plants, setPlants] = useState([]);
@@ -963,10 +966,38 @@ const getAccessoryVariantIds = () =>
     .map(gidToNumeric)
     .filter((id) => /^\d+$/.test(id));
 
+
 async function buyNow() {
   try {
-    // enviar capas sin bloquear el checkout
-    try { await withTimeout(sendEmailLayers(), 8000); } catch {}
+    const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
+
+    // Enviar correo de resumen de diseño
+    await fetch("/api/send-design", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attributes, designId })
+    });
+
+    // Redirigir a checkout
+    await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        productHandle: selectedProduct.handle,
+        variantId: selectedVariant.id,
+        quantity,
+        attributes,
+      })
+    });
+
+    alert("Redirigiendo al checkout con diseño personalizado...");
+    window.location.href = "/checkout";
+  } catch (err) {
+    console.error("Error al procesar compra:", err);
+    alert("Ocurrió un problema al procesar tu compra.");
+  }
+}
+
 
     const attrs = await prepareDesignAttributes();
 
@@ -1003,10 +1034,38 @@ async function buyNow() {
   }
 }
 
+
 async function buyNow() {
   try {
-    // enviar capas sin bloquear el checkout
-    try { await withTimeout(sendEmailLayers(), 8000); } catch {}
+    const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
+
+    // Enviar correo de resumen de diseño
+    await fetch("/api/send-design", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attributes, designId })
+    });
+
+    // Redirigir a checkout
+    await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        productHandle: selectedProduct.handle,
+        variantId: selectedVariant.id,
+        quantity,
+        attributes,
+      })
+    });
+
+    alert("Redirigiendo al checkout con diseño personalizado...");
+    window.location.href = "/checkout";
+  } catch (err) {
+    console.error("Error al procesar compra:", err);
+    alert("Ocurrió un problema al procesar tu compra.");
+  }
+}
+
 
     const attrs = await prepareDesignAttributes();
 
@@ -1044,33 +1103,29 @@ async function buyNow() {
 }
 
   
+
 async function addToCart() {
   try {
-    const attrs = await prepareDesignAttributes();
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = productMin(plants[selectedPlantIndex]);
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-    const dpRes = await fetch("/api/design-product", {
+    const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
+
+    await fetch("/api/cart", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
-        price: basePrice,
-        color: selectedColor || "Único",
-        size: activeSize || "Único",
-        designId: attrs.find((a) => a.key === "_DesignId")?.value,
-        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-        potTitle: pots[selectedPotIndex]?.title || "Maceta",
-      }),
+        productHandle: selectedProduct.handle,
+        variantId: selectedVariant.id,
+        quantity,
+        attributes,
+      })
     });
-    const dp = await dpRes.json();
-    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-    const accIds = getAccessoryVariantIds();
-    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
-  } catch (e) {
-    alert(`No se pudo añadir al carro: ${e.message}`);
+
+    alert("Producto añadido al carrito con diseño guardado.");
+  } catch (err) {
+    console.error("Error al guardar diseño o añadir al carrito:", err);
+    alert("Ocurrió un problema al añadir tu diseño al carrito.");
   }
+}
+
 }
 
 
