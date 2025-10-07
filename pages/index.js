@@ -963,6 +963,7 @@ async function buyNow() {
   try {
     // enviar capas sin bloquear el checkout
     try { await withTimeout(sendEmailLayers(), 8000); } catch {}
+async function buyNow() {
 
     const attrs = await prepareDesignAttributes();
 
@@ -1000,7 +1001,7 @@ async function buyNow() {
 }
 
 
-
+}
   
 async function addToCart() {
   try {
@@ -1469,7 +1470,7 @@ useEffect(() => {
         </div>
       </div>
       
-  {/* Preview flotante accesorios */}
+{/* Preview flotante accesorios */}
 <IframePreview
   visible={accPreview.visible}
   x={accPreview.x}
@@ -1492,4 +1493,3 @@ useEffect(() => {
 </div>
 ); // cierra return
 } // cierra function Home
-
