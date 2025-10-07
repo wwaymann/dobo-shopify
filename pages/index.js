@@ -1451,8 +1451,9 @@ useEffect(() => {
      <style jsx>{`
         .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
         .pot-carousel--locked::-webkit-scrollbar { display: none; }
-     `}</style>
-</div>
-);   // cierra return
-}     // cierra function Home
+    }</style>
+  </div>
+  );
+}
 
+export default Home;
