@@ -306,6 +306,14 @@ if (typeof window !== 'undefined') {
 
 
 export default function Home() {
+  // ensure we start at Pots section, not Designer
+  useEffect(function scrollToPotOnMount(){
+    const el = potScrollRef?.current;
+    if (el && typeof el.scrollIntoView === 'function') {
+      try { el.scrollIntoView({ behavior: 'auto', block: 'start' }); } catch {}
+    }
+  }, []);
+
   const isBrowser = typeof window !== 'undefined';
   if (!isBrowser) return null;   // evita usar window en SSR
   const [plants, setPlants] = useState([]);
@@ -954,13 +962,14 @@ async function waitDesignerReady(timeout = 20000) {
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
   async function buyNow() {
-  try { await withTimeout(sendEmailLayers(), 8000); } catch (e) { console.warn('email layers timeout', e?.message||e); }
-
     try {
+      try { await withTimeout(sendEmailLayers(), 8000); } catch (_) {}
+
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
       const plantPrice = productMin(plants[selectedPlantIndex]);
       const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
       const dpRes = await fetch("/api/design-product", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -977,21 +986,17 @@ async function waitDesignerReady(timeout = 20000) {
       });
       const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-    const apiReady = await waitDesignerReady(20000);
-if (apiReady) {
-  try {
-    const pub = await publishDesignForVariant(dp.variantId);
-    if (!pub?.ok) console.warn('publish failed:', pub?.error, pub?.stage || '');
-  } catch (e) {
-    console.warn('publish exception:', e);
-  }
-}
-// siga o no el publish, continuamos al checkout
-const accIds = getAccessoryVariantIds();
-postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
 
+      try {
+        const apiReady = await waitDesignerReady(20000);
+        if (apiReady) {
+          const pub = await publishDesignForVariant(dp.variantId);
+          if (!pub?.ok) console.warn('publish failed:', pub?.error, pub?.stage || '');
+        }
+      } catch (e) {
+        console.warn('publish exception:', e);
+      }
 
-      
       const accIds = getAccessoryVariantIds();
       postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
     } catch (e) {
@@ -1000,11 +1005,6 @@ postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   }
   async function addToCart() {
     try {
-      async function onPagar() {
-  try { await withTimeout(sendEmailLayers(), 2000); } catch (_) {}
-  await addToCart(); // existente
-  await goToCheckout(); // existente
-}
 
       const attrs = await prepareDesignAttributes();
       const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
@@ -1026,19 +1026,6 @@ postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
       });
      const dp = await dpRes.json();
       if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-    const apiReady = await waitDesignerReady(20000);
-if (apiReady) {
-  try {
-    const pub = await publishDesignForVariant(dp.variantId);
-    if (!pub?.ok) console.warn('publish failed:', pub?.error, pub?.stage || '');
-  } catch (e) {
-    console.warn('publish exception:', e);
-  }
-}
-// siga o no el publish, añadimos al carro
-const accIds = getAccessoryVariantIds();
-postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
-
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
     prev: () => setIndex((p) => (p > 0 ? p - 1 : Math.max(items.length - 1, 0))),
@@ -1275,7 +1262,7 @@ useEffect(() => {
         </div>
 
         {/* Overlay de edición (restaurado) */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} zoomRef={zoomRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} zoomRef={zoomRef} />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">

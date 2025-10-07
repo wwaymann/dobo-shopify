@@ -131,21 +131,21 @@ const FONT_OPTIONS = [
 ];
 
 export default function CustomizationOverlay({
-  stageRef,
+stageRef,
   anchorRef,
   visible = true,
   zoom = 0.6,
   setZoom,
-  zoomRef,
   // nuevos para cargar/guardar
   productHandle,
   variantId,
-  customerAccessToken
+  customerAccessToken,
+  zoomRef
 }) {
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
-  // activar zoom en canvas y móvil
+  // enable pinch and wheel zoom
   useCanvasZoom(fabricCanvasRef.current, stageRef, zoomRef);
   const overlayRef = useRef(null);
 
@@ -158,7 +158,7 @@ export default function CustomizationOverlay({
   const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(true);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
