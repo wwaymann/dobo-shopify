@@ -957,10 +957,15 @@ async function waitDesignerReady(timeout = 20000) {
     document.body.appendChild(form);
     form.submit();
   }
-  const getAccessoryVariantIds = () =>
-    selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
+ const getAccessoryVariantIds = () =>
+  selectedAccessoryIndices
+    .map((i) => accessories[i]?.variants?.[0]?.id)
+    .map(gidToNumeric)
+    .filter((id) => /^\d+$/.test(id));
+
 async function buyNow() {
   try {
+    // enviar capas sin bloquear el checkout
     try { await withTimeout(sendEmailLayers(), 8000); } catch {}
 
     const attrs = await prepareDesignAttributes();
