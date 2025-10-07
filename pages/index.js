@@ -961,9 +961,7 @@ async function waitDesignerReady(timeout = 20000) {
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
 async function buyNow() {
   try {
-    // enviar capas sin bloquear el checkout
     try { await withTimeout(sendEmailLayers(), 8000); } catch {}
-async function buyNow() {
 
     const attrs = await prepareDesignAttributes();
 
@@ -1000,8 +998,6 @@ async function buyNow() {
   }
 }
 
-
-}
   
 async function addToCart() {
   try {
