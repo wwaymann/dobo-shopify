@@ -190,7 +190,8 @@ const productMin = (p) => num(p?.minPrice);
 
 /* ---------- preview accesorios ---------- */
 const escapeHtml = (s) =>
-  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
+  s ? s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])) : "";
+
 const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,sans-serif}
@@ -198,9 +199,10 @@ const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 img{max-width:100%;height:auto;display:block}
 h4{margin:0;font-size:14px;font-weight:600;text-align:center}
 p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
-</stylee></head><body><div class="wrap">
-<img src="${escapeHtml(imgUrl)}" alt=""><h4>${escapeHtml(title||"")}</h4><p>${escapeHtml(desc||"")}</p>
+</style></head><body><div class="wrap">
+<img src="${escapeHtml(imgUrl || "")}" alt=""><h4>${escapeHtml(title || "")}</h4><p>${escapeHtml(desc || "")}</p>
 </div></body></html>`;
+
 function getPreviewRect() {
   if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
   const m = window.innerWidth <= 768;
@@ -958,7 +960,6 @@ async function waitDesignerReady(timeout = 20000) {
     selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
 async function buyNow() {
   try {
-    // Enviar capas (no bloquea el checkout si falla)
     try { await withTimeout(sendEmailLayers(), 8000); } catch {}
 
     const attrs = await prepareDesignAttributes();
@@ -986,17 +987,16 @@ async function buyNow() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // Publicación best-effort
     const apiReady = await waitDesignerReady(20000).catch(() => false);
     if (apiReady) { try { await publishDesignForVariant(dp.variantId); } catch {} }
 
-    // Checkout
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
     alert(`No se pudo iniciar el checkout: ${e.message}`);
   }
 }
+
 
   
 async function addToCart() {
@@ -1465,22 +1465,27 @@ useEffect(() => {
           </div>
         </div>
       </div>
-
-      {/* Preview flotante accesorios */}
       
-      {/* Preview flotante accesorios */}
-      <IframePreview
-        visible={accPreview.visible}
-        x={accPreview.x}
-        y={accPreview.y}
-        html={accPreview.html}
-        onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
-      />
+     {/* Preview flotante accesorios */}
+<IframePreview
+  visible={accPreview.visible}
+  x={accPreview.x}
+  y={accPreview.y}
+  html={accPreview.html}
+  onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
+/>
 
-      <style jsx>{`
-        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
-        .pot-carousel--locked::-webkit-scrollbar { display: none; }
-      `}</stylee>
-    </div>
+<style jsx>{`
+  .pot-carousel--locked {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    touch-action: none;
+    overflow: hidden !important;
+    scrollbar-width: none;
+  }
+  .pot-carousel--locked::-webkit-scrollbar { display: none; }
+`}</style>
+</div>
   );
 }
