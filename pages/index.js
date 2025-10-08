@@ -967,7 +967,7 @@ const getAccessoryVariantIds = () =>
     .filter((id) => /^\d+$/.test(id));
 
 
-async async function buyNow() {
+async function buyNow() {
   try {
     const { attributes, designId } = await buildAndSaveDesign({ selectedColor, activeSize });
 
