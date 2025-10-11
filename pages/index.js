@@ -69,7 +69,7 @@ function IframePreview(props) {
   const d = rect;
 
   if (!props.visible) return null;
-  const d = getPreviewRect();
+
   const base = {
     position: "fixed",
     borderRadius: 12,
