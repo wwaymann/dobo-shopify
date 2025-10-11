@@ -63,14 +63,12 @@ function getPreviewRect() {
 }
 
 function IframePreview(props) {
+  const d = rect;
   const [rect, setRect] = useState({ w: 360, h: 360, centered: false });
   useEffect(() => { if (props.visible) setRect(getPreviewRect()); }, [props.visible]);
-  if (!props.visible) return null;
-  const d = rect;
 
   if (!props.visible) return null;
-
-  const base = {
+const base = {
     position: "fixed",
     borderRadius: 12,
     overflow: "hidden",
@@ -166,11 +164,13 @@ if (typeof window !== "undefined") {
  * Component
  * ============================= */
 export default function Home() {
+  // [fix] hidratación estable
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
-  if (!hydrated) { return <div style={{ minHeight: '100vh' }} />; }
 
-  // State (unique, no duplicates)
+  const __isBrowser = typeof window !== 'undefined';
+// [fix] SSR: quitar return temprano por isBrowser
+// State (unique, no duplicates)
   const [selectedColor, setSelectedColor] = useState("Cemento");
   const [activeSize, setActiveSize] = useState("Mediano");
   const [plants, setPlants] = useState([]);
