@@ -63,6 +63,11 @@ function getPreviewRect() {
 }
 
 function IframePreview(props) {
+  const [rect, setRect] = useState({ w: 360, h: 360, centered: false });
+  useEffect(() => { if (props.visible) setRect(getPreviewRect()); }, [props.visible]);
+  if (!props.visible) return null;
+  const d = rect;
+
   if (!props.visible) return null;
   const d = getPreviewRect();
   const base = {
@@ -161,8 +166,9 @@ if (typeof window !== "undefined") {
  * Component
  * ============================= */
 export default function Home() {
-  const isBrowser = typeof window !== "undefined";
-  if (!isBrowser) return null;
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+  if (!hydrated) { return <div style={{ minHeight: '100vh' }} />; }
 
   // State (unique, no duplicates)
   const [selectedColor, setSelectedColor] = useState("Cemento");
