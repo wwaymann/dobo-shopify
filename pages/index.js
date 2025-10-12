@@ -1,25 +1,11 @@
-// pages/index.js — DOBO full corrected version
-// Cleaned, de-duplicated, and integrated. Designed to replace your current pages/index.js.
-// Notes:
-// - Requires ../lib/designStore helpers (exportPreviewDataURL, exportLayerAllPNG, exportOnly, dataURLtoBase64Attachment, loadLocalDesign).
-// - Requires ../components/CustomizationOverlay (dynamic, ssr:false).
-// - Uses /api endpoints you already referenced (/api/products, /api/upload-design, /api/design-product, /api/publish-by-variant, /api/send-design, /api/checkout, /api/cart).
-// - Maintains mobile/desktop layout logic, carousels, zoom, design capture, meta restore, and accessories preview tooltip.
-// - Fixes: IframePreview TDZ (rect), regex escapados, helpers faltantes (withTimeout, uploadDataUrl, sendEmailLayers), guardas de SSR, pointer capture try/catch.
+// pages/index.js — DOBO full corrected version (TDZ/hydratation-safe)
 
 import { useEffect, useState, useRef, useMemo } from "react";
+import Head from "next/head";
 import styles from "../styles/home.module.css";
-import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
-import {
-  exportPreviewDataURL,
-  dataURLtoBase64Attachment,
-  loadLocalDesign,
-  exportLayerAllPNG,
-  exportOnly,
-} from "../lib/designStore";
 
-// Overlay / Editor (Fabric.js based, per your project)
+// Overlay / Editor (Fabric.js, client-only)
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
 
 /* =============================
@@ -28,7 +14,8 @@ const CustomizationOverlay = dynamic(() => import("../components/CustomizationOv
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function money(amount, currency = "CLP") {
-  return new Intl.NumberFormat("es-CL", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
+  return new Intl.NumberFormat("es-CL", { style: "currency", currency, maximumFractionDigits: 0 })
+    .format(Number(amount || 0));
 }
 function num(v) {
   return Number(typeof v === "object" ? v?.amount : v || 0);
@@ -39,8 +26,21 @@ const firstVariantPrice = (p) => {
 };
 const productMin = (p) => num(p?.minPrice);
 
-// Escape for tooltip iframe HTML
-const escapeHtml = (s) => (s ? s.replace(/[&<>\"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])) : "");
+// Carga DIFERIDA de designStore para romper ciclos/TDZ
+async function getDesignExports() {
+  const mod = await import("../lib/designStore");
+  return {
+    exportPreviewDataURL: mod.exportPreviewDataURL,
+    dataURLtoBase64Attachment: mod.dataURLtoBase64Attachment,
+    loadLocalDesign: mod.loadLocalDesign,
+    exportLayerAllPNG: mod.exportLayerAllPNG,
+    exportOnly: mod.exportOnly,
+  };
+}
+
+// Escape para HTML del tooltip/iframe
+const escapeHtml = (s) =>
+  (s ? s.replace(/[&<>\"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])) : "");
 
 const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -64,9 +64,7 @@ function getPreviewRect() {
 function IframePreview(props) {
   const [rect, setRect] = useState({ w: 360, h: 360, centered: false });
   useEffect(() => { if (props.visible) setRect(getPreviewRect()); }, [props.visible]);
-
   if (!props.visible) return null;
-
   const base = {
     position: "fixed",
     borderRadius: 12,
@@ -104,19 +102,15 @@ function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
   );
 }
 
-// Swipe helpers
+// Swipe genérico con pointer/touch/mouse y try/catch en capture
 function makeSwipeEvents(swipeRef, handlers) {
   const begin = (x, y, id, el) => {
     swipeRef.current = { active: true, id, x, y };
-    if (id != null && el?.setPointerCapture) {
-      try { el.setPointerCapture(id); } catch {}
-    }
+    if (id != null && el?.setPointerCapture) { try { el.setPointerCapture(id); } catch {} }
   };
   const end = (ev, el) => {
     const id = swipeRef.current?.id;
-    if (id != null && el?.releasePointerCapture) {
-      try { el.releasePointerCapture(id); } catch {}
-    }
+    if (id != null && el?.releasePointerCapture) { try { el.releasePointerCapture(id); } catch {} }
     swipeRef.current = { active: false, id: null, x: 0, y: 0 };
   };
   const move = (x, y, ev, el) => {
@@ -125,10 +119,7 @@ function makeSwipeEvents(swipeRef, handlers) {
     const dx = x - s.x, dy = y - s.y;
     if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
       ev.preventDefault();
-      if (Math.abs(dx) > 48) {
-        dx > 0 ? handlers.prev() : handlers.next();
-        end(ev, el);
-      }
+      if (Math.abs(dx) > 48) { dx > 0 ? handlers.prev() : handlers.next(); end(ev, el); }
     }
   };
   return {
@@ -147,24 +138,7 @@ function makeSwipeEvents(swipeRef, handlers) {
 }
 
 /* =============================
- * Shop domain resolution
- * ============================= */
-let SHOP_DOMAIN = process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com";
-if (typeof window !== "undefined") {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const fromQS = qs.get("shopDomain");
-    if (fromQS) {
-      SHOP_DOMAIN = fromQS;
-    } else if (document.referrer) {
-      const h = new URL(document.referrer).host;
-      if (h) SHOP_DOMAIN = h;
-    }
-  } catch {}
-}
-
-/* =============================
- * Helpers faltantes (upload, email, timeout)
+ * Helpers: upload, timeout, email
  * ============================= */
 async function uploadDataUrl(dataUrl, filename = `file-${Date.now()}.png`) {
   try {
@@ -191,10 +165,11 @@ async function withTimeout(promise, ms) {
 
 async function sendEmailLayers() {
   try {
-    const preview = await exportPreviewDataURL?.().catch(() => null);
-    const layerAll = await exportLayerAllPNG?.().catch(() => null);
-    const layerTxt = await exportOnly?.("text").catch(() => null);
-    const layerImg = await exportOnly?.("image").catch(() => null);
+    const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
+    const preview = await exportPreviewDataURL().catch(() => null);
+    const layerAll = await exportLayerAllPNG().catch(() => null);
+    const layerTxt = await exportOnly("text").catch(() => null);
+    const layerImg = await exportOnly("image").catch(() => null);
 
     const [previewUrl, allUrl, txtUrl, imgUrl] = await Promise.all([
       preview ? uploadDataUrl(preview, `preview-${Date.now()}.png`) : "",
@@ -215,14 +190,28 @@ async function sendEmailLayers() {
 }
 
 /* =============================
- * Component
+ * Componente principal
  * ============================= */
 export default function Home() {
-  // [fix] hidratación estable
+  // Hidratación estable
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
 
-  // State (unique, no duplicates)
+  // Shop domain (en efecto, no en tope del módulo)
+  const [shopDomain, setShopDomain] = useState(process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com");
+  useEffect(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      const fromQS = qs.get("shopDomain");
+      if (fromQS) return setShopDomain(fromQS);
+      if (document.referrer) {
+        const h = new URL(document.referrer).host;
+        if (h) setShopDomain(h);
+      }
+    } catch {}
+  }, []);
+
+  // State principal
   const [selectedColor, setSelectedColor] = useState("Cemento");
   const [activeSize, setActiveSize] = useState("Mediano");
   const [plants, setPlants] = useState([]);
@@ -246,11 +235,10 @@ export default function Home() {
   const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
   const designMetaRef = useRef(null);
-  const appliedMetaOnceRef = useRef(false);
   const restoredOnceRef = useRef(false);
   const userPickedSizeRef = useRef(false);
 
-  // Derived
+  // Derivados
   const selectedProduct = pots[selectedPotIndex] || {};
   const selectedVariant = useMemo(() => {
     if (selectedPotVariant) return selectedPotVariant;
@@ -258,7 +246,7 @@ export default function Home() {
     return v0 || null;
   }, [selectedPotVariant, selectedProduct]);
 
-  /* ---------- edit flag events ---------- */
+  /* ---------- Eventos editor ---------- */
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
@@ -274,14 +262,14 @@ export default function Home() {
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  // set CSS zoom var once mounted
+  // Set zoom var al montar
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     stage.style.setProperty("--zoom", String(zoomRef.current));
   }, []);
 
-  // Center horizontally on mobile container
+  // Centrado horizontal del contenedor
   useEffect(() => {
     const shell = sceneWrapRef?.current;
     if (!shell) return;
@@ -299,7 +287,7 @@ export default function Home() {
     return () => window.removeEventListener("resize", onR);
   }, []);
 
-  /* ---------- Zoom on wheel ---------- */
+  /* ---------- Zoom con rueda ---------- */
   useEffect(() => {
     const container = sceneWrapRef.current, stage = stageRef.current;
     if (!container || !stage) return;
@@ -331,7 +319,7 @@ export default function Home() {
     };
   }, []);
 
-  /* ---------- Fetch products by size ---------- */
+  /* ---------- Fetch productos por tamaño ---------- */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -382,50 +370,53 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [activeSize]);
 
-  /* ---------- Apply desired selection from meta/query once ---------- */
-  const applyDesiredSelection = () => {
-    if (restoredOnceRef.current) return;
-    if (!Array.isArray(pots) || !Array.isArray(plants)) return;
-    if (pots.length === 0 && plants.length === 0) return;
+  /* ---------- Aplicar selección deseada desde meta/query (una vez) ---------- */
+  useEffect(() => {
+    const applyDesiredSelection = () => {
+      if (restoredOnceRef.current) return;
+      if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+      if (pots.length === 0 && plants.length === 0) return;
 
-    const meta = designMetaRef.current || {};
-    const q = new URLSearchParams(window.location.search);
+      const meta = designMetaRef.current || {};
+      const q = new URLSearchParams(window.location.search);
 
-    const wantSize  = (q.get("size")  || meta.size  || meta.tamano || meta.tamaño || "").toLowerCase();
-    const wantPot   = (q.get("pot")   || q.get("potHandle")   || meta.potHandle   || meta.potTitle   || meta.potId   || "").toLowerCase();
-    const wantPlant = (q.get("plant") || q.get("plantHandle") || meta.plantHandle || meta.plantTitle || meta.plantId || "").toLowerCase();
+      const toStr = (v) => String(v || "").toLowerCase().trim();
+      const gidToNum = (id) => {
+        const s = String(id || "");
+        return s.includes("gid://") ? s.split("/").pop() : s;
+        };
 
-    const toStr = (v) => String(v || "").toLowerCase().trim();
-    const gidToNum = (id) => {
-      const s = String(id || "");
-      return s.includes("gid://") ? s.split("/").pop() : s;
+      const wantSize  = (q.get("size")  || meta.size  || meta.tamano || meta.tamaño || "").toLowerCase();
+      const wantPot   = (q.get("pot")   || q.get("potHandle")   || meta.potHandle   || meta.potTitle   || meta.potId   || "").toLowerCase();
+      const wantPlant = (q.get("plant") || q.get("plantHandle") || meta.plantHandle || meta.plantTitle || meta.plantId || "").toLowerCase();
+
+      const findIdx = (arr, key) => {
+        if (!key) return -1;
+        const k = toStr(key);
+        const kNum = gidToNum(k);
+        return arr.findIndex((p) => {
+          const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(toStr);
+          return ids.includes(k) || ids.includes(toStr(kNum));
+        });
+      };
+
+      let touched = false;
+      if (wantSize) {
+        if (wantSize.startsWith("p")) { setActiveSize("Pequeño"); touched = true; }
+        else if (wantSize.startsWith("m")) { setActiveSize("Mediano"); touched = true; }
+        else if (wantSize.startsWith("g")) { setActiveSize("Grande"); touched = true; }
+      }
+      const ip = findIdx(pots, wantPot);
+      if (ip >= 0) { setSelectedPotIndex(ip); touched = true; }
+      const il = findIdx(plants, wantPlant);
+      if (il >= 0) { setSelectedPlantIndex(il); touched = true; }
+      if (meta.color) { setSelectedColor(meta.color); touched = true; }
+      if (touched) restoredOnceRef.current = true;
     };
-    const findIdx = (arr, key) => {
-      if (!key) return -1;
-      const k = toStr(key);
-      const kNum = gidToNum(k);
-      return arr.findIndex((p) => {
-        const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(toStr);
-        return ids.includes(k) || ids.includes(toStr(kNum));
-      });
-    };
+    applyDesiredSelection();
+  }, [pots, plants]);
 
-    let touched = false;
-    if (wantSize) {
-      if (wantSize.startsWith("p")) { setActiveSize("Pequeño"); touched = true; }
-      else if (wantSize.startsWith("m")) { setActiveSize("Mediano"); touched = true; }
-      else if (wantSize.startsWith("g")) { setActiveSize("Grande"); touched = true; }
-    }
-    const ip = findIdx(pots, wantPot);
-    if (ip >= 0) { setSelectedPotIndex(ip); touched = true; }
-    const il = findIdx(plants, wantPlant);
-    if (il >= 0) { setSelectedPlantIndex(il); touched = true; }
-    if (meta.color) { setSelectedColor(meta.color); touched = true; }
-    if (touched) restoredOnceRef.current = true;
-  };
-  useEffect(() => { applyDesiredSelection(); }, [pots, plants]);
-
-  /* ---------- Color map ---------- */
+  /* ---------- Colores ---------- */
   const COLOR_MAP = useMemo(() => ({
     negro:"#000000", blanco:"#ffffff", gris:"#808080", "gris claro":"#bfbfbf", "gris oscuro":"#4a4a4a", plomo:"#9ea2a2",
     plata:"#c0c0c0", dorado:"#d4af37", cobre:"#b87333",
@@ -452,13 +443,14 @@ export default function Home() {
     return "#ccc";
   };
 
-  /* ---------- Pot variants → color options ---------- */
+  /* ---------- Variantes de maceta → opciones de color ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
     if (!pot) { setColorOptions([]); setSelectedPotVariant(null); return; }
     const valid = (pot.variants || []).filter((v) => !!v.image);
     const lower = (s) => (s ?? "").toString().trim().toLowerCase();
-    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value)))];
+    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || [])
+      .filter((o) => lower(o.name) === "color").map((o) => o.value)))];
     setColorOptions(colors);
     const match = (v, c) => {
       const opts = v.selectedOptions || [];
@@ -472,7 +464,7 @@ export default function Home() {
     setSelectedPotVariant(chosen || null);
   }, [pots, selectedPotIndex, selectedColor]);
 
-  /* ---------- Totals ---------- */
+  /* ---------- Totales ---------- */
   const totalNow = useMemo(() => {
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
@@ -500,21 +492,18 @@ export default function Home() {
     return (potCmp + plantCmp + accCmp) * quantity;
   }, [pots, plants, selectedPotIndex, selectedPlantIndex, selectedAccessoryIndices, quantity, selectedPotVariant]);
 
-  /* ---------- Capture design preview ---------- */
+  /* ---------- Captura de preview del diseño ---------- */
   async function captureDesignPreview() {
     const el = stageRef?.current;
     if (!el) return null;
     const { default: html2canvas } = await import("html2canvas");
     const onclone = (doc) => {
       const st = doc.querySelector('[data-capture-stage="1"]') || doc.body;
-      st.style.overflow = "visible";
-      st.style.clipPath = "none";
+      st.style.overflow = "visible"; st.style.clipPath = "none";
       const prune = (sel, keep) => {
-        const tr = doc.querySelector(sel);
-        if (!tr) return;
+        const tr = doc.querySelector(sel); if (!tr) return;
         Array.from(tr.children).forEach((node, i) => { if (i !== keep) node.remove(); });
-        tr.style.transform = "none";
-        tr.style.width = "100%";
+        tr.style.transform = "none"; tr.style.width = "100%";
       };
       prune('[data-capture="pot-track"]', selectedPotIndex);
       prune('[data-capture="plant-track"]', selectedPlantIndex);
@@ -527,13 +516,15 @@ export default function Home() {
     return canvas.toDataURL("image/png");
   }
 
-  /* ---------- Prepare attributes ---------- */
+  /* ---------- Atributos para carrito/checkout ---------- */
   async function prepareDesignAttributes() {
     let previewUrl = "";
     try {
       const dataUrl = await captureDesignPreview();
       if (dataUrl) {
-        const resp = await fetch("/api/upload-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) });
+        const resp = await fetch("/api/upload-design", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl })
+        });
         const json = await resp.json();
         if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
         previewUrl = json.url || "";
@@ -552,7 +543,7 @@ export default function Home() {
     ];
   }
 
-  /* ---------- Export design layer from Fabric ---------- */
+  /* ---------- Export PNG solo capa (Fabric) ---------- */
   async function exportDesignLayerPNG() {
     const api = window.doboDesignAPI;
     const c = api?.getCanvas?.();
@@ -589,6 +580,8 @@ export default function Home() {
       const layerDataURL = await exportDesignLayerPNG();
       if (!api) return { ok: false, error: "designer-not-ready" };
 
+      const { loadLocalDesign } = await getDesignExports();
+
       let snap = (
         api.exportDesignSnapshot?.() ??
         api.exportSnapshot?.() ??
@@ -621,13 +614,7 @@ export default function Home() {
       const r = await fetch("/api/publish-by-variant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          variantId,
-          previewDataURL,
-          layerDataURL,
-          design: snap,
-          meta,
-        }),
+        body: JSON.stringify({ variantId, previewDataURL, layerDataURL, design: snap, meta }),
       });
       const raw = await r.text();
       let j; try { j = JSON.parse(raw); } catch { j = { ok: false, error: raw }; }
@@ -641,7 +628,7 @@ export default function Home() {
     }
   }
 
-  /* ---------- Post cart helper ---------- */
+  /* ---------- Post a /cart/add de Shopify ---------- */
   function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     const asStr = (v) => String(v || "").trim();
     const isNum = (v) => /^\d+$/.test(asStr(v));
@@ -702,12 +689,13 @@ export default function Home() {
       })
       .filter((id) => /^\d+$/.test(id));
 
-  /* ---------- Actions ---------- */
+  /* ---------- Acciones ---------- */
   async function buildAndSaveDesignForCartCheckout() {
     const { designId, attributes } = await (async () => {
-      // Prefer Fabric snapshot export if editor exists
+      // Prefer Fabric snapshot export si existe
       const api = window.doboDesignAPI;
       if (api?.getCanvas) {
+        const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
         const previewDataUrl = await exportPreviewDataURL();
         const layerAllDataUrl = await exportLayerAllPNG();
         const layerTextDataUrl = await exportOnly("text");
@@ -732,7 +720,7 @@ export default function Home() {
           ],
         };
       }
-      // Fallback to DOM capture
+      // Fallback a captura DOM
       const attrs = await prepareDesignAttributes();
       return { designId: attrs.find((a) => a.key === "_DesignId")?.value || `dobo-${Date.now()}`, attributes: attrs };
     })();
@@ -789,13 +777,13 @@ export default function Home() {
       if (apiReady) { try { await publishDesignForVariant(dp.variantId); } catch {} }
 
       const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+      postCart(shopDomain, dp.variantId, quantity, attrs, accIds, "/checkout");
     } catch (e) {
       alert(`No se pudo iniciar el checkout: ${e.message}`);
     }
   }
 
-  /* ---------- Handlers for swipe/click halves ---------- */
+  /* ---------- Handlers de click/mitades para carrusel ---------- */
   const CLICK_STEP_PX = 8;
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
   const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -827,7 +815,7 @@ export default function Home() {
   const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
   const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
 
-  /* ---------- load from ?designUrl ---------- */
+  /* ---------- Cargar desde ?designUrl ---------- */
   useEffect(() => {
     (async () => {
       try {
@@ -875,350 +863,357 @@ export default function Home() {
   const baseCode = selectedPotVariant?.price?.currencyCode || "CLP";
 
   return (
-    <div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
-      <div className="row justify-content-center align-items-start gx-5 gy-4">
-        <div className="col-lg-5 col-md-8 col-12 text-center">
-          {/* Tamaño */}
-          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-            {["Pequeño", "Mediano", "Grande"].map((s) => (
-              <button
-                key={s}
-                className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
-                onClick={() => {
-                  userPickedSizeRef.current = true;
-                  appliedMetaOnceRef.current = true;
-                  setActiveSize(s);
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
+    <>
+      <Head>
+        <title>DOBO · Personaliza tu maceta</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Bootstrap por CDN (evita import CSS en SSR) */}
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          crossOrigin="anonymous"
+        />
+      </Head>
 
-          {/* Escena */}
-          <div
-            className="position-relative"
-            ref={sceneWrapRef}
-            style={{
-              width: "100%",
-              maxWidth: "500px",
-              aspectRatio: "500 / 650",
-              backgroundImage: "url('/images/fondo-dobo.jpg')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              border: "3px dashed #6c757d",
-              borderRadius: "20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-              touchAction: "pan-y",
-              userSelect: "none",
-            }}
-          >
-            {/* Dots & flechas PLANTAS */}
-            <IndicatorDots
-              count={plants.length}
-              current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-              position="top"
-            />
-            <button
-              className={`${styles.chev} ${styles.chevTopLeft}`}
-              aria-label="Anterior"
-              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-            <button
-              className={`${styles.chev} ${styles.chevTopRight}`}
-              aria-label="Siguiente"
-              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
+      <div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+        <div className="row justify-content-center align-items-start gx-5 gy-4">
+          <div className="col-lg-5 col-md-8 col-12 text-center">
+            {/* Tamaño */}
+            <div className="btn-group mb-3" role="group" aria-label="Tamaño">
+              {["Pequeño", "Mediano", "Grande"].map((s) => (
+                <button
+                  key={s}
+                  className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+                  onClick={() => { userPickedSizeRef.current = true; setActiveSize(s); }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
 
-            {/* Dots & flechas MACETAS */}
-            <IndicatorDots
-              count={pots.length}
-              current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-              position="bottom"
-            />
-            <button
-              className={`${styles.chev} ${styles.chevBottomLeft}`}
-              aria-label="Anterior"
-              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-            <button
-              className={`${styles.chev} ${styles.chevBottomRight}`}
-              aria-label="Siguiente"
-              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
-
-            {/* Nodo escalado con carruseles */}
+            {/* Escena */}
             <div
-              ref={stageRef}
-              data-capture-stage="1"
-              className="d-flex justify-content-center align-items-end"
+              className="position-relative"
+              ref={sceneWrapRef}
               style={{
-                height: "100%",
-                "--zoom": 0.75,
-                transform: "scale(var(--zoom))",
-                transformOrigin: "50% 70%",
-                willChange: "transform",
-                backfaceVisibility: "hidden",
+                width: "100%",
+                maxWidth: "500px",
+                aspectRatio: "500 / 650",
+                backgroundImage: "url('/images/fondo-dobo.jpg')",
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundRepeat: "no-repeat",
+                border: "3px dashed #6c757d",
+                borderRadius: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
                 touchAction: "pan-y",
                 userSelect: "none",
               }}
             >
-              {/* Macetas */}
-              <div
-                className={styles.carouselContainer}
-                ref={potScrollRef}
-                data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...potSwipeEvents}
+              {/* Dots & flechas PLANTAS */}
+              <IndicatorDots
+                count={plants.length}
+                current={selectedPlantIndex}
+                onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+                position="top"
+              />
+              <button
+                className={`${styles.chev} ${styles.chevTopLeft}`}
+                aria-label="Anterior"
+                onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
               >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
-                  {pots.map((product, idx) => {
-                    const isSel = idx === selectedPotIndex;
-                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
-                    const imageUrl = vImg || product.image;
-                    return (
-                      <div key={product.id || idx} className={styles.carouselItem}>
-                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Plantas */}
-              <div
-                className={styles.carouselContainer}
-                ref={plantScrollRef}
-                data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...plantSwipeEvents}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <button
+                className={`${styles.chev} ${styles.chevTopRight}`}
+                aria-label="Siguiente"
+                onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
               >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
-                  {plants.map((product, idx) => (
-                    <div key={product.id || idx} className={styles.carouselItem}>
-                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+              </button>
 
-          {/* Dock menú DOBO debajo de carruseles */}
-          <div id="dobo-menu-dock" className={styles.menuDock} />
-        </div>
+              {/* Dots & flechas MACETAS */}
+              <IndicatorDots
+                count={pots.length}
+                current={selectedPotIndex}
+                onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+                position="bottom"
+              />
+              <button
+                className={`${styles.chev} ${styles.chevBottomLeft}`}
+                aria-label="Anterior"
+                onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <button
+                className={`${styles.chev} ${styles.chevBottomRight}`}
+                aria-label="Siguiente"
+                onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+              </button>
 
-        {/* Overlay de edición */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
-
-        {/* Panel derecho */}
-        <div className="col-lg-5 col-md-8 col-12">
-          {pots.length > 0 && plants.length > 0 && (
-            <div className="text-center">
-              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
-                {totalBase > totalNow && (
-                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
-                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
-                  </p>
-                )}
-                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
-              </div>
-
-              {/* Color */}
-              {colorOptions.length > 0 && (
-                <div className="mb-4">
-                  <h5>Color</h5>
-                  <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    {colorOptions.map((color, index) => {
-                      const bg = resolveColor(color);
-                      const isWhite = bg.toLowerCase() === "#ffffff" || bg.toLowerCase() === "#fff";
-                      const isSelected = selectedColor === color;
+              {/* Nodo escalado con carruseles */}
+              <div
+                ref={stageRef}
+                data-capture-stage="1"
+                className="d-flex justify-content-center align-items-end"
+                style={{
+                  height: "100%",
+                  "--zoom": 0.75,
+                  transform: "scale(var(--zoom))",
+                  transformOrigin: "50% 70%",
+                  willChange: "transform",
+                  backfaceVisibility: "hidden",
+                  touchAction: "pan-y",
+                  userSelect: "none",
+                }}
+              >
+                {/* Macetas */}
+                <div
+                  className={styles.carouselContainer}
+                  ref={potScrollRef}
+                  data-capture="pot-container"
+                  style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                  onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                  onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                  onAuxClick={(e) => e.preventDefault()}
+                  onContextMenu={(e) => e.preventDefault()}
+                  {...potSwipeEvents}
+                >
+                  <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                    {pots.map((product, idx) => {
+                      const isSel = idx === selectedPotIndex;
+                      const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                      const imageUrl = vImg || product.image;
                       return (
-                        <div
-                          key={index}
-                          onClick={() => setSelectedColor(color)}
-                          title={color}
-                          aria-label={color}
-                          aria-selected={isSelected}
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: "50%",
-                            backgroundColor: bg,
-                            border: isSelected ? "3px solid #000" : (isWhite ? "1px solid #999" : "1px solid #ccc"),
-                            boxShadow: isSelected ? "0 0 0 3px rgba(0,0,0,0.15) inset" : "none",
-                            cursor: "pointer",
-                            transition: "transform .12s ease",
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Accesorios */}
-              {accessories && accessories.length > 0 && (
-                <div className="mb-4 mt-4">
-                  <h5>Accesorios</h5>
-                  <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    {accessories.map((product, index) => {
-                      const img =
-                        product?.image?.src || product?.image ||
-                        (Array.isArray(product?.images) && product.images[0]?.src) ||
-                        "/placeholder.png";
-                      const title = product?.title || product?.name || `Accesorio ${index + 1}`;
-                      const selected = selectedAccessoryIndices.includes(index);
-                      return (
-                        <div
-                          key={product?.id || index}
-                          onClick={(e) => {
-                            setSelectedAccessoryIndices((prev) =>
-                              prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
-                            );
-                            const cx = typeof e?.clientX === "number" ? e.clientX : 0;
-                            const cy = typeof e?.clientY === "number" ? e.clientY : 0;
-                            setAccPreview({
-                              visible: true,
-                              x: cx + 16,
-                              y: cy + 16,
-                              html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
-                            });
-                          }}
-                          onMouseEnter={(e) => {
-                            const cx = typeof e?.clientX === "number" ? e.clientX : 0;
-                            const cy = typeof e?.clientY === "number" ? e.clientY : 0;
-                            setAccPreview({
-                              visible: true,
-                              x: cx + 16,
-                              y: cy + 16,
-                              html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
-                            });
-                          }}
-                          onMouseMove={(e) =>
-                            setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
-                          }
-                          onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
-                          aria-label={title}
-                          style={{
-                            border: selected ? "3px solid black" : "1px solid #ccc",
-                            borderRadius: "12px",
-                            padding: "6px",
-                            cursor: "zoom-in",
-                            width: "100px",
-                            height: "100px",
-                            overflow: "hidden",
-                            transition: "transform 0.2s ease",
-                          }}
-                        >
-                          <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
+                        <div key={product.id || idx} className={styles.carouselItem}>
+                          <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
                         </div>
                       );
                     })}
                   </div>
                 </div>
-              )}
 
-              {/* Cantidad + botones */}
-              <div className="d-flex flex-column align-items-center mb-5">
-                <div className="mb-3 text-center">
-                  <label className="form-label d-block">Cantidad</label>
-                  <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
-                    <input
-                      type="number"
-                      className="form-control text-center"
-                      value={quantity}
-                      min="1"
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value, 10);
-                        if (isNaN(n) || n < 1) setQuantity(1);
-                        else if (n > 1000) setQuantity(1000);
-                        else setQuantity(n);
-                      }}
-                    />
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
-                  </div>
-
-                  <div className="d-flex gap-3 mt-3">
-                    <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
-                    <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                {/* Plantas */}
+                <div
+                  className={styles.carouselContainer}
+                  ref={plantScrollRef}
+                  data-capture="plant-container"
+                  style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                  onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+                  onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+                  onAuxClick={(e) => e.preventDefault()}
+                  onContextMenu={(e) => e.preventDefault()}
+                  {...plantSwipeEvents}
+                >
+                  <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                    {plants.map((product, idx) => (
+                      <div key={product.id || idx} className={styles.carouselItem}>
+                        <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
-          )}
 
-          {/* Descripciones */}
-          <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
-            <h6><strong>Planta</strong></h6>
-            {(() => {
-              const p = plants[selectedPlantIndex];
-              const html = p?.descriptionHtml;
-              const d = p?.description;
-              return html ? (
-                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
-              ) : (
-                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
-              );
-            })()}
+            {/* Dock menú DOBO */}
+            <div id="dobo-menu-dock" className={styles.menuDock} />
+          </div>
 
-            <h6 className="mt-3"><strong>Maceta</strong></h6>
-            {(() => {
-              const p = pots[selectedPotIndex];
-              const html = p?.descriptionHtml;
-              const d = p?.description;
-              return html ? (
-                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
-              ) : (
-                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
-              );
-            })()}
+          {/* Overlay de edición */}
+          <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+
+          {/* Panel derecho */}
+          <div className="col-lg-5 col-md-8 col-12">
+            {pots.length > 0 && plants.length > 0 && (
+              <div className="text-center">
+                <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
+                  {totalBase > totalNow && (
+                    <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
+                      <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
+                    </p>
+                  )}
+                  <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
+                </div>
+
+                {/* Color */}
+                {colorOptions.length > 0 && (
+                  <div className="mb-4">
+                    <h5>Color</h5>
+                    <div className="d-flex justify-content-center gap-3 flex-wrap">
+                      {colorOptions.map((color, index) => {
+                        const bg = resolveColor(color);
+                        const isWhite = bg.toLowerCase() === "#ffffff" || bg.toLowerCase() === "#fff";
+                        const isSelected = selectedColor === color;
+                        return (
+                          <div
+                            key={index}
+                            onClick={() => setSelectedColor(color)}
+                            title={color}
+                            aria-label={color}
+                            aria-selected={isSelected}
+                            style={{
+                              width: 40, height: 40, borderRadius: "50%",
+                              backgroundColor: bg,
+                              border: isSelected ? "3px solid #000" : (isWhite ? "1px solid #999" : "1px solid #ccc"),
+                              boxShadow: isSelected ? "0 0 0 3px rgba(0,0,0,0.15) inset" : "none",
+                              cursor: "pointer",
+                              transition: "transform .12s ease",
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Accesorios */}
+                {accessories && accessories.length > 0 && (
+                  <div className="mb-4 mt-4">
+                    <h5>Accesorios</h5>
+                    <div className="d-flex justify-content-center gap-3 flex-wrap">
+                      {accessories.map((product, index) => {
+                        const img =
+                          product?.image?.src || product?.image ||
+                          (Array.isArray(product?.images) && product.images[0]?.src) ||
+                          "/placeholder.png";
+                        const title = product?.title || product?.name || `Accesorio ${index + 1}`;
+                        const selected = selectedAccessoryIndices.includes(index);
+                        return (
+                          <div
+                            key={product?.id || index}
+                            onClick={(e) => {
+                              setSelectedAccessoryIndices((prev) =>
+                                prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+                              );
+                              const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                              const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                              setAccPreview({
+                                visible: true,
+                                x: cx + 16,
+                                y: cy + 16,
+                                html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                              });
+                            }}
+                            onMouseEnter={(e) => {
+                              const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                              const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                              setAccPreview({
+                                visible: true,
+                                x: cx + 16,
+                                y: cy + 16,
+                                html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                              });
+                            }}
+                            onMouseMove={(e) =>
+                              setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
+                            }
+                            onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
+                            aria-label={title}
+                            style={{
+                              border: selected ? "3px solid black" : "1px solid #ccc",
+                              borderRadius: "12px",
+                              padding: "6px",
+                              cursor: "zoom-in",
+                              width: "100px",
+                              height: "100px",
+                              overflow: "hidden",
+                              transition: "transform 0.2s ease",
+                            }}
+                          >
+                            <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Cantidad + botones */}
+                <div className="d-flex flex-column align-items-center mb-5">
+                  <div className="mb-3 text-center">
+                    <label className="form-label d-block">Cantidad</label>
+                    <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
+                      <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
+                      <input
+                        type="number"
+                        className="form-control text-center"
+                        value={quantity}
+                        min="1"
+                        onChange={(e) => {
+                          const n = parseInt(e.target.value, 10);
+                          if (isNaN(n) || n < 1) setQuantity(1);
+                          else if (n > 1000) setQuantity(1000);
+                          else setQuantity(n);
+                        }}
+                      />
+                      <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
+                    </div>
+
+                    <div className="d-flex gap-3 mt-3">
+                      <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
+                      <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Descripciones */}
+            <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
+              <h6><strong>Planta</strong></h6>
+              {(() => {
+                const p = plants[selectedPlantIndex];
+                const html = p?.descriptionHtml;
+                const d = p?.description;
+                return html ? (
+                  <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+                ) : (
+                  <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+                );
+              })()}
+
+              <h6 className="mt-3"><strong>Maceta</strong></h6>
+              {(() => {
+                const p = pots[selectedPotIndex];
+                const html = p?.descriptionHtml;
+                const d = p?.description;
+                return html ? (
+                  <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+                ) : (
+                  <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+                );
+              })()}
+            </div>
           </div>
         </div>
+
+        {/* Preview flotante accesorios */}
+        <IframePreview
+          visible={accPreview.visible}
+          x={accPreview.x}
+          y={accPreview.y}
+          html={accPreview.html}
+        />
+
+        <style jsx>{`
+          .pot-carousel--locked {
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-drag: none;
+            touch-action: none;
+            overflow: hidden !important;
+            scrollbar-width: none;
+          }
+          .pot-carousel--locked::-webkit-scrollbar { display: none; }
+        `}</style>
       </div>
-
-      {/* Preview flotante accesorios */}
-      <IframePreview
-        visible={accPreview.visible}
-        x={accPreview.x}
-        y={accPreview.y}
-        html={accPreview.html}
-      />
-
-      <style jsx>{`
-        .pot-carousel--locked {
-          pointer-events: none;
-          user-select: none;
-          -webkit-user-drag: none;
-          touch-action: none;
-          overflow: hidden !important;
-          scrollbar-width: none;
-        }
-        .pot-carousel--locked::-webkit-scrollbar { display: none; }
-      `}</style>
-    </div>
+    </>
   );
 }
