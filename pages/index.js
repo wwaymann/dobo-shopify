@@ -5,6 +5,20 @@ import Head from "next/head";
 import styles from "../styles/home.module.css";
 import dynamic from "next/dynamic";
 
+// ---- TDZ-safe: lazy import heavy designStore to avoid circular/TDZ at hydration ----
+async function getDesignExports() {
+  const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
+    const mod = await import("@/lib/designStore");
+  return {
+    exportPreviewDataURL: mod.exportPreviewDataURL,
+    dataURLtoBase64Attachment: mod.dataURLtoBase64Attachment,
+    loadLocalDesign: mod.loadLocalDesign,
+    exportLayerAllPNG: mod.exportLayerAllPNG,
+    exportOnly: mod.exportOnly,
+  };
+}
+
+
 // Overlay / Editor (Fabric.js, client-only)
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
 
@@ -28,7 +42,8 @@ const productMin = (p) => num(p?.minPrice);
 
 // Carga DIFERIDA de designStore para romper ciclos/TDZ
 async function getDesignExports() {
-  const mod = await import("../lib/designStore");
+  const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
+    const mod = await import("../lib/designStore");
   return {
     exportPreviewDataURL: mod.exportPreviewDataURL,
     dataURLtoBase64Attachment: mod.dataURLtoBase64Attachment,
@@ -157,7 +172,8 @@ async function uploadDataUrl(dataUrl, filename = `file-${Date.now()}.png`) {
 }
 
 async function withTimeout(promise, ms) {
-  return Promise.race([
+  const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
+    return Promise.race([
     promise,
     new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms)),
   ]);
@@ -494,6 +510,7 @@ export default function Home() {
 
   /* ---------- Captura de preview del diseño ---------- */
   async function captureDesignPreview() {
+    const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
     const el = stageRef?.current;
     if (!el) return null;
     const { default: html2canvas } = await import("html2canvas");

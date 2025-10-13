@@ -1,6 +1,20 @@
 "use client";
 import React, { useEffect, useState } from "react";
 
+// ---- TDZ-safe: lazy import heavy designStore to avoid circular/TDZ at hydration ----
+async function getDesignExports() {
+  const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
+    const mod = await import("@/lib/designStore");
+  return {
+    exportPreviewDataURL: mod.exportPreviewDataURL,
+    dataURLtoBase64Attachment: mod.dataURLtoBase64Attachment,
+    loadLocalDesign: mod.loadLocalDesign,
+    exportLayerAllPNG: mod.exportLayerAllPNG,
+    exportOnly: mod.exportOnly,
+  };
+}
+
+
 export default function CustomizationOverlay(props) {
   const [Impl, setImpl] = useState(null);
 

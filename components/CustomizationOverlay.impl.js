@@ -5,6 +5,20 @@ import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
 import { applyRelief2DFromURLs } from "../lib/relief2d";
 
+// ---- TDZ-safe: lazy import heavy designStore to avoid circular/TDZ at hydration ----
+async function getDesignExports() {
+  const { exportPreviewDataURL, exportLayerAllPNG, exportOnly } = await getDesignExports();
+    const mod = await import("@/lib/designStore");
+  return {
+    exportPreviewDataURL: mod.exportPreviewDataURL,
+    dataURLtoBase64Attachment: mod.dataURLtoBase64Attachment,
+    loadLocalDesign: mod.loadLocalDesign,
+    exportLayerAllPNG: mod.exportLayerAllPNG,
+    exportOnly: mod.exportOnly,
+  };
+}
+
+
 // ============ Zoom opcional por canvas ============
 export function useCanvasZoom(canvas, stageRef, zoomRef) {
   useEffect(() => {
