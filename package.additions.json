@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "__ensure-babel-deps": "node -e \"try{require('@babel/parser')&&require('@babel/traverse')&&require('@babel/generator');}catch(e){process.exit(0)}\"",
+    "__ensure-babel-deps": "node -e \"try{require('@babel/parser')&&require('@babel/traverse')&&require('@babel/generator')&&process.exit(0)}catch(e){process.exit(0)}\"",
     "prebuild": "node scripts/prebuild-tdz.cjs"
   },
   "devDependencies": {
