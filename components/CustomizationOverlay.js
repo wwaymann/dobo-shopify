@@ -1,7 +1,9 @@
 "use client";
 import React, { useEffect, useState } from "react";
+
 export default function CustomizationOverlay(props) {
   const [Impl, setImpl] = useState(null);
+
   useEffect(() => {
     let mounted = true;
     import("./CustomizationOverlay.impl")
@@ -9,6 +11,7 @@ export default function CustomizationOverlay(props) {
       .catch((err) => { console.error("[CustomizationOverlay] load error:", err); setImpl(() => () => null); });
     return () => { mounted = false; };
   }, []);
+
   if (!Impl) {
     return (
       <div style={{ marginTop: 12 }}>
