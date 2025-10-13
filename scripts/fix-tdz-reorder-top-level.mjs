@@ -4,7 +4,6 @@ import path from "node:path";
 import * as parser from "@babel/parser";
 import traverse from "@babel/traverse";
 import generate from "@babel/generator";
-
 const file = process.argv[2];
 if (!file) {
   console.error("Usage: node scripts/fix-tdz-reorder-top-level.mjs <path/to/file.js>");
@@ -12,15 +11,12 @@ if (!file) {
 }
 const abs = path.resolve(file);
 const src = fs.readFileSync(abs, "utf8");
-
 const ast = parser.parse(src, {
   sourceType: "module",
   plugins: ["jsx", "classProperties", "objectRestSpread", "optionalChaining", "nullishCoalescingOperator", "topLevelAwait"]
 });
-
 const stmtPaths = [];
 const declInfos = new Map();
-
 traverse.default(ast, {
   enter(p) {
     if (p.parentPath && p.parentPath.isProgram() && p.node && !stmtPaths.includes(p)) {
@@ -42,7 +38,6 @@ traverse.default(ast, {
     }
   }
 });
-
 const firstRef = new Map();
 traverse.default(ast, {
   Identifier(p) {
@@ -62,12 +57,10 @@ traverse.default(ast, {
     if (!current || idx < current.index) firstRef.set(name, { stmtPath: sp, index: idx });
   }
 });
-
 function moveBefore(targetPath, toBeforePath) {
   targetPath.remove();
   toBeforePath.insertBefore(targetPath.node);
 }
-
 let moved = 0;
 for (const [name, refInfo] of firstRef.entries()) {
   const decl = declInfos.get(name);
@@ -78,7 +71,6 @@ for (const [name, refInfo] of firstRef.entries()) {
     moved++;
   }
 }
-
 if (moved > 0) {
   fs.writeFileSync(abs + ".bak2", src, "utf8");
   const out = generate.default(ast, { retainLines: true }).code;
