@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "prebuild": "node scripts/prebuild-tdz.cjs"
+    "prebuild": "node scripts/prebuild-tdz.cjs",
+     "vercel-build": "npm run build"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.5",
