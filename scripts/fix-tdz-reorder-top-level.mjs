@@ -1,8 +1,4 @@
 // scripts/fix-tdz-reorder-top-level.mjs
-// Moves top-level const/let/class declarations earlier, before their first reference,
-// to avoid TDZ when some code references them above their declaration.
-// Requires: npm i -D @babel/parser @babel/traverse @babel/generator
-
 import fs from "node:fs";
 import path from "node:path";
 import * as parser from "@babel/parser";
@@ -22,18 +18,11 @@ const ast = parser.parse(src, {
   plugins: ["jsx", "classProperties", "objectRestSpread", "optionalChaining", "nullishCoalescingOperator", "topLevelAwait"]
 });
 
-// Collect top-level declarations
-const body = ast.program.body;
-const declInfos = new Map(); // name -> {stmtIndex, stmtPath}
-const stmtPaths = []; // to allow reordering
-let programPathRef = null;
+const stmtPaths = [];
+const declInfos = new Map();
 
 traverse.default(ast, {
-  Program(p) {
-    programPathRef = p;
-  },
   enter(p) {
-    // record statement path order for reordering later
     if (p.parentPath && p.parentPath.isProgram() && p.node && !stmtPaths.includes(p)) {
       stmtPaths.push(p);
     }
@@ -42,48 +31,39 @@ traverse.default(ast, {
     if (!p.parentPath || !p.parentPath.isProgram()) return;
     for (const d of p.node.declarations) {
       if (d.id && d.id.type === "Identifier") {
-        declInfos.set(d.id.name, { stmtPath: p, kind: p.node.kind });
+        declInfos.set(d.id.name, { stmtPath: p });
       }
     }
   },
   ClassDeclaration(p) {
     if (!p.parentPath || !p.parentPath.isProgram()) return;
     if (p.node.id) {
-      declInfos.set(p.node.id.name, { stmtPath: p, kind: "class" });
+      declInfos.set(p.node.id.name, { stmtPath: p });
     }
   }
 });
 
-// Find earliest reference for each binding
-const firstRef = new Map(); // name -> { stmtPath, index }
+const firstRef = new Map();
 traverse.default(ast, {
   Identifier(p) {
     const name = p.node.name;
     if (!declInfos.has(name)) return;
-    // skip the declaration identifiers themselves
     const parent = p.parent;
     if (
       (p.parentPath.isVariableDeclarator() && parent.id === p.node) ||
       (p.parentPath.isClassDeclaration() && parent.id === p.node) ||
       (p.parentPath.isFunctionDeclaration() && parent.id === p.node)
     ) return;
-
-    // ascend to top-level statement
     let sp = p.parentPath;
     while (sp && !sp.isProgram()) sp = sp.parentPath;
     if (!sp) return;
-    // note first occurrence order
     const idx = stmtPaths.indexOf(sp);
     const current = firstRef.get(name);
-    if (!current || idx < current.index) {
-      firstRef.set(name, { stmtPath: sp, index: idx });
-    }
+    if (!current || idx < current.index) firstRef.set(name, { stmtPath: sp, index: idx });
   }
 });
 
-// Reorder: for any name whose decl stmt appears AFTER firstRef stmt, move decl BEFORE firstRef stmt
 function moveBefore(targetPath, toBeforePath) {
-  // Remove and reinsert
   targetPath.remove();
   toBeforePath.insertBefore(targetPath.node);
 }
@@ -100,8 +80,8 @@ for (const [name, refInfo] of firstRef.entries()) {
 }
 
 if (moved > 0) {
-  const out = generate.default(ast, { retainLines: true }).code;
   fs.writeFileSync(abs + ".bak2", src, "utf8");
+  const out = generate.default(ast, { retainLines: true }).code;
   fs.writeFileSync(abs, out, "utf8");
   console.log(`✓ Moved ${moved} top-level declarations before their first reference in ${file}`);
 } else {
