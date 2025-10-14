@@ -745,43 +745,65 @@ export default function HomePage() {
     }
   }
 
-  async function buyNow() {
-    try {
-      try { await withTimeout(sendEmailLayers(), 8000); } catch {}
-      const attrs = await prepareDesignAttributes();
+async function createDesignProductSafe(payload) {
+  // Llama a tu /api/design-product y lanza errores legibles si hay userErrors o 4xx/5xx
+  const res = await fetch("/api/design-product", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const rawText = await res.text();
+  let json;
+  try { json = JSON.parse(rawText); } catch { json = { ok: false, error: rawText || `HTTP ${res.status}` }; }
 
-      const potPrice = selectedPotVariant?.price
-        ? num(selectedPotVariant.price)
-        : firstVariantPrice(pots[selectedPotIndex]);
-      const plantPrice = productMin(plants[selectedPlantIndex]);
-      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-
-      const dpRes = await fetch("/api/design-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
-          price: basePrice,
-          color: selectedColor || "Único",
-          size: activeSize || "Único",
-          designId: attrs.find(a => a.key === "_DesignId")?.value,
-          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-          potTitle: pots[selectedPotIndex]?.title || "Maceta",
-        }),
-      });
-      const dp = await dpRes.json();
-      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-
-      const apiReady = await waitDesignerReady(20000).catch(() => false);
-      if (apiReady) { try { await publishDesignForVariant(dp.variantId); } catch {} }
-
-      const accIds = getAccessoryVariantIds();
-      postCart(shopDomain, dp.variantId, quantity, attrs, accIds, "/checkout");
-    } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e.message}`);
-    }
+  if (!res.ok || !json?.variantId) {
+    const detail = json?.error || (json?.userErrors && JSON.stringify(json.userErrors)) || `HTTP ${res.status}`;
+    throw new Error(`shopify-graphql-error: ${detail}`);
   }
+  return json; // { variantId, productId? ... }
+}
+
+  
+async function buyNow() {
+  try {
+    // 1) Prepara atributos (preview, ids, color, size, etc.)
+    const attrs = await prepareDesignAttributes();
+
+    // 2) Calcula precio (como string, sin decimales para CLP)
+    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice = Math.max(1, Math.round((potPrice + plantPrice) * quantity)); // Evita "0" que rompe
+    const priceStr = String(basePrice);
+
+    // 3) Intenta crear producto de diseño vía tu API
+    const dp = await createDesignProductSafe({
+      title: `DOBO ${plants[selectedPlantIndex]?.title || "Planta"} + ${pots[selectedPotIndex]?.title || "Maceta"}`,
+      previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
+      price: priceStr,
+      color: selectedColor || "Único",
+      size: activeSize || "Único",
+      designId: attrs.find(a => a.key === "_DesignId")?.value || `dobo-${Date.now()}`,
+      plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+      potTitle: pots[selectedPotIndex]?.title || "Maceta",
+    });
+
+    // 4) Si se creó, publica (si tu API lo hace) y usa ese variante para el carrito
+    const accIds = getAccessoryVariantIds();
+    const mainVariant = dp?.variantId || selectedVariant?.id; // fallback por si acaso
+    postCart(SHOP_DOMAIN, mainVariant, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    console.warn("GraphQL falló; usando fallback al variante seleccionado:", e);
+    // Fallback: usar el variante actual + properties (no requiere Admin API)
+    const attrs = await prepareDesignAttributes();
+    const accIds = getAccessoryVariantIds();
+    if (!selectedVariant?.id) {
+      alert("No se pudo iniciar el checkout: no hay variante seleccionada.");
+      return;
+    }
+    postCart(SHOP_DOMAIN, selectedVariant.id, quantity, attrs, accIds, "/checkout");
+  }
+}
+
 
   /* ---------- Handlers de click/mitades para carrusel ---------- */
   const CLICK_STEP_PX = 8;
