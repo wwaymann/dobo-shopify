@@ -1,175 +1,101 @@
 // pages/api/design-product.js
-export const runtime = 'nodejs';
-export const config = { api: { bodyParser: { sizeLimit: '10mb' } } };
+// Crea o asegura un "producto DOBO" con una sola variante para el diseño actual.
+// Requiere: process.env.SHOPIFY_ADMIN_TOKEN (Admin) y process.env.SHOPIFY_SHOP (p.ej "um7xus-0u.myshopify.com")
+// Opcional: process.env.SHOPIFY_PUBLICATION_ID para publicar en un canal específico.
 
-
-
-// --- Admin API version (override with env if needed)
-const ADMIN_VER = process.env.SHOPIFY_ADMIN_API_VERSION || '2025-07';
-
-const toGid = (kind, id) => {
-  const s = String(id||'').trim();
-  return s.startsWith('gid://') ? s : `gid://shopify/${kind}/${s}`;
-};
-/* ================= env ================= */
-function pickEnv() {
-  const token =
-    process.env.SHOPIFY_ADMIN_TOKEN ||
-    process.env.SHOPIFY_ADMIN_API_TOKEN || '';
-  const shop =
-    process.env.SHOPIFY_SHOP ||
-    process.env.SHOPIFY_SHOP_DOMAIN ||
-    process.env.SHOP_DOMAIN || '';
-  const publicationId = process.env.SHOPIFY_PUBLICATION_ID || '';
-  const url = shop ? `https://${shop}/admin/api/${ADMIN_VER}/graphql.json` : '';
-  return { token, shop, url, publicationId };
-}
-
-/* ================ fetch ================ */
-async function shopifyFetch(query, variables) {
-  const { token, url } = pickEnv();
-  if (!token || !url) {
-    const e = new Error('env-missing'); e.stage = 'env'; throw e;
-  }
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type':'application/json', 'X-Shopify-Access-Token': token },
-    body: JSON.stringify({ query, variables }),
-  });
-  const text = await r.text();
-  let j = null; try { j = JSON.parse(text); } catch {}
-if (!r.ok || !j || j.errors) {
-  console.error('GRAPHQL_ERROR/design-product', { status: r.status, body: text });
-  const e = new Error('shopify-graphql-error');
-  e.stage = 'graphql';
-  e.details = { status: r.status, body: text };
-  throw e;
-}
-
-  return j.data;
-}
-
-/* ================ GQL ================== */
-const GQL_PRODUCT_UPDATE =
-  "mutation productUpdate($id: ID!, $input: ProductInput!) { productUpdate(id:$id, input:$input) { userErrors { field message } } }";
-
-const GQL_TAGS_ADD =
-  "mutation tagsAdd($id: ID!, $tags: [String!]!) { tagsAdd(id:$id, tags:$tags) { userErrors { field message } } }";
-
-
-const GQL_PRODUCT_CREATE =
-  "mutation productCreate($input: ProductInput!) { productCreate(input: $input) { product { id handle variants(first:1) { nodes { id } } } userErrors { field message } } }";
-
-const GQL_PUBLISH =
-  "mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) { publishablePublish(id: $id, input: $input) { userErrors { field message } } }";
-
-/* =============== helpers =============== */
-const toMoney = (n) => {
-  const v = Number(n || 0);
-  return v.toFixed(2); // Shopify espera string con 2 decimales
-};
-
-/* ================ handler =============== */
 export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method-not-allowed" });
+
   try {
-    if (req.method !== 'POST') return res.status(405).json({ ok:false, error:'method-not-allowed' });
+    const { title, price, previewUrl, color, size, designId, potTitle, plantTitle } = req.body || {};
+    const shop = process.env.SHOPIFY_SHOP;
+    const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
 
-    // Env requeridas para este endpoint
-    const REQUIRED = ['SHOPIFY_SHOP','SHOPIFY_ADMIN_TOKEN','SHOPIFY_PUBLICATION_ID'];
-    const missing = REQUIRED.filter(n => !process.env[n] || String(process.env[n]).trim()==='');
-    if (missing.length) return res.status(400).json({ ok:false, error:'env-missing', missing });
-
-    const { publicationId } = pickEnv();
-
-    // Payload mínimo desde el front
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    const {
-      quantity = 1,
-      attributes = [],         // array de { key, value } (lo devuelves al front; Shopify no lo usa aquí)
-      basePrice = 0,
-      plantTitle = 'Planta',
-      potTitle = 'Maceta'
-    } = body;
-
-    const title = `${potTitle} + ${plantTitle}`.trim();
-    const price = toMoney(basePrice);
-
-//    // 1) Crear producto con 1 variante y precio
-//    const create = await shopifyFetch(GQL_PRODUCT_CREATE, {
-//      input: {
-//        title,
-//        status: 'DRAFT',
-//        variants: [{ price, requiresShipping: true }],
-//        // opcional: tags para rastrear
-//        tags: ['DOBO', 'custom-design']
-//      }
-//    });
-
-    // 1) Crear producto mínimo con 1 variante
-const create = await shopifyFetch(GQL_PRODUCT_CREATE, {
-  input: {
-    title,
-    variants: [{ price: String(price) }], // solo precio
-  }
-});
-
-    
-
-    const uerr = create?.productCreate?.userErrors || [];
-    if (uerr.length) {
-      return res.status(400).json({ ok:false, error:'productCreate-errors', details:uerr });
+    if (!shop || !adminToken) {
+      return res.status(500).json({ ok: false, error: "missing-admin-credentials" });
     }
 
-  const productId = create?.productCreate?.product?.id || null;
-const variantId = create?.productCreate?.product?.variants?.nodes?.[0]?.id || null;
-if (!productId || !variantId) return res.status(500).json({ ok:false, error:'missing-product-or-variant' });
+    // 1) Crear producto con 1 variante
+    const endpoint = `https://${shop}/admin/api/2024-07/graphql.json`;
+    const q = `mutation productCreate($input: ProductInput!) {
+      productCreate(input: $input) {
+        product { id title handle variants(first:1){nodes{id title sku}} }
+        userErrors{ field message }
+      }
+    }`;
+    const input = {
+      title: title || `DOBO ${plantTitle || ""} + ${potTitle || ""}`.trim(),
+      status: "ACTIVE",
+      variants: [{
+        title: `${color || "Único"} / ${size || "Único"}`,
+        price: String(price || 0),
+        sku: designId || `dobo-${Date.now()}`,
+        inventoryPolicy: "CONTINUE",
+      }],
+      // Opcional: descripción corta (sin imágenes pesadas)
+      descriptionHtml: `<p>DOBO personalizado · Color: ${color || "Único"} · Tamaño: ${size || "Único"}</p>`,
+    };
 
-// 2a) status (ej: 'DRAFT' | 'ACTIVE' | 'ARCHIVED')
-try {
-  const upd = await shopifyFetch(GQL_PRODUCT_UPDATE, {
-    id: productId,
-    input: { status: 'DRAFT' }   // ← cambia a lo que necesites
-  });
-  const e = upd?.productUpdate?.userErrors || [];
-  if (e.length) console.warn('productUpdate', e);
-} catch (e) { console.warn('productUpdate skipped', e?.details || e?.message); }
-
-// 2b) tags
-try {
-  const tagRes = await shopifyFetch(GQL_TAGS_ADD, {
-    id: productId,
-    tags: ['DOBO','custom-design']  // ← tus tags
-  });
-  const e = tagRes?.tagsAdd?.userErrors || [];
-  if (e.length) console.warn('tagsAdd', e);
-} catch (e) { console.warn('tagsAdd skipped', e?.details || e?.message); }
-
-
-    // Devuelve datos esenciales al front
-    return res.status(200).json({
-      ok: true,
-      variantId,        // GID de la variante creada
-      productId,        // GID del producto
-      handle,           // para debug
-      // eco opcional
-      title,
-      price,
-      quantity,
-      attributes
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": adminToken,
+      },
+      body: JSON.stringify({ query: q, variables: { input } }),
     });
+    const j = await resp.json();
+    const err = j?.data?.productCreate?.userErrors?.[0]?.message || j?.errors?.[0]?.message;
+    const product = j?.data?.productCreate?.product;
+    if (!resp.ok || err || !product) {
+      return res.status(500).json({ ok: false, error: err || `admin-http-${resp.status}` });
+    }
 
-  } catch (err) {
-    const code = err?.stage === 'env' ? 400 : 500;
-    return res.status(code).json({
-      ok:false,
-      error:String(err?.message||err||'error'),
-      stage:err?.stage||null,
-      details:err?.details||null,
-    });
+    const variantId = product?.variants?.nodes?.[0]?.id;
+
+    // 2) Publicación opcional
+    try {
+      const pubId = process.env.SHOPIFY_PUBLICATION_ID;
+      if (pubId) {
+        const qPub = `mutation publishablePublish($id: ID!, $pubId: ID!) {
+          publishablePublish(id: $id, input: {publicationId: $pubId}){
+            publishable { ... on Product { id title } }
+            userErrors { field message }
+          }
+        }`;
+        await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": adminToken,
+          },
+          body: JSON.stringify({ query: qPub, variables: { id: product.id, pubId } }),
+        });
+      }
+    } catch {}
+
+    // 3) (Opcional) subir media del preview como imagen en el producto, sin bloquear el flujo
+    if (previewUrl) {
+      try {
+        const mediaQ = `mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+          productCreateMedia(productId: $productId, media: $media) {
+            media{preview{image{url}}}
+            mediaUserErrors{ field message }
+          }
+        }`;
+        await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": adminToken },
+          body: JSON.stringify({
+            query: mediaQ,
+            variables: { productId: product.id, media: [{ originalSource: previewUrl }] },
+          }),
+        });
+      } catch {}
+    }
+
+    return res.status(200).json({ ok: true, productId: product.id, variantId });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 }
-
-
-
-
-
