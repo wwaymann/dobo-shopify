@@ -10,7 +10,7 @@ import { cartCreateAndRedirect } from "../lib/shopifyStorefront";
 
 import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
 // --- helpers: colócalos una sola vez (arriba del componente) ---
-import { getShopDomain } from "../lib/shopDomain"; // Asegúrate que existe
+
 
 const toGid = (id) =>
   String(id || "").includes("gid://")
