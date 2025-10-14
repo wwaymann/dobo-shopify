@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 
 import { cartCreateAndRedirect } from "../lib/shopifyStorefront";
 
+import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 
 import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
 // --- helpers: colócalos una sola vez (arriba del componente) ---
@@ -871,7 +872,7 @@ async function createDesignProductSafe(payload) {
 // --- reemplaza COMPLETO tu buyNow por este ---
 async function buyNow() {
   try {
-    // 1) Construir attrs del diseño (si no tienes helpers, queda mínimo)
+    // 1) Atributos del diseño
     let attrs = [];
     try {
       if (typeof buildAndSaveDesignForCartCheckout === "function") {
@@ -890,17 +891,19 @@ async function buyNow() {
       attrs = [{ key: "DesignId", value: nowId }, { key: "_LinePriority", value: "0" }];
     }
 
-    // 2) Variante principal (maceta) y accesorios
-    const chosenVariant =
+    // 2) Variante principal y accesorios
+    const chosen =
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
       null;
-    if (!chosenVariant) throw new Error("variant-missing");
+    if (!chosen) throw new Error("variant-missing");
 
-    const accVariantIds = (typeof getAccessoryVariantIds === "function" ? getAccessoryVariantIds() : [])
-      .filter(Boolean);
+    const accIds = (typeof getAccessoryVariantIds === "function"
+      ? getAccessoryVariantIds()
+      : []
+    ).filter(Boolean);
 
-    // 3) (Opcional) Crear producto de diseño; si falla no bloquea
+    // 3) (Opcional) crear “producto de diseño”; no bloquea
     let designVariantGid = null;
     try {
       const potPrice = selectedVariant?.price
@@ -951,23 +954,22 @@ async function buyNow() {
       console.warn("design-product request error:", e);
     }
 
-    // 4) Armar líneas de carrito y redirigir con Storefront
+    // 4) Armar líneas y redirigir con Storefront (nada de /cart/add)
     const lines = [];
 
-    // Línea principal (o la de diseño si existe)
+    // Línea principal
     lines.push({
-      merchandiseId: designVariantGid || chosenVariant,
+      merchandiseId: designVariantGid || chosen,
       quantity: Math.max(1, Number(quantity || 1)),
       attributes: [
         { key: "DesignColor", value: String(selectedColor || "") },
         { key: "DesignSize", value: String(activeSize || "") },
-        // agrega attrs del editor si quieres
         ...attrs.map(a => ({ key: String(a.key || ""), value: String(a.value ?? "") })),
       ],
     });
 
     // Accesorios
-    for (const aid of accVariantIds) {
+    for (const aid of accIds) {
       lines.push({ merchandiseId: aid, quantity: 1 });
     }
 
@@ -977,12 +979,12 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
     if (String(e?.message || "").includes("shopify-graphql-error")) {
       console.warn(
-        "Sospecha: el variant no está publicado en Online Store o no está disponible. " +
-        "Verifica en Shopify Admin → Producto → Manage sales channels → Online Store (habilitado)."
+        "Sospecha: token Storefront inválido, variant no publicado en Online Store, o el ID no es un GID."
       );
     }
   }
 }
+
 
 
 
