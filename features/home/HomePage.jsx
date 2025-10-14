@@ -1,11 +1,15 @@
 // features/home/HomePage.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Head from "next/head";
 import styles from "../../styles/home.module.css";
-import { cartCreateAndRedirect, toGid, postCart } from "../../lib/checkout";
+
+import { cartCreateAndRedirect, postCart, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
-const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
+const CustomizationOverlay = dynamic(
+  () => import("../../components/CustomizationOverlay"),
+  { ssr: false }
+);
 
 const money = (amount, currency = "CLP") =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
@@ -114,58 +118,98 @@ export default function HomePage() {
   }
 
   // --- flujo Comprar Ahora (cartCreate -> redirect) ---
-  async function buyNow() {
+ async function buyNow() {
+  try {
+    // 1) atributos del diseño
+    let attrs = [];
     try {
-      const pot = pots[selectedPotIndex];
-      const plant = plants[selectedPlantIndex];
-      const variantId = selectedPotVariant?.id || pot?.variants?.[0]?.id;
-      if (!variantId) throw new Error("variant-missing");
-
-      // Opcional: crear producto DOBO por API Admin (no bloquea checkout).
-      let createRes = null;
-      try {
-        const attrs = buildShortAttributes();
-        const resp = await fetch("/api/design-product", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: attrs.find(a => a.key === "_DesignName")?.value,
-            previewUrl: "", // si luego agregas html2canvas, pásalo aquí
-            price: Number(totalNow.toFixed(0)),
-            color: selectedColor,
-            size: activeSize,
-            designId: attrs.find(a => a.key === "_DesignId")?.value,
-            plantTitle: plant?.title,
-            potTitle: pot?.title,
-          }),
-        });
-        createRes = await resp.json().catch(() => null);
-      } catch (e) {
-        console.warn("design-product failed (non-blocking):", e);
+      if (typeof buildAndSaveDesignForCartCheckout === "function") {
+        const r = await buildAndSaveDesignForCartCheckout();
+        attrs = r?.attributes || [];
+      } else if (typeof prepareDesignAttributes === "function") {
+        attrs = await prepareDesignAttributes();
       }
+    } catch {}
 
-      const doboVariant = createRes?.variantId || variantId;
-      const attrs = buildShortAttributes();
-
-      const lines = [
-        {
-          merchandiseId: toGid(doboVariant),
-          quantity: quantity,
-          attributes: attrs.map(a => ({ key: a.key, value: String(a.value || "") })),
-        },
-        // accesorios (1 c/u)
-        ...getAccessoryVariantIds().map((id) => ({
-          merchandiseId: toGid(id),
-          quantity: 1,
-          attributes: [{ key: "_Accessory", value: "true" }],
-        })),
-      ];
-
-      await cartCreateAndRedirect(lines);
-    } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
+    // Nombre corto/Id del DOBO para ver en checkout
+    const designId =
+      (attrs.find(a => (a.key || "").toLowerCase().includes("designid"))?.value) ||
+      `dobo-${Date.now()}`;
+    const designName = `DOBO ${plants?.[selectedPlantIndex]?.title || ""} + ${pots?.[selectedPotIndex]?.title || ""}`;
+    if (!attrs.some(a => (a.key || "").toLowerCase() === "designname" || (a.key || "").toLowerCase() === "_designname")) {
+      attrs.push({ key: "DesignName", value: designName });
     }
+    if (!attrs.some(a => (a.key || "").toLowerCase() === "designid" || (a.key || "").toLowerCase() === "_designid")) {
+      attrs.push({ key: "DesignId", value: designId });
+    }
+
+    // 2) Intento de crear "producto DOBO" (no bloquea si falla)
+    let createdVariant = null;
+    try {
+      const potPrice = Number(
+        selectedVariant?.price?.amount ?? selectedVariant?.price ??
+        pots?.[selectedPotIndex]?.variants?.[0]?.price?.amount ??
+        pots?.[selectedPotIndex]?.variants?.[0]?.price ?? 0
+      );
+      const plantPrice = Number(
+        plants?.[selectedPlantIndex]?.minPrice?.amount ??
+        plants?.[selectedPlantIndex]?.minPrice ?? 0
+      );
+      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+      const resp = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: designName,
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId,
+          plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots?.[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+      const j = await resp.json().catch(() => null);
+      if (resp.ok && j?.variantId) {
+        createdVariant = j.variantId;
+      } else {
+        console.warn("design-product falló, uso fallback:", j?.error || resp.status);
+      }
+    } catch (e) {
+      console.warn("design-product request error:", e);
+    }
+
+    const shop = getShopDomain();
+
+    // 3A) Si se creó el DOBO, prioriza Storefront checkout
+    if (createdVariant) {
+      const line = {
+        merchandiseId: toGid(createdVariant),
+        quantity: quantity || 1,
+        attributes: (attrs || []).map(a => ({
+          key: (a.key || "").replace(/^_+/, "") || "Meta",
+          value: String(a.value ?? ""),
+        })),
+      };
+      await cartCreateAndRedirect([line]); // redirige a checkout
+      return;
+    }
+
+    // 3B) Fallback a /cart/add con la variante seleccionada
+    const chosen =
+      selectedVariant?.id ||
+      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
+      null;
+    if (!chosen) throw new Error("variant-missing");
+
+    const accIds = (typeof getAccessoryVariantIds === "function") ? getAccessoryVariantIds() : [];
+    postCart(shop, chosen, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
   }
+}
+
 
   return (
     <div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
