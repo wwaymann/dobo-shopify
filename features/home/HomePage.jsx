@@ -4,9 +4,68 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import Head from "next/head";
 import styles from "../../styles/home.module.css";
 import dynamic from "next/dynamic";
-import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
-const shopDomain = getShopDomain(); // siempre saneado, nunca vercel.*
 
+import { cartCreateAndRedirect } from "../lib/shopifyStorefront";
+
+
+import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
+// --- helpers: colócalos una sola vez (arriba del componente) ---
+import { getShopDomain } from "../lib/shopDomain"; // Asegúrate que existe
+
+const toGid = (id) =>
+  String(id || "").includes("gid://")
+    ? String(id)
+    : `gid://shopify/ProductVariant/${String(id || "").replace(/\D/g, "")}`;
+
+async function cartCreateAndRedirect(lines) {
+  const shop = getShopDomain();
+  const token =
+    process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
+    process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_TOKEN;
+
+  if (!token) throw new Error("Falta NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN");
+
+  const endpoint = `https://${shop}/api/2024-07/graphql.json`;
+  const query = `
+    mutation CartCreate($lines:[CartLineInput!]) {
+      cartCreate(input:{ lines: $lines }) {
+        cart { id checkoutUrl }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  // Normaliza a GID
+  const normalized = lines.map((l) => ({
+    ...l,
+    merchandiseId: toGid(l.merchandiseId || l.variantId),
+  }));
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "X-Shopify-Storefront-Access-Token": token,
+    },
+    body: JSON.stringify({ query, variables: { lines: normalized } }),
+  });
+
+  const json = await res.json();
+  const err = json?.errors?.[0]?.message || json?.data?.cartCreate?.userErrors?.[0]?.message;
+
+  if (!res.ok || err) {
+    console.error("Storefront error:", json);
+    throw new Error(`shopify-graphql-error: ${err || res.status}`);
+  }
+
+  const url = json?.data?.cartCreate?.cart?.checkoutUrl;
+  if (!url) throw new Error("No se obtuvo checkoutUrl");
+  window.location.href = url;
+}
+
+
+const shopDomain = getShopDomain(); // siempre saneado, nunca vercel.*
 // Overlay / Editor (Fabric.js, client-only)
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
 
@@ -809,96 +868,122 @@ async function createDesignProductSafe(payload) {
 }
 
   
+// --- reemplaza COMPLETO tu buyNow por este ---
 async function buyNow() {
   try {
-    // --- 1) Reunir los atributos del diseño (attrs) ---
-    let attrs = null;
-
-    if (typeof buildAndSaveDesignForCartCheckout === "function") {
-      // Tu helper (si existe) ya devuelve { designId, attributes }
-      const r = await buildAndSaveDesignForCartCheckout();
-      attrs = r?.attributes || [];
-    } else if (typeof prepareDesignAttributes === "function") {
-      // Fallback: usa el DOM/html2canvas para generar preview y meta
-      attrs = await prepareDesignAttributes();
-    } else {
-      // Último recurso: atributos mínimos para no romper el checkout
+    // 1) Construir attrs del diseño (si no tienes helpers, queda mínimo)
+    let attrs = [];
+    try {
+      if (typeof buildAndSaveDesignForCartCheckout === "function") {
+        const r = await buildAndSaveDesignForCartCheckout();
+        attrs = Array.isArray(r?.attributes) ? r.attributes : [];
+      } else if (typeof prepareDesignAttributes === "function") {
+        const r = await prepareDesignAttributes();
+        attrs = Array.isArray(r) ? r : [];
+      } else {
+        const nowId = `dobo-${Date.now()}`;
+        attrs = [{ key: "DesignId", value: nowId }, { key: "_LinePriority", value: "0" }];
+      }
+    } catch (e) {
+      console.warn("No se pudieron generar attrs; usando mínimos:", e);
       const nowId = `dobo-${Date.now()}`;
-      attrs = [
-        { key: "_DesignId", value: nowId },
-        { key: "_LinePriority", value: "0" },
-      ];
+      attrs = [{ key: "DesignId", value: nowId }, { key: "_LinePriority", value: "0" }];
     }
 
-    // --- 2) Cálculo base del precio (igual que tenías) ---
-    const potPrice = selectedVariant?.price
-      ? Number(selectedVariant.price?.amount ?? selectedVariant.price)
-      : Number(
-          pots?.[selectedPotIndex]?.variants?.[0]?.price?.amount ??
-          pots?.[selectedPotIndex]?.variants?.[0]?.price ??
-          0
-        );
-    const plantPrice = Number(
-      plants?.[selectedPlantIndex]?.minPrice?.amount ??
-      plants?.[selectedPlantIndex]?.minPrice ??
-      0
-    );
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+    // 2) Variante principal (maceta) y accesorios
+    const chosenVariant =
+      selectedVariant?.id ||
+      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
+      null;
+    if (!chosenVariant) throw new Error("variant-missing");
 
-    // --- 3) Intentar crear “producto de diseño” (no bloquea) ---
-    let dp = null;
+    const accVariantIds = (typeof getAccessoryVariantIds === "function" ? getAccessoryVariantIds() : [])
+      .filter(Boolean);
+
+    // 3) (Opcional) Crear producto de diseño; si falla no bloquea
+    let designVariantGid = null;
     try {
+      const potPrice = selectedVariant?.price
+        ? Number(selectedVariant.price?.amount ?? selectedVariant.price)
+        : Number(
+            pots?.[selectedPotIndex]?.variants?.[0]?.price?.amount ??
+            pots?.[selectedPotIndex]?.variants?.[0]?.price ??
+            0
+          );
+      const plantPrice = Number(
+        plants?.[selectedPlantIndex]?.minPrice?.amount ??
+        plants?.[selectedPlantIndex]?.minPrice ??
+        0
+      );
+      const basePrice = Number(((potPrice + plantPrice) * Number(quantity || 1)).toFixed(2));
+      const previewUrl =
+        attrs.find(a => String(a.key || "").toLowerCase().includes("designpreview"))?.value || "";
+
       const resp = await fetch("/api/design-product", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl: (attrs.find(a => (a.key || "").toLowerCase().includes("designpreview"))?.value) || "",
+          previewUrl,
           price: basePrice,
           color: selectedColor || "Único",
           size: activeSize || "Único",
-          designId: (attrs.find(a => (a.key || "").toLowerCase() === "_designid" || (a.key || "").toLowerCase() === "designid")?.value) || `dobo-${Date.now()}`,
+          designId:
+            attrs.find(a => /(^|_)designid$/i.test(String(a.key || "")))?.value ||
+            `dobo-${Date.now()}`,
           plantTitle: plants[selectedPlantIndex]?.title || "Planta",
           potTitle: pots[selectedPotIndex]?.title || "Maceta",
         }),
       });
-      try { dp = await resp.json(); } catch {}
-      if (!resp.ok || !dp?.variantId) {
+      const dp = await resp.json().catch(() => null);
+      if (resp.ok && dp?.variantId) {
+        designVariantGid = toGid(dp.variantId);
+        try {
+          const apiReady = await (waitDesignerReady?.(12000) ?? Promise.resolve(null)).catch(() => null);
+          if (apiReady && typeof publishDesignForVariant === "function") {
+            await publishDesignForVariant(dp.variantId).catch(() => {});
+          }
+        } catch {}
+      } else {
         console.warn("GraphQL falló; usando fallback al variante seleccionado");
-        dp = null;
       }
     } catch (e) {
       console.warn("design-product request error:", e);
-      dp = null;
     }
 
-    // --- 4) Preparar carrito/checkout ---
-    const accIds = getAccessoryVariantIds ? getAccessoryVariantIds() : [];
-    const shop = getShopDomain();
+    // 4) Armar líneas de carrito y redirigir con Storefront
+    const lines = [];
 
-    // Si se pudo crear el “producto de diseño”, usar ese variantId
-    if (dp?.variantId) {
-      try {
-        const apiReady = await (waitDesignerReady?.(12000) ?? Promise.resolve(null)).catch(() => null);
-        if (apiReady && typeof publishDesignForVariant === "function") {
-          await publishDesignForVariant(dp.variantId).catch(() => {});
-        }
-      } catch {}
-      postCart(shop, dp.variantId, quantity, attrs, accIds, "/checkout");
-      return;
+    // Línea principal (o la de diseño si existe)
+    lines.push({
+      merchandiseId: designVariantGid || chosenVariant,
+      quantity: Math.max(1, Number(quantity || 1)),
+      attributes: [
+        { key: "DesignColor", value: String(selectedColor || "") },
+        { key: "DesignSize", value: String(activeSize || "") },
+        // agrega attrs del editor si quieres
+        ...attrs.map(a => ({ key: String(a.key || ""), value: String(a.value ?? "") })),
+      ],
+    });
+
+    // Accesorios
+    for (const aid of accVariantIds) {
+      lines.push({ merchandiseId: aid, quantity: 1 });
     }
 
-    // Fallback: usa la variante seleccionada en la UI
-    const chosen =
-      selectedVariant?.id ||
-      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
-      null;
-    if (!chosen) throw new Error("variant-missing");
-    postCart(shop, chosen, quantity, attrs, accIds, "/checkout");
+    await cartCreateAndRedirect(lines);
   } catch (e) {
+    console.error(e);
     alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
+    if (String(e?.message || "").includes("shopify-graphql-error")) {
+      console.warn(
+        "Sospecha: el variant no está publicado en Online Store o no está disponible. " +
+        "Verifica en Shopify Admin → Producto → Manage sales channels → Online Store (habilitado)."
+      );
+    }
   }
 }
+
 
 
 
