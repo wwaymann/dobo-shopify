@@ -28,7 +28,7 @@ const productMin = (p) => num(p?.minPrice);
 
 // Carga DIFERIDA de designStore para romper ciclos/TDZ
 async function getDesignExports() {
-  const mod = await import("../lib/designStore");
+  const mod = await import("@/lib/designStore");
   return {
     exportPreviewDataURL: mod.exportPreviewDataURL,
     dataURLtoBase64Attachment: mod.dataURLtoBase64Attachment,
