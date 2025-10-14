@@ -2,6 +2,8 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import '../styles/globals.css';
 import useIframeAutosize from '../hooks/useIframeAutosize';
+import "@/lib/canvasWillReadFrequently";
+
 
 function MyApp({ Component, pageProps }) {
   useIframeAutosize();
