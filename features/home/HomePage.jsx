@@ -1,4 +1,6 @@
 // features/home/HomePage.jsx
+
+"use client";
 import dynamic from "next/dynamic";
 import Head from "next/head";
 import styles from "../../styles/home.module.css";
