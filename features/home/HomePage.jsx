@@ -1,18 +1,19 @@
 // pages/index.js — DOBO full corrected version (TDZ/hydratation-safe)
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import Head from "next/head";
 import styles from "../../styles/home.module.css";
 import dynamic from "next/dynamic";
 
-
+// import Head from "next/head";
 
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 
 import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
+
+// Overlay / Editor (Fabric.js, client-only)
+const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
+
 // --- helpers: colócalos una sola vez (arriba del componente) ---
-
-
 const toGid = (id) =>
   String(id || "").includes("gid://")
     ? String(id)
@@ -67,8 +68,6 @@ async function cartCreateAndRedirect(lines) {
 
 
 const shopDomain = getShopDomain(); // siempre saneado, nunca vercel.*
-// Overlay / Editor (Fabric.js, client-only)
-const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
 
 /* =============================
  * Utils
