@@ -1,10 +1,10 @@
-# DOBO – Parches
-1) Copia este zip a la raíz de tu repo y descomprímelo.
+# DOBO – Parches v3
+1) Descomprime este zip en la **raíz** de tu repo.
 2) Ejecuta: `node bin/apply-patch.js`
-3) Compila de nuevo.
+3) Arranca de nuevo: `npm run dev` o compila `npm run build`.
 
 Incluye:
-- lib/canvasWillReadFrequently.js
-- lib/checkoutHelpers.js
-- bin/apply-patch.js
-- docs/TDZ_fix.md
+- `lib/canvasWillReadFrequently.js` (mejora html2canvas/Canvas2D)
+- `lib/checkoutHelpers.js` (getShopDomain, toNumericId, createDesignProductSafe)
+- `bin/apply-patch.js` (aplica parches a HomePage.jsx/index.* y _app)
+- `docs/TDZ_fix.md` (guía para el error "S" TDZ)

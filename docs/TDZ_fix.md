@@ -1,8 +1,15 @@
 # Arreglo TDZ – "Cannot access 'S' before initialization"
-1) Cambia `const S = (...) => {}` por `function S(...) {}` o mueve la declaración **arriba de su primer uso**.
-2) Si `S` viene de otro módulo y hay **ciclo de imports**, carga `S` de forma **dinámica**:
+Si el navegador cae en `CustomizationOverlay.impl.js:161`, hay dos orígenes típicos:
+
+1) **Orden de definición/uso**
+   Cambia `const S = (...) => {}` por `function S(...) {}` **o** mueve la declaración **antes** del primer uso.
+
+2) **Ciclo de imports entre módulos**
+   En lugar de importar estático, carga bajo demanda:
 ```js
 let S;
 async function ensureS(){ if(!S){ const mod = await import("../lib/loquesea"); S = mod.S; } return S; }
 ```
-3) Limpia `.next/` y vuelve a ejecutar el build.
+y usa `await ensureS()` donde lo necesites (p.ej. dentro de `useEffect`).
+
+No olvides borrar `.next/` y reconstruir.
