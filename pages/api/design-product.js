@@ -1,101 +1,89 @@
 // pages/api/design-product.js
-// Crea o asegura un "producto DOBO" con una sola variante para el diseño actual.
-// Requiere: process.env.SHOPIFY_ADMIN_TOKEN (Admin) y process.env.SHOPIFY_SHOP (p.ej "um7xus-0u.myshopify.com")
-// Opcional: process.env.SHOPIFY_PUBLICATION_ID para publicar en un canal específico.
-
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method-not-allowed" });
+  if (req.method !== "POST")
+    return res.status(405).json({ ok: false, error: "method-not-allowed" });
+
+  const shop = process.env.SHOPIFY_SHOP;
+  const token = process.env.SHOPIFY_ADMIN_TOKEN;
+  const publicationId = process.env.SHOPIFY_PUBLICATION_ID || null;
+
+  if (!shop || !token) {
+    return res
+      .status(501)
+      .json({ ok: false, error: "admin-api-not-configured" });
+  }
 
   try {
-    const { title, price, previewUrl, color, size, designId, potTitle, plantTitle } = req.body || {};
-    const shop = process.env.SHOPIFY_SHOP;
-    const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
-
-    if (!shop || !adminToken) {
-      return res.status(500).json({ ok: false, error: "missing-admin-credentials" });
-    }
-
-    // 1) Crear producto con 1 variante
-    const endpoint = `https://${shop}/admin/api/2024-07/graphql.json`;
-    const q = `mutation productCreate($input: ProductInput!) {
-      productCreate(input: $input) {
-        product { id title handle variants(first:1){nodes{id title sku}} }
-        userErrors{ field message }
-      }
-    }`;
-    const input = {
-      title: title || `DOBO ${plantTitle || ""} + ${potTitle || ""}`.trim(),
-      status: "ACTIVE",
-      variants: [{
-        title: `${color || "Único"} / ${size || "Único"}`,
-        price: String(price || 0),
-        sku: designId || `dobo-${Date.now()}`,
-        inventoryPolicy: "CONTINUE",
-      }],
-      // Opcional: descripción corta (sin imágenes pesadas)
-      descriptionHtml: `<p>DOBO personalizado · Color: ${color || "Único"} · Tamaño: ${size || "Único"}</p>`,
+    const { title, price, color, size, designId, plantTitle, potTitle } =
+      req.body || {};
+    const product = {
+      product: {
+        title: title || `DOBO ${Date.now()}`,
+        body_html: `DOBO personalizado — ${plantTitle || "Planta"} + ${
+          potTitle || "Maceta"
+        } — Color: ${color || "Único"} — Tamaño: ${size || "Único"}`,
+        vendor: "DOBO",
+        tags: ["DOBO", "custom"],
+        variants: [
+          {
+            price: String(price ?? "0"),
+            inventory_management: "SHOPIFY",
+            inventory_policy: "CONTINUE",
+            sku: designId || `dobo-${Date.now()}`,
+            option1: color || "Único",
+            option2: size || "Único",
+          },
+        ],
+        options: [
+          { name: "Color", values: [color || "Único"] },
+          { name: "Tamaño", values: [size || "Único"] },
+        ],
+      },
     };
 
-    const resp = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": adminToken,
-      },
-      body: JSON.stringify({ query: q, variables: { input } }),
-    });
-    const j = await resp.json();
-    const err = j?.data?.productCreate?.userErrors?.[0]?.message || j?.errors?.[0]?.message;
-    const product = j?.data?.productCreate?.product;
-    if (!resp.ok || err || !product) {
-      return res.status(500).json({ ok: false, error: err || `admin-http-${resp.status}` });
+    const createRes = await fetch(
+      `https://${shop}/admin/api/2024-07/products.json`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": token,
+        },
+        body: JSON.stringify(product),
+      }
+    );
+    const j = await createRes.json();
+    if (!createRes.ok || !j?.product?.variants?.[0]?.id) {
+      return res
+        .status(502)
+        .json({ ok: false, error: "admin-create-failed", detail: j });
     }
 
-    const variantId = product?.variants?.nodes?.[0]?.id;
+    const variantId = j.product.variants[0].id;
 
-    // 2) Publicación opcional
-    try {
-      const pubId = process.env.SHOPIFY_PUBLICATION_ID;
-      if (pubId) {
-        const qPub = `mutation publishablePublish($id: ID!, $pubId: ID!) {
-          publishablePublish(id: $id, input: {publicationId: $pubId}){
-            publishable { ... on Product { id title } }
-            userErrors { field message }
-          }
-        }`;
-        await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": adminToken,
-          },
-          body: JSON.stringify({ query: qPub, variables: { id: product.id, pubId } }),
-        });
-      }
-    } catch {}
-
-    // 3) (Opcional) subir media del preview como imagen en el producto, sin bloquear el flujo
-    if (previewUrl) {
+    if (publicationId && j?.product?.id) {
       try {
-        const mediaQ = `mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-          productCreateMedia(productId: $productId, media: $media) {
-            media{preview{image{url}}}
-            mediaUserErrors{ field message }
+        await fetch(
+          `https://${shop}/admin/api/2024-07/publications/${publicationId}/publish.json`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Shopify-Access-Token": token,
+            },
+            body: JSON.stringify({
+              publication: { id: publicationId },
+              published_product_ids: [j.product.id],
+            }),
           }
-        }`;
-        await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": adminToken },
-          body: JSON.stringify({
-            query: mediaQ,
-            variables: { productId: product.id, media: [{ originalSource: previewUrl }] },
-          }),
-        });
+        );
       } catch {}
     }
 
-    return res.status(200).json({ ok: true, productId: product.id, variantId });
+    return res.status(200).json({ ok: true, variantId });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    return res
+      .status(500)
+      .json({ ok: false, error: String(e?.message || e) });
   }
 }
