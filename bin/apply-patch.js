@@ -1,126 +1,163 @@
 // bin/apply-patch.js
-/**
- * Uso:
- *   node bin/apply-patch.js
- * - Inserta imports de helpers
- * - Reemplaza usos de SHOP_DOMAIN por getShopDomain()
- * - Fortalece buyNow() con fallback y toNumericId(...)
- * - Parchea html2canvas con windowWidth/windowHeight
- * - Injecta polyfill canvas en pages/_app.*
- */
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = process.cwd();
-function r(...p){ return path.join(ROOT, ...p); }
+const TARGETS = [
+  "features/home/HomePage.jsx",
+  "src/features/home/HomePage.jsx",
+  "pages/index.jsx",
+  "pages/index.tsx",
+  "pages/index.js"
+];
 
-function readIf(p){ try { return fs.readFileSync(p, "utf8"); } catch { return null; } }
-function write(p, s){ fs.mkdirSync(path.dirname(p), { recursive:true }); fs.writeFileSync(p, s, "utf8"); }
-function ensureImport(src, impLine){
-  if (src.includes(impLine)) return src;
-  const lines = src.split(/\r?\n/);
-  let i = 0;
-  while (i < lines.length && lines[i].startsWith("import ")) i++;
-  lines.splice(i, 0, impLine);
-  return lines.join("\n");
-}
+function exists(p){ try { return fs.statSync(p).isFile(); } catch { return false; } }
+function read(p){ return fs.readFileSync(p, "utf8"); }
+function write(p, s){ fs.writeFileSync(p, s); }
 
-function replaceAll(src, pairs){
-  let out = src;
-  for (const [a,b] of pairs){
-    out = out.replace(a,b);
+function ensureImportHelpers(src) {
+  const lineAlias = `import { getShopDomain, toNumericId, createDesignProductSafe } from "@/lib/checkoutHelpers";`;
+  const lineRel = `import { getShopDomain, toNumericId, createDesignProductSafe } from "../lib/checkoutHelpers";`;
+  if (/from ["'].*checkoutHelpers["']/.test(src)) return src;
+  // si ya hay import React, insertamos debajo
+  const m = src.match(/import[^\n]*\n/);
+  if (m) {
+    const imp = (src.includes("from "@/") || src.includes("from '@/")) ? lineAlias : lineRel;
+    return src.replace(m[0], m[0] + imp + "\n");
   }
-  return out;
+  return (lineRel + "\n" + src);
 }
 
-function patchBuyNow(src){
-  const re = /async\s+function\s+buyNow\s*\([\s\S]*?\)\s*\{[\s\S]*?\}\s*\n/;
-  if (!re.test(src)) return src; // nothing
-  const replacement = `async function buyNow(){try{const attrs=await prepareDesignAttributes();const potPrice=selectedPotVariant?.price?num(selectedPotVariant.price):firstVariantPrice(pots[selectedPotIndex]);const plantPrice=productMin(plants[selectedPlantIndex]);const basePrice=Math.max(1,Math.round((potPrice+plantPrice)*quantity));const dp=await createDesignProductSafe({title:\`DOBO \${plants[selectedPlantIndex]?.title||"Planta"} + \${pots[selectedPotIndex]?.title||"Maceta"}\`,previewUrl:attrs.find(a=>a.key==="__DesignPreview")?.value||attrs.find(a=>a.key==="_DesignPreview")?.value||"",price:String(basePrice),color:selectedColor||"Único",size:activeSize||"Único",designId:attrs.find(a=>a.key==="__DesignId")?.value||attrs.find(a=>a.key==="_DesignId")?.value||\`dobo-\${Date.now()}\`,plantTitle:plants[selectedPlantIndex]?.title||"Planta",potTitle:pots[selectedPotIndex]?.title||"Maceta"});const accIds=getAccessoryVariantIds();const shop=getShopDomain();const main=toNumericId(dp?.variantId||selectedVariant?.id);if(!shop){alert("No se detectó el dominio de Shopify");return;}if(!main){alert("Variante inválida");return;}postCart(shop,main,quantity,attrs,accIds,"/checkout");}catch(e){console.warn("GraphQL falló; usando fallback al variante seleccionado:",e);const attrs=await prepareDesignAttributes();const accIds=getAccessoryVariantIds();const shop=getShopDomain();const main=toNumericId(selectedVariant?.id);if(!shop){alert("No se detectó el dominio de Shopify");return;}if(!main){alert("Selecciona una maceta válida");return;}postCart(shop,main,quantity,attrs,accIds,"/checkout");}}\n`;
-  return src.replace(re, replacement);
+function replaceShopDomain(src) {
+  return src.replace(/\bSHOP_DOMAIN\b/g, "getShopDomain()");
 }
 
-function patchHtml2Canvas(src){
-  const re = /html2canvas\(\s*el\s*,\s*\{([\s\S]*?)\}\s*\)/m;
-  if (!re.test(src)) return src;
-  return src.replace(re, (m, inner)=> {
-    if (inner.includes("windowWidth")) return m;
-    const add = inner.trim().endsWith(",") ? inner + "\n  windowWidth: el.scrollWidth,\n  windowHeight: el.scrollHeight\n" : inner + ",\n  windowWidth: el.scrollWidth,\n  windowHeight: el.scrollHeight\n";
-    return m.replace(inner, add);
+function wrapVariantInPostCart(src) {
+  return src.replace(/postCart\(\s*([^,]+),\s*([^,]+),/g, (m, a1, a2) => {
+    if (/toNumericId\s*\(/.test(a2)) return m;
+    return `postCart(${a1}, toNumericId(${a2}),`;
   });
 }
 
-function patchHomePageFile(src){
-  let out = src;
-  // imports
-  out = ensureImport(out, `import { getShopDomain, toNumericId, createDesignProductSafe } from "@/lib/checkoutHelpers";`);
-  // SHOP_DOMAIN -> getShopDomain()
-  out = out.replace(/\bSHOP_DOMAIN\b/g, "getShopDomain()");
-  // postCart second arg: wrap candidate ids with toNumericId when obvious patterns appear
-  out = out.replace(/postCart\(\s*getShopDomain\(\)\s*,\s*([a-zA-Z0-9_.?]+)\s*,/g, (m, id)=> m.replace(id, `toNumericId(${id})`));
-  // Specific known variant variable names (safe id wrapper)
-  out = out.replace(/\bvariantId\b/g, "toNumericId(variantId)");
-  out = patchBuyNow(out);
-  out = patchHtml2Canvas(out);
-  return out;
+function patchHtml2Canvas(src) {
+  return src.replace(/html2canvas\s*\(\s*([a-zA-Z0-9_.$]+)\s*,\s*\{([\s\S]*?)\}\s*\)/g, (m, el, obj) => {
+    const extra = `windowWidth: (${el}.scrollWidth||${el}.clientWidth||window.innerWidth),
+      windowHeight: (${el}.scrollHeight||${el}.clientHeight||window.innerHeight)`;
+    if (obj.includes("windowWidth") || obj.includes("windowHeight")) return m;
+    const body = obj.trim().replace(/^{|}$/g,"");
+    return `html2canvas(${el}, { ${body}, ${extra} })`;
+  });
 }
 
-function patchAppFile(src){
-  return ensureImport(src, `import "@/lib/canvasWillReadFrequently";`);
+function patchDesignProductBlock(src) {
+  const re = /const\s+dpRes\s*=\s*await\s*fetch\(\s*["']\/api\/design-product["'][\s\S]*?postCart\([^)]*\);\s*/m;
+  if (!re.test(src)) return src;
+  const block = `
+      // ---------- Seguro: crear producto de diseño o usar variante actual ----------
+      let finalVariantId = null;
+      try {
+        const payload = {
+          title: \`DOBO \${plants[selectedPlantIndex]?.title} + \${pots[selectedPotIndex]?.title}\`,
+          previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find(a => a.key === "_DesignId")?.value,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        };
+        const dp = await createDesignProductSafe(payload);
+        if (dp?.ok && dp.variantId) {
+          finalVariantId = dp.variantId;
+        } else {
+          console.warn("GraphQL falló; usando fallback al variante seleccionado:", dp?.error);
+          finalVariantId = selectedVariant?.id;
+        }
+      } catch (e) {
+        console.warn("GraphQL falló; usando fallback al variante seleccionado:", e);
+        finalVariantId = selectedVariant?.id;
+      }
+      try { const ready = await waitDesignerReady(12000); if (ready) { try { await publishDesignForVariant(finalVariantId); } catch {} } } catch {}
+      const accIds = getAccessoryVariantIds();
+      postCart(getShopDomain(), toNumericId(finalVariantId), quantity, attrs, accIds, "/checkout");
+  `;
+  return src.replace(re, block);
 }
 
-function collectCandidates(){
-  const out = [];
-  const exts = [".js",".jsx",".ts",".tsx"];
-  function walk(dir){
-    const entries = fs.readdirSync(dir, { withFileTypes:true });
-    for (const e of entries){
-      if (e.name === ".next") continue;
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()){ walk(p); continue; }
-      if (!exts.includes(path.extname(e.name))) continue;
-      if (/HomePage\.(jsx|tsx)$/i.test(e.name)) out.push(p);
-      if (/index\.(jsx?|tsx?)$/i.test(e.name) && p.includes(path.sep + "pages" + path.sep)) out.push(p);
+function ensureAppPolyfill(projectRoot) {
+  const candidates = ["pages/_app.js", "pages/_app.jsx", "pages/_app.tsx"];
+  let found = null;
+  for (const rel of candidates) {
+    const p = path.join(projectRoot, rel);
+    if (exists(p)) { found = p; break; }
+  }
+  const importLine = `import "@/lib/canvasWillReadFrequently";`;
+  if (found) {
+    let s = read(found);
+    if (!s.includes("canvasWillReadFrequently")) {
+      s = importLine + "\n" + s;
+      write(found, s);
+      console.log("[ok] Polyfill inyectado en", found);
+    } else {
+      console.log("[skip] Polyfill ya presente en", found);
     }
-  }
-  walk(ROOT);
-  return out;
-}
-
-(function main(){
-  // install libs
-  const libSrcDir = path.join(__dirname, "..", "lib");
-  fs.mkdirSync(path.join(ROOT,"lib"), { recursive:true });
-  fs.copyFileSync(path.join(libSrcDir,"canvasWillReadFrequently.js"), path.join(ROOT,"lib","canvasWillReadFrequently.js"));
-  fs.copyFileSync(path.join(libSrcDir,"checkoutHelpers.js"), path.join(ROOT,"lib","checkoutHelpers.js"));
-
-  // app import
-  const appFiles = ["pages/_app.js","pages/_app.jsx","pages/_app.tsx"];
-  let appPatched = false;
-  for (const f of appFiles){
-    const abs = r(f);
-    const s = readIf(abs);
-    if (!s) continue;
-    const o = patchAppFile(s);
-    if (o !== s){ write(abs, o); console.log("Patched:", f); appPatched = true; }
-  }
-  if (!appPatched){
-    write(r("pages/_app.js"), `import "@/lib/canvasWillReadFrequently";\nexport default function App({Component,pageProps}){return <Component {...pageProps}/>;}`);
-    console.log("Created: pages/_app.js");
-  }
-
-  // patch candidates
-  const files = collectCandidates();
-  if (files.length === 0){
-    console.warn("⚠️ No se encontraron HomePage.jsx/tsx ni pages/index.*. Ajusta el script si tienes otra ruta.");
   } else {
-    for (const f of files){
-      const s = readIf(f);
-      if (!s) continue;
-      const o = patchHomePageFile(s);
-      if (o !== s){ write(f, o); console.log("Patched:", path.relative(ROOT, f)); }
+    const p = path.join(projectRoot, "pages/_app.js");
+    const s = `${importLine}
+export default function App({ Component, pageProps }) {
+  return <Component {...pageProps} />;
+}`;
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    write(p, s);
+    console.log("[ok] Creado", p);
+  }
+}
+
+function run() {
+  const projectRoot = process.cwd();
+  // Copiar helpers
+  const libSrc = path.join(__dirname, "..", "lib");
+  const libDst = path.join(projectRoot, "lib");
+  fs.mkdirSync(libDst, { recursive: true });
+  for (const fn of ["checkoutHelpers.js","canvasWillReadFrequently.js"]) {
+    const src = path.join(libSrc, fn);
+    const dst = path.join(libDst, fn);
+    if (!exists(dst)) {
+      fs.copyFileSync(src, dst);
+      console.log("[ok] copiado", "lib/"+fn);
+    } else {
+      console.log("[skip] ya existe", "lib/"+fn);
     }
   }
 
-  console.log("\\n✅ Listo. Vuelve a compilar.");
-})();
+  ensureAppPolyfill(projectRoot);
+
+  let patchedAny = false;
+  for (const rel of TARGETS) {
+    const p = path.join(projectRoot, rel);
+    if (!exists(p)) continue;
+    let src = read(p);
+    const orig = src;
+
+    src = ensureImportHelpers(src);
+    src = replaceShopDomain(src);
+    src = wrapVariantInPostCart(src);
+    src = patchHtml2Canvas(src);
+    src = patchDesignProductBlock(src);
+
+    if (src !== orig) {
+      write(p, src);
+      patchedAny = true;
+      console.log("[ok] Patched", rel);
+    } else {
+      console.log("[skip] Sin cambios en", rel);
+    }
+  }
+
+  if (!patchedAny) {
+    console.warn("[warn] No se encontró ningún target. Edita TARGETS en bin/apply-patch.js para apuntar al archivo correcto.");
+  } else {
+    console.log("[done] Parche aplicado.");
+  }
+}
+
+if (require.main === module) run();
