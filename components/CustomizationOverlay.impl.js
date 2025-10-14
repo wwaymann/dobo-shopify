@@ -154,10 +154,6 @@ export default function CustomizationOverlay({
   variantId,
   customerAccessToken
 }) {
-  useEffect(() => {
-    document.body.style.overflowY = editing ? 'auto' : 'auto';
-    return () => { document.body.style.overflowY = 'auto'; };
-  }, [editing]);
 
   // ===== Refs y estado =====
   const canvasRef = useRef(null);
@@ -177,6 +173,10 @@ const overlayRef = useRef(null);
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
   const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    document.body.style.overflowY = editing ? 'auto' : 'auto';
+    return () => { document.body.style.overflowY = 'auto'; };
+  }, [editing]);
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
 
