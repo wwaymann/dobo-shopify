@@ -1,6 +1,7 @@
 // features/home/HomePage.jsx
 
 "use client";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Head from "next/head";
 import styles from "../../styles/home.module.css";
