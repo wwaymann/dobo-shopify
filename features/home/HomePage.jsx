@@ -631,56 +631,73 @@ export default function HomePage() {
   }
 
   /* ---------- Post a /cart/add de Shopify ---------- */
-  function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
-    const asStr = (v) => String(v || "").trim();
-    const isNum = (v) => /^\d+$/.test(asStr(v));
-    const gidToNum = (id) => { const s = asStr(id); return s.includes("gid://") ? s.split("/").pop() : s; };
-    const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
-    if (!isNum(main)) throw new Error("Variant principal inválido");
-    const accs = (accessoryIds || []).map((id) => (isNum(id) ? asStr(id) : gidToNum(id))).filter(isNum);
+function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
+  const shopDomain = String(shop || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
 
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = `https://${shop}/cart/add`;
-    form.target = "_top";
-    const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
+  const asStr = (v) => String(v || "").trim();
+  const isNum = (v) => /^\d+$/.test(asStr(v));
+  const gidToNum = (id) => {
+    const s = asStr(id);
+    return s.includes("gid://") ? s.split("/").pop() : s;
+  };
+  const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
+  if (!isNum(main)) throw new Error("Variant principal inválido");
+  const accs = (accessoryIds || [])
+    .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
+    .filter(isNum);
 
-    let line = 0;
-    const getA = (name) => {
-      const n = name.toLowerCase();
-      return (attrs || []).find((a) => {
-        const k = (a.key || "").toLowerCase();
-        return k === n || k === `_${n}`;
-      })?.value || "";
-    };
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `https://${shopDomain}/cart/add`;
+  form.target = "_top";
+  const add = (n, v) => {
+    const i = document.createElement("input");
+    i.type = "hidden";
+    i.name = n;
+    i.value = String(v);
+    form.appendChild(i);
+  };
 
-    const previewUrl = getA("DesignPreview"), designId = getA("DesignId"),
-          designPlant = getA("DesignPlant"), designPot = getA("DesignPot"),
-          designColor = getA("DesignColor"), designSize = getA("DesignSize");
+  let line = 0;
+  const getA = (name) => {
+    const n = name.toLowerCase();
+    return (attrs || []).find((a) => {
+      const k = (a.key || "").toLowerCase();
+      return k === n || k === `_${n}`; // acepta con y sin underscore
+    })?.value || "";
+  };
 
-    add(`items[${line}][id]`, main);
-    add(`items[${line}][quantity]`, String(qty || 1));
-    add(`items[${line}][properties][_LinePriority]`, "0");
-    if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
-    if (designId) add(`items[${line}][properties][_DesignId]`, designId);
-    if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
-    if (designPot) add(`items[${line}][properties][_DesignPot]`, designPot);
-    if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
-    if (designSize) add(`items[${line}][properties][_DesignSize]`, designSize);
+  const previewUrl = getA("DesignPreview");
+  const designId   = getA("DesignId");
+  const designPlant= getA("DesignPlant");
+  const designPot  = getA("DesignPot");
+  const designColor= getA("DesignColor");
+  const designSize = getA("DesignSize");
+
+  add(`items[${line}][id]`, main);
+  add(`items[${line}][quantity]`, String(qty || 1));
+  add(`items[${line}][properties][_LinePriority]`, "0");
+  if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
+  if (designId)   add(`items[${line}][properties][_DesignId]`, designId);
+  if (designPlant)add(`items[${line}][properties][_DesignPlant]`, designPlant);
+  if (designPot)  add(`items[${line}][properties][_DesignPot]`, designPot);
+  if (designColor)add(`items[${line}][properties][_DesignColor]`, designColor);
+  if (designSize) add(`items[${line}][properties][_DesignSize]`, designSize);
+  line++;
+
+  accs.forEach((id) => {
+    add(`items[${line}][id]`, id);
+    add(`items[${line}][quantity]`, "1");
+    add(`items[${line}][properties][_Accessory]`, "true");
+    add(`items[${line}][properties][_LinePriority]`, "1");
     line++;
+  });
 
-    accs.forEach((id) => {
-      add(`items[${line}][id]`, id);
-      add(`items[${line}][quantity]`, "1");
-      add(`items[${line}][properties][_Accessory]`, "true");
-      add(`items[${line}][properties][_LinePriority]`, "1");
-      line++;
-    });
+  if (returnTo) add("return_to", returnTo);
+  document.body.appendChild(form);
+  form.submit();
+}
 
-    if (returnTo) add("return_to", returnTo);
-    document.body.appendChild(form);
-    form.submit();
-  }
 
   const getAccessoryVariantIds = () =>
     selectedAccessoryIndices
@@ -729,23 +746,34 @@ export default function HomePage() {
     return { designId, attributes };
   }
 
-  async function addToCart() {
-    try {
-      const { attributes } = await buildAndSaveDesignForCartCheckout();
-      const productHandle = selectedProduct?.handle;
-      const variantId = selectedVariant?.id;
-      if (!productHandle || !variantId) throw new Error("Selecciona una maceta válida");
-      await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productHandle, variantId, quantity, attributes }),
-      });
-      alert("Producto añadido al carrito con diseño guardado.");
-    } catch (err) {
-      console.error("Error al guardar diseño o añadir al carrito:", err);
-      alert("Ocurrió un problema al añadir tu diseño al carrito.");
+async function addToCart() {
+  try {
+    let attrs;
+    if (typeof buildAndSaveDesignForCartCheckout === "function") {
+      const r = await buildAndSaveDesignForCartCheckout();
+      attrs = r?.attributes || [];
+    } else if (typeof prepareDesignAttributes === "function") {
+      attrs = await prepareDesignAttributes();
+    } else {
+      attrs = [{ key: "_DesignId", value: `dobo-${Date.now()}` }];
     }
+
+    const productHandle = selectedProduct?.handle;
+    const variantId = selectedVariant?.id;
+    if (!productHandle || !variantId) throw new Error("Selecciona una maceta válida");
+
+    await fetch("/api/cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productHandle, variantId, quantity, attributes: attrs }),
+    });
+    alert("Producto añadido al carrito con diseño guardado.");
+  } catch (err) {
+    console.error("Error al guardar diseño o añadir al carrito:", err);
+    alert("Ocurrió un problema al añadir tu diseño al carrito.");
   }
+}
+
 
 async function createDesignProductSafe(payload) {
   // Llama a tu /api/design-product y lanza errores legibles si hay userErrors o 4xx/5xx
@@ -768,48 +796,95 @@ async function createDesignProductSafe(payload) {
   
 async function buyNow() {
   try {
-    // ... (capturas / attrs como ya tienes)
+    // --- 1) Reunir los atributos del diseño (attrs) ---
+    let attrs = null;
 
-    const resp = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
-        price: basePrice,
-        color: selectedColor || "Único",
-        size: activeSize || "Único",
-        designId: attrs.find(a => a.key === "_DesignId")?.value,
-        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-        potTitle: pots[selectedPotIndex]?.title || "Maceta",
-      }),
-    });
+    if (typeof buildAndSaveDesignForCartCheckout === "function") {
+      // Tu helper (si existe) ya devuelve { designId, attributes }
+      const r = await buildAndSaveDesignForCartCheckout();
+      attrs = r?.attributes || [];
+    } else if (typeof prepareDesignAttributes === "function") {
+      // Fallback: usa el DOM/html2canvas para generar preview y meta
+      attrs = await prepareDesignAttributes();
+    } else {
+      // Último recurso: atributos mínimos para no romper el checkout
+      const nowId = `dobo-${Date.now()}`;
+      attrs = [
+        { key: "_DesignId", value: nowId },
+        { key: "_LinePriority", value: "0" },
+      ];
+    }
 
+    // --- 2) Cálculo base del precio (igual que tenías) ---
+    const potPrice = selectedVariant?.price
+      ? Number(selectedVariant.price?.amount ?? selectedVariant.price)
+      : Number(
+          pots?.[selectedPotIndex]?.variants?.[0]?.price?.amount ??
+          pots?.[selectedPotIndex]?.variants?.[0]?.price ??
+          0
+        );
+    const plantPrice = Number(
+      plants?.[selectedPlantIndex]?.minPrice?.amount ??
+      plants?.[selectedPlantIndex]?.minPrice ??
+      0
+    );
+    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    // --- 3) Intentar crear “producto de diseño” (no bloquea) ---
     let dp = null;
-    try { dp = await resp.json(); } catch {}
-    const accIds = getAccessoryVariantIds();
-    const shop = getShopDomain(); // <— usa el helper
+    try {
+      const resp = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+          previewUrl: (attrs.find(a => (a.key || "").toLowerCase().includes("designpreview"))?.value) || "",
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: (attrs.find(a => (a.key || "").toLowerCase() === "_designid" || (a.key || "").toLowerCase() === "designid")?.value) || `dobo-${Date.now()}`,
+          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+      try { dp = await resp.json(); } catch {}
+      if (!resp.ok || !dp?.variantId) {
+        console.warn("GraphQL falló; usando fallback al variante seleccionado");
+        dp = null;
+      }
+    } catch (e) {
+      console.warn("design-product request error:", e);
+      dp = null;
+    }
 
-    // Si GraphQL falla, usa la variante ya seleccionada
-    if (!resp.ok || !dp?.variantId) {
-      console.warn("GraphQL falló; usando fallback al variante seleccionado");
-      const chosen = selectedVariant?.id || selectedProduct?.variants?.[0]?.id;
-      if (!chosen) throw new Error("variant-missing");
-      postCart(shop, chosen, quantity, attrs, accIds, "/checkout");
+    // --- 4) Preparar carrito/checkout ---
+    const accIds = getAccessoryVariantIds ? getAccessoryVariantIds() : [];
+    const shop = getShopDomain();
+
+    // Si se pudo crear el “producto de diseño”, usar ese variantId
+    if (dp?.variantId) {
+      try {
+        const apiReady = await (waitDesignerReady?.(12000) ?? Promise.resolve(null)).catch(() => null);
+        if (apiReady && typeof publishDesignForVariant === "function") {
+          await publishDesignForVariant(dp.variantId).catch(() => {});
+        }
+      } catch {}
+      postCart(shop, dp.variantId, quantity, attrs, accIds, "/checkout");
       return;
     }
 
-    // Si se creó el “producto de diseño”, usa ese variantId
-    try {
-      const apiReady = await waitDesignerReady(12000).catch(() => null);
-      if (apiReady) await publishDesignForVariant(dp.variantId).catch(() => {});
-    } catch {}
-
-    postCart(shop, dp.variantId, quantity, attrs, accIds, "/checkout");
+    // Fallback: usa la variante seleccionada en la UI
+    const chosen =
+      selectedVariant?.id ||
+      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
+      null;
+    if (!chosen) throw new Error("variant-missing");
+    postCart(shop, chosen, quantity, attrs, accIds, "/checkout");
   } catch (e) {
-    alert(`No se pudo iniciar el checkout: ${e.message || e}`);
+    alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
   }
 }
+
 
 
   /* ---------- Handlers de click/mitades para carrusel ---------- */
