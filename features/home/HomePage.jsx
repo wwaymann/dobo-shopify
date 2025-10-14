@@ -199,19 +199,8 @@ export default function HomePage() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
 
-  // Shop domain (en efecto, no en tope del módulo)
-  const [shopDomain, setShopDomain] = useState(process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com");
-  useEffect(() => {
-    try {
-      const qs = new URLSearchParams(window.location.search);
-      const fromQS = qs.get("shopDomain");
-      if (fromQS) return setShopDomain(fromQS);
-      if (document.referrer) {
-        const h = new URL(document.referrer).host;
-        if (h) setShopDomain(h);
-      }
-    } catch {}
-  }, []);
+const shopDomain = getShopDomain();
+
 
   // State principal
   const [selectedColor, setSelectedColor] = useState("Cemento");
@@ -632,7 +621,18 @@ export default function HomePage() {
 
   /* ---------- Post a /cart/add de Shopify ---------- */
 function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
-  const shopDomain = String(shop || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
+  // Saneado del dominio y bloqueo de hosts malos
+  const domain = String(shop || "")
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/g, "")
+    .toLowerCase();
+
+  const BAD = ["vercel.app", "vercel.com", "localhost", "127.0.0.1"];
+  if (!domain || BAD.some((d) => domain.endsWith(d))) {
+    console.error("Shop domain inválido para cart/add:", domain);
+    alert("No se pudo iniciar el checkout: dominio de tienda inválido.");
+    return;
+  }
 
   const asStr = (v) => String(v || "").trim();
   const isNum = (v) => /^\d+$/.test(asStr(v));
@@ -640,15 +640,17 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     const s = asStr(id);
     return s.includes("gid://") ? s.split("/").pop() : s;
   };
+
   const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
   if (!isNum(main)) throw new Error("Variant principal inválido");
+
   const accs = (accessoryIds || [])
     .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
     .filter(isNum);
 
   const form = document.createElement("form");
   form.method = "POST";
-  form.action = `https://${shopDomain}/cart/add`;
+  form.action = `https://${domain}/cart/add`;
   form.target = "_top";
   const add = (n, v) => {
     const i = document.createElement("input");
@@ -659,30 +661,33 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   };
 
   let line = 0;
+
   const getA = (name) => {
     const n = name.toLowerCase();
     return (attrs || []).find((a) => {
       const k = (a.key || "").toLowerCase();
-      return k === n || k === `_${n}`; // acepta con y sin underscore
+      return k === n || k === `_${n}`;
     })?.value || "";
   };
-
-  const previewUrl = getA("DesignPreview");
-  const designId   = getA("DesignId");
-  const designPlant= getA("DesignPlant");
-  const designPot  = getA("DesignPot");
-  const designColor= getA("DesignColor");
-  const designSize = getA("DesignSize");
 
   add(`items[${line}][id]`, main);
   add(`items[${line}][quantity]`, String(qty || 1));
   add(`items[${line}][properties][_LinePriority]`, "0");
+
+  const previewUrl = getA("DesignPreview");
+  const designId = getA("DesignId");
+  const designPlant = getA("DesignPlant");
+  const designPot = getA("DesignPot");
+  const designColor = getA("DesignColor");
+  const designSize = getA("DesignSize");
+
   if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
-  if (designId)   add(`items[${line}][properties][_DesignId]`, designId);
-  if (designPlant)add(`items[${line}][properties][_DesignPlant]`, designPlant);
-  if (designPot)  add(`items[${line}][properties][_DesignPot]`, designPot);
-  if (designColor)add(`items[${line}][properties][_DesignColor]`, designColor);
+  if (designId) add(`items[${line}][properties][_DesignId]`, designId);
+  if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
+  if (designPot) add(`items[${line}][properties][_DesignPot]`, designPot);
+  if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
   if (designSize) add(`items[${line}][properties][_DesignSize]`, designSize);
+
   line++;
 
   accs.forEach((id) => {
@@ -694,9 +699,12 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   });
 
   if (returnTo) add("return_to", returnTo);
+
   document.body.appendChild(form);
   form.submit();
 }
+
+
 
 
   const getAccessoryVariantIds = () =>
