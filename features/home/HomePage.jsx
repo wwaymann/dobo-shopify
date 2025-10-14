@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import Head from "next/head";
 import styles from "../../styles/home.module.css";
 import dynamic from "next/dynamic";
+import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
+const SHOP_DOMAIN = getShopDomain();
 
 // Overlay / Editor (Fabric.js, client-only)
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
@@ -766,41 +768,46 @@ async function createDesignProductSafe(payload) {
   
 async function buyNow() {
   try {
-    // 1) Prepara atributos (preview, ids, color, size, etc.)
-    const attrs = await prepareDesignAttributes();
+    // ... (capturas / attrs como ya tienes)
 
-    // 2) Calcula precio (como string, sin decimales para CLP)
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-    const plantPrice = productMin(plants[selectedPlantIndex]);
-    const basePrice = Math.max(1, Math.round((potPrice + plantPrice) * quantity)); // Evita "0" que rompe
-    const priceStr = String(basePrice);
-
-    // 3) Intenta crear producto de diseño vía tu API
-    const dp = await createDesignProductSafe({
-      title: `DOBO ${plants[selectedPlantIndex]?.title || "Planta"} + ${pots[selectedPotIndex]?.title || "Maceta"}`,
-      previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
-      price: priceStr,
-      color: selectedColor || "Único",
-      size: activeSize || "Único",
-      designId: attrs.find(a => a.key === "_DesignId")?.value || `dobo-${Date.now()}`,
-      plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-      potTitle: pots[selectedPotIndex]?.title || "Maceta",
+    const resp = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+        previewUrl: attrs.find(a => a.key === "_DesignPreview")?.value || "",
+        price: basePrice,
+        color: selectedColor || "Único",
+        size: activeSize || "Único",
+        designId: attrs.find(a => a.key === "_DesignId")?.value,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle: pots[selectedPotIndex]?.title || "Maceta",
+      }),
     });
 
-    // 4) Si se creó, publica (si tu API lo hace) y usa ese variante para el carrito
+    let dp = null;
+    try { dp = await resp.json(); } catch {}
     const accIds = getAccessoryVariantIds();
-    const mainVariant = dp?.variantId || selectedVariant?.id; // fallback por si acaso
-    postCart(SHOP_DOMAIN, mainVariant, quantity, attrs, accIds, "/checkout");
-  } catch (e) {
-    console.warn("GraphQL falló; usando fallback al variante seleccionado:", e);
-    // Fallback: usar el variante actual + properties (no requiere Admin API)
-    const attrs = await prepareDesignAttributes();
-    const accIds = getAccessoryVariantIds();
-    if (!selectedVariant?.id) {
-      alert("No se pudo iniciar el checkout: no hay variante seleccionada.");
+    const shop = getShopDomain(); // <— usa el helper
+
+    // Si GraphQL falla, usa la variante ya seleccionada
+    if (!resp.ok || !dp?.variantId) {
+      console.warn("GraphQL falló; usando fallback al variante seleccionado");
+      const chosen = selectedVariant?.id || selectedProduct?.variants?.[0]?.id;
+      if (!chosen) throw new Error("variant-missing");
+      postCart(shop, chosen, quantity, attrs, accIds, "/checkout");
       return;
     }
-    postCart(SHOP_DOMAIN, selectedVariant.id, quantity, attrs, accIds, "/checkout");
+
+    // Si se creó el “producto de diseño”, usa ese variantId
+    try {
+      const apiReady = await waitDesignerReady(12000).catch(() => null);
+      if (apiReady) await publishDesignForVariant(dp.variantId).catch(() => {});
+    } catch {}
+
+    postCart(shop, dp.variantId, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e.message || e}`);
   }
 }
 
