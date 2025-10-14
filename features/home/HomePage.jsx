@@ -5,7 +5,7 @@ import Head from "next/head";
 import styles from "../../styles/home.module.css";
 import dynamic from "next/dynamic";
 import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
-const SHOP_DOMAIN = getShopDomain();
+const shopDomain = getShopDomain(); // siempre saneado, nunca vercel.*
 
 // Overlay / Editor (Fabric.js, client-only)
 const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
@@ -621,17 +621,17 @@ const shopDomain = getShopDomain();
 
   /* ---------- Post a /cart/add de Shopify ---------- */
 function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
-  // Saneado del dominio y bloqueo de hosts malos
-  const domain = String(shop || "")
+  // Saneado + fallback
+  let domain = String(shop || "")
     .replace(/^https?:\/\//i, "")
     .replace(/\/.*$/g, "")
     .toLowerCase();
 
   const BAD = ["vercel.app", "vercel.com", "localhost", "127.0.0.1"];
   if (!domain || BAD.some((d) => domain.endsWith(d))) {
-    console.error("Shop domain inválido para cart/add:", domain);
-    alert("No se pudo iniciar el checkout: dominio de tienda inválido.");
-    return;
+    // fallback duro a tu tienda
+    domain = "um7xus-0u.myshopify.com";
+    console.warn("[postCart] Dominio inválido, usando fallback:", domain);
   }
 
   const asStr = (v) => String(v || "").trim();
@@ -639,6 +639,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   const gidToNum = (id) => {
     const s = asStr(id);
     return s.includes("gid://") ? s.split("/").pop() : s;
+    // Shopify necesita el ID numérico en cart/add
   };
 
   const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
@@ -652,6 +653,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   form.method = "POST";
   form.action = `https://${domain}/cart/add`;
   form.target = "_top";
+
   const add = (n, v) => {
     const i = document.createElement("input");
     i.type = "hidden";
@@ -662,6 +664,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
 
   let line = 0;
 
+  // helper para propiedades de línea
   const getA = (name) => {
     const n = name.toLowerCase();
     return (attrs || []).find((a) => {
@@ -670,6 +673,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     })?.value || "";
   };
 
+  // ítem principal
   add(`items[${line}][id]`, main);
   add(`items[${line}][quantity]`, String(qty || 1));
   add(`items[${line}][properties][_LinePriority]`, "0");
@@ -690,6 +694,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
 
   line++;
 
+  // accesorios
   accs.forEach((id) => {
     add(`items[${line}][id]`, id);
     add(`items[${line}][quantity]`, "1");
@@ -698,11 +703,13 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     line++;
   });
 
+  // redirect directo a checkout si se pide
   if (returnTo) add("return_to", returnTo);
 
   document.body.appendChild(form);
   form.submit();
 }
+
 
 
 
