@@ -6,8 +6,6 @@ import dynamic from "next/dynamic";
 
 // import Head from "next/head";
 
-import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
-
 import { getShopDomain } from "../../lib/shopDomain"; // o "../lib/shopDomain"
 
 // Overlay / Editor (Fabric.js, client-only)
