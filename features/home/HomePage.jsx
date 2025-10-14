@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import styles from "../../styles/home.module.css";
 import dynamic from "next/dynamic";
+import Head from "next/head";
 
 // import Head from "next/head";
 
