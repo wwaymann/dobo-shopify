@@ -1,171 +1,199 @@
 // pages/api/design-product.js
-// Crea (o actualiza) el "Producto DOBO" a partir de un diseño y devuelve el variantId
-// Requiere server envs: SHOPIFY_SHOP, SHOPIFY_ADMIN_TOKEN
-// (opcional) SHOPIFY_PUBLICATION_ID para publicar.
+// Crea/actualiza un producto DOBO y devuelve variantId (Admin GraphQL, sin images ni variants dentro de ProductInput)
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+
+  const SHOP = process.env.SHOPIFY_SHOP; // p.ej. "um7xus-0u.myshopify.com"
+  const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
+  const PUB_ID = process.env.SHOPIFY_PUBLICATION_ID || null; // opcional
+
+  if (!SHOP || !ADMIN_TOKEN) {
+    return res.status(500).json({ ok: false, error: "missing-admin-env" });
   }
+
+  const {
+    title = "DOBO personalizado",
+    designId,
+    price = 0,
+    color = "Único",
+    size = "Único",
+    previewUrl = "",
+    plantTitle = "",
+    potTitle = "",
+    shortDescription = "Diseño DOBO personalizado",
+  } = (await safeJson(req)) || {};
+
+  if (!designId) {
+    return res.status(400).json({ ok: false, error: "missing-designId" });
+  }
+
+  const handle = `dobo-${String(designId).toLowerCase().replace(/[^a-z0-9\-]+/g, "-")}`;
+  const productTitle = title || `DOBO ${plantTitle || ""} + ${potTitle || ""}`.trim();
+  const priceStr = String(Number(price || 0).toFixed(2));
+
   try {
-    const shop =
-      process.env.SHOPIFY_SHOP ||
-      process.env.NEXT_PUBLIC_SHOP_DOMAIN ||
-      process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
-    const adminToken =
-      process.env.SHOPIFY_ADMIN_TOKEN ||
-      process.env.SHOPIFY_ADMIN_ACCESS_TOKEN ||
-      process.env.ADMIN_API_ACCESS_TOKEN; // cualquiera que uses
-    if (!shop || !adminToken) {
-      return res
-        .status(500)
-        .json({ ok: false, error: "missing-server-env(SHOPIFY_SHOP/ADMIN_TOKEN)" });
-    }
-
-    const {
-      title,
-      previewUrl, // URL http(s) preferible (si es data:, se ignora para imagen)
-      price,
-      color,
-      size,
-      designId,
-      plantTitle,
-      potTitle,
-      shortDescription,
-    } = req.body || {};
-
-    const safeTitle = title || `DOBO ${plantTitle || ""} + ${potTitle || ""}`.trim();
-    const handle = String(designId || Date.now())
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    const doboHandle = `dobo-${handle}`;
-
-    const endpoint = `https://${shop}/admin/api/2024-07/graphql.json`;
-    const headers = {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": adminToken,
-    };
-
-    const qProductByHandle = `
-      query($handle: String!) {
-        productByHandle(handle: $handle) {
-          id
-          variants(first: 1) { edges { node { id } } }
+    // 1) upsert producto (sin images/variants)
+    const existing = await adminFetch(SHOP, ADMIN_TOKEN, {
+      query: `
+        query Q($handle: String!) {
+          productByHandle(handle: $handle) {
+            id
+            handle
+            variants(first: 5) { nodes { id } }
+          }
         }
-      }`;
+      `,
+      variables: { handle },
+    });
 
-    async function adminGQL(query, variables) {
-      const r = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ query, variables }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.errors) {
-        const msg = j?.errors?.[0]?.message || `HTTP ${r.status}`;
-        throw new Error(msg);
-      }
-      return j.data;
-    }
+    let productId = existing?.data?.productByHandle?.id || null;
+    let variantId = existing?.data?.productByHandle?.variants?.nodes?.[0]?.id || null;
 
-    const descHtml = `<p>${shortDescription || "Diseño DOBO personalizado"}</p>`;
-
-    const images = [];
-    if (previewUrl && /^https?:\/\//i.test(previewUrl)) {
-      images.push({ src: previewUrl });
-    }
-
-    // 1) ¿Existe ya?
-    const existing = await adminGQL(qProductByHandle, { handle: doboHandle });
-    const product = existing?.productByHandle;
-
-    let productId = null;
-    let variantId = null;
-
-    if (product?.id) {
-      // Update
-      const m = `mutation($input: ProductInput!) {
-        productUpdate(input: $input) {
-          product { id variants(first: 1) { edges { node { id } } } }
-          userErrors { field message }
-        }
-      }`;
-      const upd = await adminGQL(m, {
-        input: {
-          id: product.id,
-          title: safeTitle,
-          handle: doboHandle,
-          descriptionHtml: descHtml,
-          tags: ["DOBO", "custom"],
-          vendor: "DOBO",
-          productType: "DOBO",
-          images,
+    if (!productId) {
+      const create = await adminFetch(SHOP, ADMIN_TOKEN, {
+        query: `
+          mutation M($input: ProductInput!) {
+            productCreate(input: $input) {
+              product { id handle }
+              userErrors { field message }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            title: productTitle,
+            handle,
+            productType: "DOBO",
+            tags: ["DOBO"],
+            status: "ACTIVE", // válido en Admin GraphQL
+            descriptionHtml: escapeHtml(shortDescription),
+            options: ["Título"], // evita warnings si luego agregas variantes simples
+          },
         },
       });
-      productId = upd?.productUpdate?.product?.id || product.id;
-      variantId =
-        upd?.productUpdate?.product?.variants?.edges?.[0]?.node?.id ||
-        product?.variants?.edges?.[0]?.node?.id ||
-        null;
-      // opcional: price update on variant
-      if (variantId && price != null) {
-        const priceM = `mutation($id: ID!, $price: Money!) {
-          productVariantUpdate(input: { id: $id, price: $price }) {
-            productVariant { id }
-            userErrors { field message }
+
+      const errs = create?.data?.productCreate?.userErrors || [];
+      if (errs.length) throw new Error(errs.map(e => e.message).join("; "));
+      productId = create?.data?.productCreate?.product?.id;
+      if (!productId) throw new Error("no-product-id");
+    }
+
+    // 2) variante: crear si falta; si existe, actualizar precio
+    if (!variantId) {
+      const vcreate = await adminFetch(SHOP, ADMIN_TOKEN, {
+        query: `
+          mutation M($productId: ID!, $variant: ProductVariantInput!) {
+            productVariantCreate(productId: $productId, variant: $variant) {
+              productVariant { id }
+              userErrors { field message }
+            }
           }
-        }`;
-        try { await adminGQL(priceM, { id: variantId, price: String(price) }); } catch {}
-      }
+        `,
+        variables: {
+          productId,
+          variant: {
+            title: "Único",
+            price: priceStr,
+            // puedes añadir compareAtPrice si lo necesitas
+          },
+        },
+      });
+      const errs = vcreate?.data?.productVariantCreate?.userErrors || [];
+      if (errs.length) throw new Error(errs.map(e => e.message).join("; "));
+      variantId = vcreate?.data?.productVariantCreate?.productVariant?.id;
+      if (!variantId) throw new Error("no-variant-id");
     } else {
-      // Create
-      const m = `mutation($input: ProductInput!) {
-        productCreate(input: $input) {
-          product { id handle variants(first: 1) { edges { node { id } } } }
-          userErrors { field message }
-        }
-      }`;
-      const crt = await adminGQL(m, {
-        input: {
-          title: safeTitle,
-          handle: doboHandle,
-          descriptionHtml: descHtml,
-          tags: ["DOBO", "custom"],
-          vendor: "DOBO",
-          productType: "DOBO",
-          images,
-          variants: [
-            {
-              title: `${color || "Único"} / ${size || "Único"}`,
-              price: price != null ? String(price) : undefined,
-            },
-          ],
-        },
-      });
-      if (crt?.productCreate?.userErrors?.length) {
-        throw new Error(crt.productCreate.userErrors[0].message);
-      }
-      productId = crt?.productCreate?.product?.id || null;
-      variantId = crt?.productCreate?.product?.variants?.edges?.[0]?.node?.id || null;
-
-      // 2) Publicar (si hay publicationId)
-      if (productId && process.env.SHOPIFY_PUBLICATION_ID) {
-        const pubM = `mutation($id: ID!, $pubId: ID!) {
-          publishablePublish(id: $id, input: [{publicationId: $pubId}]) {
-            userErrors { message }
+      // actualizar precio si ya existe
+      await adminFetch(SHOP, ADMIN_TOKEN, {
+        query: `
+          mutation M($id: ID!, $input: ProductVariantInput!) {
+            productVariantUpdate(id: $id, input: $input) {
+              productVariant { id }
+              userErrors { field message }
+            }
           }
-        }`;
-        try {
-          await adminGQL(pubM, { id: productId, pubId: process.env.SHOPIFY_PUBLICATION_ID });
-        } catch {}
-      }
+        `,
+        variables: { id: variantId, input: { price: priceStr } },
+      });
     }
 
-    if (!variantId) return res.status(500).json({ ok: false, error: "no-variant" });
-    return res.status(200).json({ ok: true, variantId, productId });
+    // 3) publicar si hay publication id
+    if (PUB_ID) {
+      await adminFetch(SHOP, ADMIN_TOKEN, {
+        query: `
+          mutation M($id: ID!, $pub: ID!) {
+            publishablePublish(id: $id, input: { publicationId: $pub }) {
+              userErrors { field message }
+            }
+          }
+        `,
+        variables: { id: productId, pub: PUB_ID },
+      });
+    }
+
+    // 4) opcional: guarda preview/meta como metafields (no obligatorio para el checkout)
+    // Aquí un ejemplo simple; coméntalo si no usas namespace/key propios
+    if (previewUrl) {
+      await adminFetch(SHOP, ADMIN_TOKEN, {
+        query: `
+          mutation M($ownerId: ID!, $metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+              userErrors { field message }
+            }
+          }
+        `,
+        variables: {
+          ownerId: productId,
+          metafields: [{
+            ownerId: productId,
+            namespace: "dobo",
+            key: "preview_url",
+            type: "single_line_text_field",
+            value: previewUrl,
+          }],
+        },
+      });
+    }
+
+    return res.status(200).json({ ok: true, productId, variantId, handle });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
+}
+
+async function adminFetch(shop, token, body) {
+  const r = await fetch(`https://${shop}/admin/api/2024-07/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": token,
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await r.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { throw new Error(text); }
+  if (!r.ok || json?.errors) {
+    throw new Error(JSON.stringify(json?.errors || json));
+  }
+  return json;
+}
+
+async function safeJson(req) {
+  try {
+    const buf = await new Promise((res, rej) => {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => res(Buffer.concat(chunks).toString("utf8")));
+      req.on("error", rej);
+    });
+    return JSON.parse(buf || "{}");
+  } catch { return {}; }
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>\"']/g, (m) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
 }
