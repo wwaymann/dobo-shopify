@@ -1,7 +1,6 @@
 {
   "name": "dobo-ui",
   "version": "1.0.0",
-  "engines": { "node": "20.x" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,9 +15,6 @@
     "nodemailer": "^7.0.5",
     "pdfkit": "^0.17.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "three": "^0.160.0",
-    "@react-three/fiber": "^8.15.0",
-    "@react-three/drei": "^9.100.0"
+    "react-dom": "^18.3.1"
   }
 }
