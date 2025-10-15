@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
-import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 import { cartCreateAndRedirect, toGid, debugEnvLog } from "../../lib/checkout";
 
