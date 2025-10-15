@@ -1,199 +1,137 @@
 // pages/api/design-product.js
-// Crea/actualiza un producto DOBO y devuelve variantId (Admin GraphQL, sin images ni variants dentro de ProductInput)
+// Creates a "DOBO" product in Shopify Admin and returns variantId + product info.
+// Requires env: SHOPIFY_SHOP (e.g. myshop.myshopify.com), SHOPIFY_ADMIN_TOKEN
+// Optional env: SHOPIFY_PUBLICATION_ID (to publish), SHOPIFY_COLLECTION_ID_DOBOS (to add to a collection)
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
-
-  const SHOP = process.env.SHOPIFY_SHOP; // p.ej. "um7xus-0u.myshopify.com"
-  const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
-  const PUB_ID = process.env.SHOPIFY_PUBLICATION_ID || null; // opcional
-
-  if (!SHOP || !ADMIN_TOKEN) {
-    return res.status(500).json({ ok: false, error: "missing-admin-env" });
-  }
-
-  const {
-    title = "DOBO personalizado",
-    designId,
-    price = 0,
-    color = "Único",
-    size = "Único",
-    previewUrl = "",
-    plantTitle = "",
-    potTitle = "",
-    shortDescription = "Diseño DOBO personalizado",
-  } = (await safeJson(req)) || {};
-
-  if (!designId) {
-    return res.status(400).json({ ok: false, error: "missing-designId" });
-  }
-
-  const handle = `dobo-${String(designId).toLowerCase().replace(/[^a-z0-9\-]+/g, "-")}`;
-  const productTitle = title || `DOBO ${plantTitle || ""} + ${potTitle || ""}`.trim();
-  const priceStr = String(Number(price || 0).toFixed(2));
-
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method-not-allowed" });
   try {
-    // 1) upsert producto (sin images/variants)
-    const existing = await adminFetch(SHOP, ADMIN_TOKEN, {
-      query: `
-        query Q($handle: String!) {
-          productByHandle(handle: $handle) {
-            id
-            handle
-            variants(first: 5) { nodes { id } }
+    const SHOP = process.env.SHOPIFY_SHOP;
+    const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN || process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    if (!SHOP || !TOKEN) {
+      return res.status(500).json({ ok: false, error: "Missing env SHOPIFY_SHOP/SHOPIFY_ADMIN_TOKEN" });
+    }
+
+    const {
+      title,
+      previewUrl,
+      price,
+      color = "Único",
+      size = "Único",
+      designId,
+      potTitle = "Maceta",
+      plantTitle = "Planta",
+      shortDescription,
+      metafields = {},
+    } = (await req.json?.()) || req.body || {};
+
+    const productTitle = title || `DOBO ${plantTitle} + ${potTitle}`;
+    const desc = shortDescription || "DOBO personalizado (planta + maceta).";
+
+    // Build Admin REST payload
+    const body = {
+      product: {
+        title: productTitle,
+        body_html: desc,
+        status: "active",
+        tags: "dobo,custom",
+        options: ["Color", "Tamaño"],
+        variants: [
+          {
+            option1: color || "Único",
+            option2: size || "Único",
+            price: String(Number(price || 0).toFixed(0)),
+            sku: `DOBO-${(designId || Date.now()).toString()}`
           }
-        }
-      `,
-      variables: { handle },
+        ],
+        images: previewUrl ? [{ src: previewUrl }] : undefined,
+      }
+    };
+
+    const api = `https://${SHOP}/admin/api/2023-10/products.json`;
+    const r = await fetch(api, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": TOKEN,
+      },
+      body: JSON.stringify(body),
     });
 
-    let productId = existing?.data?.productByHandle?.id || null;
-    let variantId = existing?.data?.productByHandle?.variants?.nodes?.[0]?.id || null;
+    const raw = await r.text();
+    let j; try { j = JSON.parse(raw); } catch { j = {}; }
 
-    if (!productId) {
-      const create = await adminFetch(SHOP, ADMIN_TOKEN, {
-        query: `
-          mutation M($input: ProductInput!) {
-            productCreate(input: $input) {
-              product { id handle }
-              userErrors { field message }
-            }
-          }
-        `,
-        variables: {
-          input: {
-            title: productTitle,
-            handle,
-            productType: "DOBO",
-            tags: ["DOBO"],
-            status: "ACTIVE", // válido en Admin GraphQL
-            descriptionHtml: escapeHtml(shortDescription),
-            options: ["Título"], // evita warnings si luego agregas variantes simples
-          },
-        },
-      });
-
-      const errs = create?.data?.productCreate?.userErrors || [];
-      if (errs.length) throw new Error(errs.map(e => e.message).join("; "));
-      productId = create?.data?.productCreate?.product?.id;
-      if (!productId) throw new Error("no-product-id");
+    if (!r.ok || !j?.product?.variants?.[0]?.id) {
+      return res.status(500).json({ ok: false, error: j?.errors || raw });
     }
 
-    // 2) variante: crear si falta; si existe, actualizar precio
-    if (!variantId) {
-      const vcreate = await adminFetch(SHOP, ADMIN_TOKEN, {
-        query: `
-          mutation M($productId: ID!, $variant: ProductVariantInput!) {
-            productVariantCreate(productId: $productId, variant: $variant) {
-              productVariant { id }
-              userErrors { field message }
-            }
-          }
-        `,
-        variables: {
-          productId,
-          variant: {
-            title: "Único",
-            price: priceStr,
-            // puedes añadir compareAtPrice si lo necesitas
-          },
-        },
-      });
-      const errs = vcreate?.data?.productVariantCreate?.userErrors || [];
-      if (errs.length) throw new Error(errs.map(e => e.message).join("; "));
-      variantId = vcreate?.data?.productVariantCreate?.productVariant?.id;
-      if (!variantId) throw new Error("no-variant-id");
-    } else {
-      // actualizar precio si ya existe
-      await adminFetch(SHOP, ADMIN_TOKEN, {
-        query: `
-          mutation M($id: ID!, $input: ProductVariantInput!) {
-            productVariantUpdate(id: $id, input: $input) {
-              productVariant { id }
-              userErrors { field message }
-            }
-          }
-        `,
-        variables: { id: variantId, input: { price: priceStr } },
-      });
-    }
+    const product = j.product;
+    const variantId = product.variants[0].id;
 
-    // 3) publicar si hay publication id
-    if (PUB_ID) {
-      await adminFetch(SHOP, ADMIN_TOKEN, {
-        query: `
-          mutation M($id: ID!, $pub: ID!) {
-            publishablePublish(id: $id, input: { publicationId: $pub }) {
-              userErrors { field message }
-            }
-          }
-        `,
-        variables: { id: productId, pub: PUB_ID },
-      });
-    }
+    // Optional: Publish to a publication
+    try {
+      const pubId = process.env.SHOPIFY_PUBLICATION_ID;
+      if (pubId) {
+        await fetch(`https://${SHOP}/admin/api/2023-10/publications/${pubId}/publication_listings.json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": TOKEN },
+          body: JSON.stringify({ publication_listing: { publication_id: pubId, product_id: product.id } }),
+        });
+      }
+    } catch {}
 
-    // 4) opcional: guarda preview/meta como metafields (no obligatorio para el checkout)
-    // Aquí un ejemplo simple; coméntalo si no usas namespace/key propios
-    if (previewUrl) {
-      await adminFetch(SHOP, ADMIN_TOKEN, {
-        query: `
-          mutation M($ownerId: ID!, $metafields: [MetafieldsSetInput!]!) {
-            metafieldsSet(metafields: $metafields) {
-              userErrors { field message }
-            }
-          }
-        `,
-        variables: {
-          ownerId: productId,
-          metafields: [{
-            ownerId: productId,
-            namespace: "dobo",
-            key: "preview_url",
-            type: "single_line_text_field",
-            value: previewUrl,
-          }],
-        },
-      });
-    }
+    // Optional: add to a collection
+    try {
+      const collId = process.env.SHOPIFY_COLLECTION_ID_DOBOS;
+      if (collId) {
+        await fetch(`https://${SHOP}/admin/api/2023-10/collects.json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": TOKEN },
+          body: JSON.stringify({ collect: { collection_id: collId, product_id: product.id } }),
+        });
+      }
+    } catch {}
 
-    return res.status(200).json({ ok: true, productId, variantId, handle });
+    // Optional: set metafields
+    try {
+      const entries = Object.entries(metafields);
+      for (const [key, value] of entries) {
+        await fetch(`https://${SHOP}/admin/api/2023-10/metafields.json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": TOKEN },
+          body: JSON.stringify({
+            metafield: { namespace: "dobo", key, value: String(value ?? ""), type: "single_line_text_field", owner_id: product.id, owner_resource: "product" }
+          }),
+        });
+      }
+      if (designId) {
+        await fetch(`https://${SHOP}/admin/api/2023-10/metafields.json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": TOKEN },
+          body: JSON.stringify({
+            metafield: { namespace: "dobo", key: "design_id", value: String(designId), type: "single_line_text_field", owner_id: product.id, owner_resource: "product" }
+          }),
+        });
+      }
+      if (previewUrl) {
+        await fetch(`https://${SHOP}/admin/api/2023-10/metafields.json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": TOKEN },
+          body: JSON.stringify({
+            metafield: { namespace: "dobo", key: "preview_url", value: String(previewUrl), type: "url", owner_id: product.id, owner_resource: "product" }
+          }),
+        });
+      }
+    } catch {}
+
+    return res.status(200).json({
+      ok: true,
+      productId: product.id,
+      variantId,
+      handle: product.handle,
+      product,
+    });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
-}
-
-async function adminFetch(shop, token, body) {
-  const r = await fetch(`https://${shop}/admin/api/2024-07/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": token,
-    },
-    body: JSON.stringify(body),
-  });
-  const text = await r.text();
-  let json = null;
-  try { json = JSON.parse(text); } catch { throw new Error(text); }
-  if (!r.ok || json?.errors) {
-    throw new Error(JSON.stringify(json?.errors || json));
-  }
-  return json;
-}
-
-async function safeJson(req) {
-  try {
-    const buf = await new Promise((res, rej) => {
-      const chunks = [];
-      req.on("data", (c) => chunks.push(c));
-      req.on("end", () => res(Buffer.concat(chunks).toString("utf8")));
-      req.on("error", rej);
-    });
-    return JSON.parse(buf || "{}");
-  } catch { return {}; }
-}
-
-function escapeHtml(s) {
-  return String(s || "").replace(/[&<>\"']/g, (m) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[m]));
 }

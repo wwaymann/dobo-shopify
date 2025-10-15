@@ -2,40 +2,91 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
+import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
-import { cartCreateAndRedirect, toGid, debugEnvLog } from "../../lib/checkout";
 
-useEffect(() => { debugEnvLog(); }, []);
 
-async function buyNow() {
-  try {
-    const attrs = [
-      { key: "_DesignId", value: `dobo-${Date.now()}` },
-      { key: "_LinePriority", value: "0" },
-      // agrega _DesignPreview/_DesignColor/_DesignSize si los tienes
-    ];
+// === DOBO checkout helpers (single source of truth) ===
+const toGid = (id) =>
+  String(id || "").includes("gid://")
+    ? String(id)
+    : `gid://shopify/ProductVariant/${String(id || "").replace(/\D/g, "")}`;
 
-    const mainGid = toGid(
-      selectedVariant?.id || pots?.[selectedPotIndex]?.variants?.[0]?.id
-    );
-    if (!mainGid) throw new Error("variant-missing");
+function postCart(shopDomain, primaryVariantId, qty, attributes = [], accessoryVariantIds = [], redirectPath = "/checkout") {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `https://${shopDomain}/cart/add`;
 
-    const lines = [
-      { merchandiseId: mainGid, quantity, attributes: attrs },
-      ...(getAccessoryVariantIds?.() || []).map((id) => ({
-        merchandiseId: toGid(id),
-        quantity: 1,
-        attributes: [{ key: "_Accessory", value: "true" }],
-      })),
-    ];
+  const lineInputs = [];
+  const pushLine = (id, q = 1, props = []) => {
+    const idx = lineInputs.length + 1;
+    const inId = document.createElement("input");
+    inId.name = `items[${idx}][id]`;
+    inId.value = String(id).replace(/^gid:\/\/shopify\/ProductVariant\//, "");
+    form.appendChild(inId);
+    const inQty = document.createElement("input");
+    inQty.name = `items[${idx}][quantity]`;
+    inQty.value = String(q);
+    form.appendChild(inQty);
+    for (const a of props) {
+      const ky = document.createElement("input");
+      ky.name = `items[${idx}][properties][${a.key}]`;
+      ky.value = String(a.value ?? "");
+      form.appendChild(ky);
+    }
+    lineInputs.push(true);
+  };
 
-    await cartCreateAndRedirect(lines, [{ key: "_LinePriority", value: "0" }]);
-  } catch (e) {
-    alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
-  }
+  pushLine(primaryVariantId, qty, attributes);
+  for (const acc of accessoryVariantIds) pushLine(acc, 1, []);
+
+  const ret = document.createElement("input");
+  ret.type = "hidden";
+  ret.name = "return_to";
+  ret.value = redirectPath === "/checkout" ? "/checkout" : String(redirectPath || "/checkout");
+  form.appendChild(ret);
+
+  document.body.appendChild(form);
+  form.submit();
 }
 
+async function addToCart({ selectedVariant, quantity = 1, attributes = [], accessoryVariantIds = [] }) {
+  const shop = getShopDomain();
+  const chosen = selectedVariant?.id;
+  if (!chosen) throw new Error("variant-missing");
+  postCart(shop, chosen, quantity, attributes, accessoryVariantIds, "/cart");
+}
 
+async function buyNow({ selectedVariant, quantity = 1, attributes = [], accessoryVariantIds = [], basePrice = 0, meta = {} }) {
+  const shop = getShopDomain();
+
+  // Try to create a DOBO "design product" (non-blocking fallback to selected variant)
+  let dp = null;
+  try {
+    const resp = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: meta.title || undefined,
+        previewUrl: meta.previewUrl || undefined,
+        price: basePrice,
+        color: meta.color || "Único",
+        size: meta.size || "Único",
+        designId: meta.designId || `dobo-${Date.now()}`,
+        potTitle: meta.potTitle || "Maceta",
+        plantTitle: meta.plantTitle || "Planta",
+        shortDescription: meta.shortDescription || "DOBO personalizado (planta + maceta).",
+        metafields: meta.metafields || {},
+      }),
+    });
+    const j = await resp.json().catch(() => null);
+    if (resp.ok && j?.variantId) dp = j;
+  } catch {}
+
+  const variantToBuy = dp?.variantId || selectedVariant?.id;
+  if (!variantToBuy) throw new Error("variant-missing");
+  postCart(shop, variantToBuy, quantity, attributes, accessoryVariantIds, "/checkout");
+}
 const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
 
 const money = (v, code="CLP") => new Intl.NumberFormat("es-CL", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(v||0));
@@ -136,6 +187,21 @@ export default function HomePage() {
     ];
   }
 
+  async function buyNow() {
+    try {
+      const attrs = await minimalDesignAttributes();
+      const lines = [];
+
+      const variantId = selectedVariant?.id || pots?.[selectedPotIndex]?.variants?.[0]?.id;
+      if (!variantId) throw new Error("variant-missing");
+      lines.push({ quantity, merchandiseId: toGid(variantId), attributes: attrs });
+
+      // accesorios: aquí puedes agregar si tienes su listado
+      await cartCreateAndRedirect(lines);
+    } catch (e) {
+      alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
+    }
+  }
 
   return (
     <div className={styles?.container || ""} style={{ padding: 16, paddingBottom: 80 }}>
