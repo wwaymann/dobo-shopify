@@ -1,24 +1,18 @@
-DOBO Hotfix v8 — TDZ killer pack
+DOBO Hotfix v12 — Advanced TDZ killer
+- Añade `fix-tdz-default-params-advanced.mjs` (Babel) que mueve **cualquier** parámetro por defecto que referencie `S`
+  hacia el cuerpo de la función (soporta funciones normales y arrow con cuerpo conciso).
+- Mantiene: reorder top-level, predeclare symbol, import-to-lazy.
 
-Incluye:
-- Wrapper dinámico del Overlay y shims (igual que v6/v7)
-- Proxy perezoso para ../lib/designStore
-- Source maps en prod
-- 2 codemods:
-  a) scripts/fix-tdz-default-params.mjs   -> mueve defaults de parámetros al cuerpo de la función
-  b) scripts/fix-tdz-reorder-top-level.mjs -> reordena declaraciones top-level antes de su primera referencia (Babel)
+Prebuild ejecuta:
+  1) ensure babel deps
+  2) default-params-advanced (targets: S)
+  3) default-params simple (fallback)
+  4) reorder top-level
+  5) predeclare S
+  6) import-to-lazy S
 
-Uso recomendado sobre `components/CustomizationOverlay.impl.js`:
-1) Copia TODO en la raíz del repo (sobrescribe).
-2) Asegúrate: tu overlay grande vive en components/CustomizationOverlay.impl.js
-3) Ejecuta:
-   node scripts/fix-tdz-default-params.mjs components/CustomizationOverlay.impl.js
-   npm i -D @babel/parser @babel/traverse @babel/generator
-   node scripts/fix-tdz-reorder-top-level.mjs components/CustomizationOverlay.impl.js
-4) npm run build
-
-Con esto eliminamos:
-- Defaults que referencian símbolos aún no inicializados (causa #1 del "Cannot access 'S' before initialization")
-- Referencias top-level que ocurren antes de la declaración correspondiente.
-
-Si aún falla, el stack (gracias a source maps) te dirá la línea exacta. Pásamela y te mando un patch específico.
+Pasos:
+  - Copia contenido en la raíz del repo
+  - Fusiona package.additions.json en tu package.json
+  - Asegura que el archivo grande esté en components/CustomizationOverlay.impl.js
+  - Commit & deploy

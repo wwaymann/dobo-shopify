@@ -1,7 +1,6 @@
 // scripts/fix-tdz-default-params.mjs
 import fs from "node:fs";
 import path from "node:path";
-
 const targets = process.argv.slice(2);
 if (targets.length === 0) {
   console.error("Usage: node scripts/fix-tdz-default-params.mjs <path/to/file1> [file2 ...]");

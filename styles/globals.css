@@ -1,6 +1,6 @@
 body {
   font-family: 'Arial', sans-serif;
-  padding: 20px;
+  padding: 5px;
   background-color: #f9f9f9;
 }
 
@@ -30,6 +30,8 @@ body {
   height: 100px;
   background: #ccc;
 }
-/* Responsive defaults */
-img, canvas, video, iframe { max-width: 100%; height: auto; }
-.container, .container-fluid { padding-left: 12px; padding-right: 12px; }
+/* Full-bleed móvil: overrides globales permitidos (fuera de CSS Modules) */
+@media (max-width: 768px){
+  .container{ padding-left:0 !important; padding-right:0 !important; }
+  .row{ --bs-gutter-x: 0 !important; }
+}
