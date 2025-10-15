@@ -4,19 +4,16 @@ import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
-import { cartCreateAndRedirect, toGid, postCartFallback, resolveShopDomain, debugEnvLog } from "../../lib/checkout";
-import { cartCreateAndRedirect, toGid, resolveShopDomain, debugEnvLog } from "../../lib/checkout";
+import { cartCreateAndRedirect, toGid, debugEnvLog } from "../../lib/checkout";
 
-useEffect(() => {
-  debugEnvLog(); // mira la consola del navegador: verás shop + token_present:true/false
-}, []);
+useEffect(() => { debugEnvLog(); }, []);
 
 async function buyNow() {
   try {
     const attrs = [
       { key: "_DesignId", value: `dobo-${Date.now()}` },
       { key: "_LinePriority", value: "0" },
-      // agrega DesignPreview/Color/Size si los tienes listos
+      // agrega _DesignPreview/_DesignColor/_DesignSize si los tienes
     ];
 
     const mainGid = toGid(
@@ -25,12 +22,7 @@ async function buyNow() {
     if (!mainGid) throw new Error("variant-missing");
 
     const lines = [
-      {
-        merchandiseId: mainGid,
-        quantity,
-        attributes: attrs,
-      },
-      // Si sumas accesorios:
+      { merchandiseId: mainGid, quantity, attributes: attrs },
       ...(getAccessoryVariantIds?.() || []).map((id) => ({
         merchandiseId: toGid(id),
         quantity: 1,
@@ -43,6 +35,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
   }
 }
+
 
 const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
 
