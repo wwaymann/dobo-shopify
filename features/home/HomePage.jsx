@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
+import { cartCreateAndRedirect, toGid, postCartFallback, resolveShopDomain, debugEnvLog } from "../../lib/checkout";
 
 const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
 
@@ -105,22 +106,54 @@ export default function HomePage() {
     ];
   }
 
-  async function buyNow() {
-    try {
-      const attrs = await minimalDesignAttributes();
-      const lines = [];
+  useEffect(() => {
+  // Te deja ver en la consola si el token/domino están siendo tomados
+  debugEnvLog();
+}, []);
 
-      const variantId = selectedVariant?.id || pots?.[selectedPotIndex]?.variants?.[0]?.id;
-      if (!variantId) throw new Error("variant-missing");
-      lines.push({ quantity, merchandiseId: toGid(variantId), attributes: attrs });
+async function buyNow() {
+  try {
+    // 1) Atributos mínimos de diseño (sigue usando tu helper si ya lo tienes)
+    const attrs = [
+      { key: "_DesignId", value: `dobo-${Date.now()}` },
+      { key: "_LinePriority", value: "0" },
+      // agrega DesignPreview / Color / Size si los tienes
+    ];
 
-      // accesorios: aquí puedes agregar si tienes su listado
-      await cartCreateAndRedirect(lines);
-    } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
+    // 2) Variant principal + accesorios (adapta a tus refs/state)
+    const mainVariantId = toGid(selectedVariant?.id || pots?.[selectedPotIndex]?.variants?.[0]?.id);
+    if (!mainVariantId) throw new Error("variant-missing");
+
+    const accessoryIds = (getAccessoryVariantIds?.() || []).map(toGid);
+
+    const lines = [
+      {
+        merchandiseId: mainVariantId,
+        quantity,
+        attributes: attrs.map(({ key, value }) => ({ key, value: String(value ?? "") })),
+      },
+      ...accessoryIds.map((gid) => ({
+        merchandiseId: gid,
+        quantity: 1,
+        attributes: [{ key: "_Accessory", value: "true" }],
+      })),
+    ];
+
+    // 3) Crear carrito y redirigir (Storefront GraphQL)
+    await cartCreateAndRedirect(lines, [{ key: "_LinePriority", value: "0" }]);
+
+  } catch (e) {
+    // Si falta token/dominio, degradar a /cart/add para no bloquear venta
+    if (String(e?.message || "").includes("Missing env")) {
+      const shop = resolveShopDomain();
+      const main = selectedVariant?.id || pots?.[selectedPotIndex]?.variants?.[0]?.id;
+      const accs = getAccessoryVariantIds?.() || [];
+      postCartFallback(shop, main, quantity, attrs, accs, "/checkout");
+      return;
     }
+    alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
   }
-
+}
   return (
     <div className={styles?.container || ""} style={{ padding: 16, paddingBottom: 80 }}>
       <div className="row justify-content-center gx-5 gy-4">
