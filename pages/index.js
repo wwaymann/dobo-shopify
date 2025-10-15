@@ -1,9 +1,11 @@
-// pages/index.js
-import React from "react";
+// pages/index.js — entry
 import Head from "next/head";
 import dynamic from "next/dynamic";
+
+// Cargamos HomePage sin SSR para evitar acceso a window/document en build
 const HomePage = dynamic(() => import("../features/home/HomePage"), { ssr: false });
-export default function IndexPage() {
+
+export default function Index() {
   return (
     <>
       <Head>
