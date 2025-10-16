@@ -12,33 +12,70 @@ const toGid = (id) =>
     ? String(id)
     : `gid://shopify/ProductVariant/${String(id || "").replace(/\D/g, "")}`;
 
-function postCart(shopDomain, primaryVariantId, qty, attributes = [], accessoryVariantIds = [], redirectPath = "/checkout") {
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = `https://${shopDomain}/cart/add`;
+function postCart(
+  shopDomain,
+  primaryVariantId,
+  qty,
+  attributes = [],
+  accessoryVariantIds = [],
+  redirectPath = "/checkout"
+) {
+  const shop = String(shopDomain || "").trim();
+  if (!shop || /vercel\.(app|com)$/.test(shop)) {
+    alert("dominio de tienda inválido");
+    return;
+  }
 
-  const lineInputs = [];
-  const pushLine = (id, q = 1, props = []) => {
-    const idx = lineInputs.length + 1;
-    const inId = document.createElement("input");
-    inId.name = `items[${idx}][id]`;
-    inId.value = String(id).replace(/^gid:\/\/shopify\/ProductVariant\//, "");
-    form.appendChild(inId);
-    const inQty = document.createElement("input");
-    inQty.name = `items[${idx}][quantity]`;
-    inQty.value = String(q);
-    form.appendChild(inQty);
-    for (const a of props) {
-      const ky = document.createElement("input");
-      ky.name = `items[${idx}][properties][${a.key}]`;
-      ky.value = String(a.value ?? "");
-      form.appendChild(ky);
-    }
-    lineInputs.push(true);
+  // 1) IDs de variante limpios y numéricos
+  const normalizeId = (id) =>
+    String(id || "")
+      .replace(/^gid:\/\/shopify\/ProductVariant\//, "")
+      .replace(/\D/g, ""); // solo dígitos
+
+  // 2) Armamos líneas con propiedades como objeto
+  const lines = [];
+  const pushLine = (id, q = 1, propsArr = []) => {
+    const properties = {};
+    (Array.isArray(propsArr) ? propsArr : []).forEach((a) => {
+      const k = String(a?.key || "").trim();
+      if (!k) return;
+      properties[k] = String(a?.value ?? "");
+    });
+    lines.push({
+      id: normalizeId(id),
+      quantity: Number(q) || 1,
+      properties,
+    });
   };
 
   pushLine(primaryVariantId, qty, attributes);
-  for (const acc of accessoryVariantIds) pushLine(acc, 1, []);
+  (accessoryVariantIds || []).forEach((acc) => pushLine(acc, 1, []));
+
+  // 3) Form POST (soporta 3rd-party cookies) y rompe el iframe si aplica
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `https://${shop}/cart/add`;
+  form.target = "_top"; // importante cuando estás embebido en Shopify
+
+  // Shopify espera items[0], items[1], ...
+  lines.forEach((ln, idx) => {
+    const inId = document.createElement("input");
+    inId.name = `items[${idx}][id]`;
+    inId.value = ln.id;
+    form.appendChild(inId);
+
+    const inQty = document.createElement("input");
+    inQty.name = `items[${idx}][quantity]`;
+    inQty.value = String(ln.quantity);
+    form.appendChild(inQty);
+
+    Object.entries(ln.properties).forEach(([k, v]) => {
+      const ip = document.createElement("input");
+      ip.name = `items[${idx}][properties][${k}]`;
+      ip.value = v;
+      form.appendChild(ip);
+    });
+  });
 
   const ret = document.createElement("input");
   ret.type = "hidden";
