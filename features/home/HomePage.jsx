@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
-import { sendDesignEmail } from "../lib/sendDesignEmail"; // ajusta la ruta según tu estructura
+import { sendDesignEmail } from "../../lib/sendDesignEmail"; // ajusta la ruta según tu estructura
 
 
 // === DOBO checkout helpers (single source of truth) ===
