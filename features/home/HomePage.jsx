@@ -119,6 +119,7 @@ async function buyNow() {
   }
 }
 
+
 const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
 
 const money = (v, code="CLP") => new Intl.NumberFormat("es-CL", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(v||0));
