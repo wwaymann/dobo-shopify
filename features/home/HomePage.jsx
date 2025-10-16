@@ -6,6 +6,7 @@ import styles from "../../styles/home.module.css";
 // Importa helpers ya existentes
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
+import { sendDesignEmail } from "..//../lib/sendDesignEmail";
 
 // *** NO importes sendDesignEmail aquí; usaremos fetch a /api/send-design-email ***
 
@@ -259,23 +260,23 @@ export default function HomePage() {
         const preview =
           (attrs.find(a => (a.key || "").toLowerCase().includes("designpreview"))?.value) || "";
 
-        fetch("/api/send-design-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          keepalive: true,
-          body: JSON.stringify({
-            attachPreviews: true,               // adjunta si hay URLs válidas
-            attrs: preview ? [{ key: "DesignPreview", value: preview }] : [],
-            meta: { Descripcion: shortDescription, Precio: basePrice },
-            links: { Storefront: location.origin },
-          }),
-        })
-          .then(r => r.json())
-          .then(res => {
-            if (!res?.ok) console.warn("Email no enviado:", res);
-          })
-          .catch(err => console.warn("Fallo al enviar email:", err));
-      } catch (e) {
+  // Dispara email pero no bloquees el checkout:
+fetch('/api/send-design-email', {
+  method: 'POST',
+  headers: { 'Content-Type':'application/json' },
+  keepalive: true, // importante si el usuario navega a checkout
+  body: JSON.stringify({
+    // opcional: to: 'otro@destino.com'  // para pruebas, si quieres
+    attachPreviews: false,                // pon true si quieres adjuntar imágenes descargándolas
+    attrs,                                // tus atributos del diseño
+    meta: { Descripcion: shortDescription, Precio: basePrice },
+    links: dp?.handle 
+      ? { Storefront: `https://${getShopDomain()}/products/${dp.handle}` }
+      : { Storefront: location.origin }
+  })
+}).then(r => r.json()).then(r => {
+  if (!r.ok) console.warn('email falló:', r);
+}).catch(()=>{ /* ignora, no rompas el checkout */ });
         console.warn("Email try/catch:", e);
       }
 
