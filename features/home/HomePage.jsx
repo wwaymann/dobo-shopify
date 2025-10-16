@@ -2,15 +2,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
-
-// Importa helpers ya existentes
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
+import { sendDesignEmail } from "../lib/sendDesignEmail"; // ajusta la ruta según tu estructura
 
-// *** NO importes sendDesignEmail aquí; usaremos fetch a /api/send-design-email ***
 
-// ================== helpers opcionales del carrito (form POST) ==================
-// (Los dejamos por si los usas en otro flujo; no interfieren con cartCreateAndRedirect)
+// === DOBO checkout helpers (single source of truth) ===
+const toGid = (id) =>
+  String(id || "").includes("gid://")
+    ? String(id)
+    : `gid://shopify/ProductVariant/${String(id || "").replace(/\D/g, "")}`;
+
 function postCart(
   shopDomain,
   primaryVariantId,
@@ -25,11 +27,13 @@ function postCart(
     return;
   }
 
+  // 1) IDs de variante limpios y numéricos
   const normalizeId = (id) =>
     String(id || "")
       .replace(/^gid:\/\/shopify\/ProductVariant\//, "")
-      .replace(/\D/g, "");
+      .replace(/\D/g, ""); // solo dígitos
 
+  // 2) Armamos líneas con propiedades como objeto
   const lines = [];
   const pushLine = (id, q = 1, propsArr = []) => {
     const properties = {};
@@ -48,11 +52,13 @@ function postCart(
   pushLine(primaryVariantId, qty, attributes);
   (accessoryVariantIds || []).forEach((acc) => pushLine(acc, 1, []));
 
+  // 3) Form POST (soporta 3rd-party cookies) y rompe el iframe si aplica
   const form = document.createElement("form");
   form.method = "POST";
   form.action = `https://${shop}/cart/add`;
-  form.target = "_top";
+  form.target = "_top"; // importante cuando estás embebido en Shopify
 
+  // Shopify espera items[0], items[1], ...
   lines.forEach((ln, idx) => {
     const inId = document.createElement("input");
     inId.name = `items[${idx}][id]`;
@@ -89,16 +95,117 @@ async function addToCart({ selectedVariant, quantity = 1, attributes = [], acces
   postCart(shop, chosen, quantity, attributes, accessoryVariantIds, "/cart");
 }
 
-// ================== utilidades locales ==================
+// Helper local para leer atributos
+function findAttr(attrs, name) {
+  const n = String(name || "").toLowerCase();
+  const it = (attrs || []).find(a => String(a?.key || "").toLowerCase() === n);
+  return it?.value || "";
+}
+
+// ---- TU FUNCIÓN FINAL ----
+async function buyNow() {
+  try {
+    // 1) Atributos del diseño (usa tu helper si existe; si no, fallback mínimo)
+    let attrs = [];
+    if (typeof buildAndSaveDesignForCartCheckout === "function") {
+      const r = await buildAndSaveDesignForCartCheckout();
+      attrs = Array.isArray(r?.attributes) ? r.attributes : [];
+    } else if (typeof prepareDesignAttributes === "function") {
+      attrs = await prepareDesignAttributes();
+    } else {
+      const id = `dobo-${Date.now()}`;
+      attrs = [
+        { key: "_DesignId", value: id },
+        { key: "_LinePriority", value: "0" },
+      ];
+    }
+
+    // 2) Precios base (robusto a nulos)
+    const potPrice = Number(
+      selectedVariant?.price?.amount ??
+      selectedVariant?.price ??
+      pots?.[selectedPotIndex]?.variants?.[0]?.price?.amount ??
+      pots?.[selectedPotIndex]?.variants?.[0]?.price ?? 0
+    );
+    const plantPrice = Number(
+      plants?.[selectedPlantIndex]?.minPrice?.amount ??
+      plants?.[selectedPlantIndex]?.minPrice ?? 0
+    );
+    const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
+
+    // 3) Descripción compacta (no “todas las imágenes”, solo breve)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
+
+    // 4) Intentar crear el producto DOBO (publicable) — no bloquea el flujo si falla
+    const previewUrl = findAttr(attrs, "_designpreview") || findAttr(attrs, "designpreview");
+    const designId   = findAttr(attrs, "_designid")      || findAttr(attrs, "designid") || `dobo-${Date.now()}`;
+
+    const createBody = {
+      title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
+      previewUrl,
+      price: basePrice,
+      color: selectedColor || "Único",
+      size:  activeSize     || "Único",
+      designId,
+      plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+      potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+      shortDescription,
+      publishOnline: true,  // si tu endpoint /api/design-product lo soporta, publícalo en "Tienda online"
+    };
+
+    let dp = null;
+    try {
+      const resp = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createBody),
+      });
+      dp = await resp.json().catch(() => null);
+      if (!resp.ok || !dp?.ok || !dp?.variantId) {
+        console.warn("design-product falló; usando fallback a la variante elegida", dp);
+        dp = null;
+      }
+    } catch (e) {
+      console.warn("design-product request error:", e);
+      dp = null;
+    }
+
+    // 5) Disparar correo con preview/capas (NO bloquear checkout)
+    //    (El endpoint /api/send-design-email usa GMAIL_USER, GMAIL_APP_PASSWORD, MERCHANT_NOTIF_EMAIL)
+   sendDesignEmail(attrs, {
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: dp?.handle ? { "Producto (storefront)": `https://${getShopDomain()}/products/${dp.handle}` } : {},
+  // attachAll: true, // activa si quieres adjuntar TODAS las capas (ojo con pesos)
+}).then(r => {
+  if (!r.ok) console.warn("email not sent:", r);
+});
+
+    // 6) Preparar checkout (usar DOBO si se creó; si no, fallback a la variante seleccionada)
+    const shop = getShopDomain();
+    const accIds = typeof getAccessoryVariantIds === "function" ? getAccessoryVariantIds() : [];
+
+    const chosenVariant =
+      dp?.variantId ||
+      selectedVariant?.id ||
+      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
+      null;
+
+    if (!chosenVariant) throw new Error("variant-missing");
+
+    postCart(shop, chosenVariant, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
+  }
+}
+
+
 const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
 
-const money = (v, code = "CLP") =>
-  new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency: code,
-    maximumFractionDigits: 0,
-  }).format(Number(v || 0));
-
+const money = (v, code="CLP") => new Intl.NumberFormat("es-CL", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(v||0));
 const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
 
 export default function HomePage() {
@@ -125,7 +232,7 @@ export default function HomePage() {
           fetch(`/api/products?size=${sizeQ}&type=planta&first=40`, { cache: "no-store" }).catch(() => null),
           fetch(`/api/products?type=accesorio&first=40`, { cache: "no-store" }).catch(() => null),
         ]);
-        const jsonSafe = async (r) => (r && r.ok ? await r.json() : null);
+        const jsonSafe = async (r) => r && r.ok ? (await r.json()) : null;
         const potsJ = (await jsonSafe(rPots)) || {};
         const plantsJ = (await jsonSafe(rPlants)) || {};
         const accJ = (await jsonSafe(rAcc)) || {};
@@ -135,11 +242,7 @@ export default function HomePage() {
             id: p.id || p.handle || p.title,
             title: p.title || p.name || "Producto",
             handle: p.handle || "",
-            image:
-              p?.image?.src ||
-              p?.image ||
-              (Array.isArray(p?.images) && p.images[0]?.src) ||
-              "/placeholder.png",
+            image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "/placeholder.png",
             description: p?.description || p?.body_html || "",
             descriptionHtml: p?.descriptionHtml || "",
             variants: Array.isArray(p?.variants) ? p.variants : [],
@@ -154,44 +257,26 @@ export default function HomePage() {
       } catch (e) {
         console.warn("fetch products failed; using placeholders", e);
         if (!done) {
-          setPots([
-            { id: "p1", title: "Maceta", image: "/placeholder.png", variants: [{ id: "1", price: 10000 }] },
-          ]);
+          setPots([{ id: "p1", title: "Maceta", image: "/placeholder.png", variants: [{ id: "1", price: 10000 }] }]);
           setPlants([{ id: "pl1", title: "Planta", image: "/placeholder.png", minPrice: 5000 }]);
           setAccessories([]);
         }
       }
     })();
-    return () => {
-      done = true;
-    };
+    return () => { done = true; };
   }, [activeSize]);
 
   const selectedPot = pots[selectedPotIndex];
-
   const selectedVariant = useMemo(() => {
     const pot = pots[selectedPotIndex];
     if (!pot) return null;
     const lower = (s) => (s ?? "").toString().trim().toLowerCase();
-    const valid = (pot.variants || []).filter(
-      (v) => !!(v.image || v.imageId || v.imageUrl || v.image_id)
-    );
-    const colors = [
-      ...new Set(
-        valid.flatMap((v) =>
-          (v.selectedOptions || [])
-            .filter((o) => lower(o.name) === "color")
-            .map((o) => o.value)
-        )
-      ),
-    ];
+    const valid = (pot.variants || []).filter((v) => !!(v.image || v.imageId || v.imageUrl || v.image_id));
+    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value)))];
     if (colors.length && !colors.includes(selectedColor)) {
       setSelectedColor(colors[0]);
     }
-    const match = (v, c) =>
-      (v.selectedOptions || []).some(
-        (o) => lower(o.name) === "color" && lower(o.value) === lower(c)
-      );
+    const match = (v, c) => (v.selectedOptions || []).some((o) => lower(o.name) === "color" && lower(o.value) === lower(c));
     return valid.find((v) => match(v, selectedColor)) || valid[0] || pot.variants?.[0] || null;
   }, [pots, selectedPotIndex, selectedColor]);
 
@@ -199,18 +284,8 @@ export default function HomePage() {
     const pot = pots[selectedPotIndex];
     if (!pot) return setColorOptions([]);
     const lower = (s) => (s ?? "").toString().trim().toLowerCase();
-    const valid = (pot.variants || []).filter(
-      (v) => !!(v.image || v.imageId || v.imageUrl || v.image_id)
-    );
-    const colors = [
-      ...new Set(
-        valid.flatMap((v) =>
-          (v.selectedOptions || [])
-            .filter((o) => lower(o.name) === "color")
-            .map((o) => o.value)
-        )
-      ),
-    ];
+    const valid = (pot.variants || []).filter((v) => !!(v.image || v.imageId || v.imageUrl || v.image_id));
+    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value)))];
     setColorOptions(colors);
   }, [pots, selectedPotIndex]);
 
@@ -220,7 +295,6 @@ export default function HomePage() {
     return (potPrice + plantPrice) * quantity;
   }, [selectedVariant, plants, selectedPlantIndex, quantity]);
 
-  // Atributos mínimos si no existe tu helper
   async function minimalDesignAttributes() {
     return [
       { key: "DesignId", value: `dobo-${Date.now()}` },
@@ -229,96 +303,29 @@ export default function HomePage() {
     ];
   }
 
-  // ================== COMPRAR AHORA (con envío de email no bloqueante) ==================
   async function buyNow() {
     try {
-      // 1) Atributos de diseño
-      let attrs = [];
-      if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
-        const r = await window.buildAndSaveDesignForCartCheckout();
-        attrs = Array.isArray(r?.attributes) ? r.attributes : [];
-      } else if (typeof window.prepareDesignAttributes === "function") {
-        attrs = await window.prepareDesignAttributes();
-      } else {
-        attrs = await minimalDesignAttributes();
-      }
+      const attrs = await minimalDesignAttributes();
+      const lines = [];
 
-      // 2) Breve descripción + precio base
-      const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
-      const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
-      const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
-
-      const shortDescription = (
-        `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-        `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-        `${activeSize ?? ""} · ${selectedColor ?? ""}`
-      ).replace(/\s+/g, " ").trim();
-
-      // 3) Dispara correo (no bloquea checkout)
-      try {
-        const preview =
-          (attrs.find(a => (a.key || "").toLowerCase().includes("designpreview"))?.value) || "";
-
-        fetch("/api/send-design-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          keepalive: true,
-          body: JSON.stringify({
-            attachPreviews: true,               // adjunta si hay URLs válidas
-            attrs: preview ? [{ key: "DesignPreview", value: preview }] : [],
-            meta: { Descripcion: shortDescription, Precio: basePrice },
-            links: { Storefront: location.origin },
-          }),
-        })
-          .then(r => r.json())
-          .then(res => {
-            if (!res?.ok) console.warn("Email no enviado:", res);
-          })
-          .catch(err => console.warn("Fallo al enviar email:", err));
-      } catch (e) {
-        console.warn("Email try/catch:", e);
-      }
-
-      // 4) Checkout (Storefront API) — usa la variante seleccionada
-      const variantId =
-        selectedVariant?.id ||
-        pots?.[selectedPotIndex]?.variants?.[0]?.id ||
-        null;
-
+      const variantId = selectedVariant?.id || pots?.[selectedPotIndex]?.variants?.[0]?.id;
       if (!variantId) throw new Error("variant-missing");
+      lines.push({ quantity, merchandiseId: toGid(variantId), attributes: attrs });
 
-      const lines = [
-        {
-          quantity,
-          merchandiseId: toGid(variantId),
-          attributes: attrs,
-        },
-      ];
-
-      // Si tienes accesorios en tu estado:
-      // const accIds = (typeof getAccessoryVariantIds === 'function' ? getAccessoryVariantIds() : []);
-      // accIds.forEach(acc => lines.push({ quantity: 1, merchandiseId: toGid(acc), attributes: [] }));
-
+      // accesorios: aquí puedes agregar si tienes su listado
       await cartCreateAndRedirect(lines);
     } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
+      alert(`No se pudo iniciar el checkout: ${e?.message || e}`);
     }
   }
 
-  // ================== UI ==================
   return (
     <div className={styles?.container || ""} style={{ padding: 16, paddingBottom: 80 }}>
       <div className="row justify-content-center gx-5 gy-4">
         <div className="col-lg-5 col-md-8 col-12 text-center">
           <div className="btn-group mb-3" role="group" aria-label="Tamaño">
             {["Pequeño", "Mediano", "Grande"].map((s) => (
-              <button
-                key={s}
-                className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
-                onClick={() => setActiveSize(s)}
-              >
-                {s}
-              </button>
+              <button key={s} className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`} onClick={() => setActiveSize(s)}>{s}</button>
             ))}
           </div>
 
@@ -337,33 +344,14 @@ export default function HomePage() {
             className="mx-auto mb-3"
           >
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  transition: "transform .3s",
-                  transform: `translateX(-${selectedPotIndex * 100}%)`,
-                }}
-              >
+              <div style={{ display: "flex", transition: "transform .3s", transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                 {pots.map((p, idx) => {
                   const isSel = idx === selectedPotIndex;
                   const vImg = isSel ? (selectedVariant?.image || selectedVariant?.imageUrl) : null;
                   const img = vImg || p.image;
                   return (
-                    <div
-                      key={p.id || idx}
-                      style={{
-                        minWidth: "100%",
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "end",
-                        padding: 16,
-                      }}
-                    >
-                      <img
-                        src={img}
-                        alt={p.title}
-                        style={{ maxWidth: "90%", maxHeight: 320, objectFit: "contain" }}
-                      />
+                    <div key={p.id || idx} style={{ minWidth: "100%", display: "flex", justifyContent: "center", alignItems: "end", padding: 16 }}>
+                      <img src={img} alt={p.title} style={{ maxWidth: "90%", maxHeight: 320, objectFit: "contain" }} />
                     </div>
                   );
                 })}
@@ -371,29 +359,10 @@ export default function HomePage() {
             </div>
 
             <div style={{ position: "absolute", bottom: 260, left: 0, right: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  transition: "transform .3s",
-                  transform: `translateX(-${selectedPlantIndex * 100}%)`,
-                }}
-              >
+              <div style={{ display: "flex", transition: "transform .3s", transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                 {plants.map((p, idx) => (
-                  <div
-                    key={p.id || idx}
-                    style={{
-                      minWidth: "100%",
-                      display: "flex",
-                      justifyContent: "center",
-                      alignItems: "end",
-                      padding: 16,
-                    }}
-                  >
-                    <img
-                      src={p.image}
-                      alt={p.title}
-                      style={{ maxWidth: "80%", maxHeight: 430, objectFit: "contain" }}
-                    />
+                  <div key={p.id || idx} style={{ minWidth: "100%", display: "flex", justifyContent: "center", alignItems: "end", padding: 16 }}>
+                    <img src={p.image} alt={p.title} style={{ maxWidth: "80%", maxHeight: 430, objectFit: "contain" }} />
                   </div>
                 ))}
               </div>
@@ -401,52 +370,19 @@ export default function HomePage() {
           </div>
 
           <div className="mb-2">
-            <button
-              className="btn btn-outline-secondary btn-sm me-2"
-              onClick={() =>
-                setSelectedPlantIndex((i) => (i > 0 ? i - 1 : Math.max(plants.length - 1, 0)))
-              }
-            >
-              ← Planta
-            </button>
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              onClick={() => setSelectedPlantIndex((i) => (i < plants.length - 1 ? i + 1 : 0))}
-            >
-              Planta →
-            </button>
+            <button className="btn btn-outline-secondary btn-sm me-2" onClick={() => setSelectedPlantIndex((i) => (i > 0 ? i - 1 : Math.max(plants.length - 1, 0)))}>← Planta</button>
+            <button className="btn btn-outline-secondary btn-sm" onClick={() => setSelectedPlantIndex((i) => (i < plants.length - 1 ? i + 1 : 0))}>Planta →</button>
           </div>
           <div className="mb-3">
-            <button
-              className="btn btn-outline-secondary btn-sm me-2"
-              onClick={() =>
-                setSelectedPotIndex((i) => (i > 0 ? i - 1 : Math.max(pots.length - 1, 0)))
-              }
-            >
-              ← Maceta
-            </button>
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              onClick={() => setSelectedPotIndex((i) => (i < pots.length - 1 ? i + 1 : 0))}
-            >
-              Maceta →
-            </button>
+            <button className="btn btn-outline-secondary btn-sm me-2" onClick={() => setSelectedPotIndex((i) => (i > 0 ? i - 1 : Math.max(pots.length - 1, 0)))}>← Maceta</button>
+            <button className="btn btn-outline-secondary btn-sm" onClick={() => setSelectedPotIndex((i) => (i < pots.length - 1 ? i + 1 : 0))}>Maceta →</button>
           </div>
 
-          <CustomizationOverlay
-            mode="both"
-            stageRef={stageRef}
-            anchorRef={null}
-            containerRef={sceneWrapRef}
-            docked={false}
-          />
+          <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={null} containerRef={sceneWrapRef} docked={false} />
         </div>
 
         <div className="col-lg-5 col-md-8 col-12 text-center">
-          <div
-            className="d-flex justify-content-center align-items-baseline gap-3 mb-4"
-            style={{ marginTop: 20 }}
-          >
+          <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
             <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, "CLP")}</span>
           </div>
 
@@ -455,19 +391,8 @@ export default function HomePage() {
               <h5>Color</h5>
               <div className="d-flex justify-content-center gap-3 flex-wrap">
                 {colorOptions.map((c, i) => (
-                  <div
-                    key={i}
-                    onClick={() => setSelectedColor(c)}
-                    title={c}
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: "50%",
-                      border: selectedColor === c ? "3px solid black" : "1px solid #ccc",
-                      background: "#ddd",
-                      cursor: "pointer",
-                    }}
-                  />
+                  <div key={i} onClick={() => setSelectedColor(c)} title={c}
+                    style={{ width: 36, height: 36, borderRadius: "50%", border: selectedColor===c ? "3px solid black":"1px solid #ccc", background: "#ddd", cursor: "pointer" }} />
                 ))}
               </div>
             </div>
@@ -475,29 +400,11 @@ export default function HomePage() {
 
           <div className="d-flex flex-column align-items-center mb-5">
             <div className="input-group justify-content-center" style={{ maxWidth: 220 }}>
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => setQuantity((p) => Math.max(1, p - 1))}
-              >
-                -
-              </button>
-              <input
-                type="number"
-                className="form-control text-center"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-              />
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => setQuantity((p) => p + 1)}
-              >
-                +
-              </button>
+              <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
+              <input type="number" className="form-control text-center" min="1" value={quantity} onChange={(e)=> setQuantity(Math.max(1, Number(e.target.value)||1))} />
+              <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => p + 1)}>+</button>
             </div>
-            <button className="btn btn-dark px-4 py-2 mt-3" onClick={buyNow}>
-              Comprar ahora
-            </button>
+            <button className="btn btn-dark px-4 py-2 mt-3" onClick={buyNow}>Comprar ahora</button>
           </div>
         </div>
       </div>
