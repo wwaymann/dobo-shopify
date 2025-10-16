@@ -113,6 +113,36 @@ const money = (v, code = "CLP") =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(v || 0));
 const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
 
+function sendEmailNow(payload) {
+  try {
+    const url = "/api/send-design-email";
+    const json = JSON.stringify(payload);
+
+    // 1) Preferir Beacon si pesan poco (<~64KB)
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+    // 2) Fallback keepalive (no bloquear)
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+      keepalive: true,
+    }).catch(()=>{});
+  } catch (e) {
+    console.warn("sendEmailNow failed", e);
+  }
+}
+
+function findAttr(attrs, name) {
+  const n = String(name || "").toLowerCase();
+  const it = (attrs || []).find(a => String(a?.key || "").toLowerCase() === n);
+  return it?.value || "";
+}
+
+
 export default function HomePage() {
   const [activeSize, setActiveSize] = useState("Mediano");
   const [plants, setPlants] = useState([]);
@@ -238,6 +268,18 @@ export default function HomePage() {
         links: { Storefront: location.origin },  // añade más si quieres
         attachPreviews: true,                     // el server decide si adjunta
       });
+
+      // ...dentro de buyNow(), cuando ya tengas `attrs`, `shortDescription`, `basePrice`:
+const preview =
+  attrs.find(a => (a.key||"").toLowerCase().includes("designpreview"))?.value || "";
+
+sendEmailNow({
+  attachPreviews: true,         // adjunta DesignPreview
+  // attachAll: true,           // si quieres adjuntar TODAS las capas con URL
+  attrs,                        // aquí pueden venir tus Layer:Base, Layer:Plant, etc.
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+});
 
       // 4) Ir a checkout (Storefront API)
       const variantId =
