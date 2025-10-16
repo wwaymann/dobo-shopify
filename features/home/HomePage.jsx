@@ -7,6 +7,31 @@ import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
+
+// Dispara email sin bloquear checkout y sobreviviendo al unload del iframe
+function queueDesignEmail({ attrs = [], meta = {}, links = {}, attachPreviews = false }) {
+  try {
+    const payload = JSON.stringify({ attrs, meta, links, attachPreviews });
+
+    // 1) Beacon (sobrevive a navegación; límite ~64KB)
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([payload], { type: "application/json" });
+      const ok = navigator.sendBeacon("/api/send-design-email", blob);
+      if (ok) return Promise.resolve({ ok: true, method: "beacon" });
+    }
+
+    // 2) Fallback: fetch con keepalive (no bloquear ni esperar)
+    return fetch("/api/send-design-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: payload,
+    }).then(r => r.json()).catch(() => ({ ok: false, method: "fetch-error" }));
+  } catch {
+    return Promise.resolve({ ok: false, method: "client-error" });
+  }
+}
+
 // *** NO importes sendDesignEmail aquí; usaremos fetch a /api/send-design-email ***
 
 // ================== helpers opcionales del carrito (form POST) ==================
@@ -248,11 +273,26 @@ export default function HomePage() {
       const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
       const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
 
-      const shortDescription = (
-        `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-        `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-        `${activeSize ?? ""} · ${selectedColor ?? ""}`
-      ).replace(/\s+/g, " ").trim();
+   // ——— disparo de correo (no bloquear, no hacer await) ———
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
+
+// Si creaste el producto DOBO y tienes handle, incluye link; si no, envía sin link
+const emailLinks = dp?.handle
+  ? { "Producto (storefront)": `https://${getShopDomain()}/products/${dp.handle}` }
+  : {};
+
+queueDesignEmail({
+  attachPreviews: false,           // deja false: payload chico y seguro dentro del iframe
+  attrs,                           // tus atributos del diseño (DesignId, DesignPreview, etc.)
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: emailLinks,
+});
+// ——— fin disparo de correo ———
+
 
       // 3) Dispara correo (no bloquea checkout)
       try {
