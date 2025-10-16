@@ -176,13 +176,13 @@ async function buyNow() {
 
     // 5) Disparar correo con preview/capas (NO bloquear checkout)
     //    (El endpoint /api/send-design-email usa GMAIL_USER, GMAIL_APP_PASSWORD, MERCHANT_NOTIF_EMAIL)
-    sendDesignEmail(attrs, {
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: dp?.handle
-        ? { "Producto (storefront)": `https://${getShopDomain()}/products/${dp.handle}` }
-        : {},
-      // attachAll: true, // activa si quieres adjuntar todas las capas (cuidado con tamaño)
-    }).then(r => { if (!r?.ok) console.warn("sendDesignEmail:", r); }).catch(()=>{});
+   sendDesignEmail(attrs, {
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: dp?.handle ? { "Producto (storefront)": `https://${getShopDomain()}/products/${dp.handle}` } : {},
+  // attachAll: true, // activa si quieres adjuntar TODAS las capas (ojo con pesos)
+}).then(r => {
+  if (!r.ok) console.warn("email not sent:", r);
+});
 
     // 6) Preparar checkout (usar DOBO si se creó; si no, fallback a la variante seleccionada)
     const shop = getShopDomain();
