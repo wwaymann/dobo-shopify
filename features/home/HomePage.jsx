@@ -273,47 +273,22 @@ export default function HomePage() {
       const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
       const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
 
-   // ——— disparo de correo (no bloquear, no hacer await) ———
-const shortDescription = (
-  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-  `${activeSize ?? ""} · ${selectedColor ?? ""}`
-).replace(/\s+/g, " ").trim();
+ 
 
-// Si creaste el producto DOBO y tienes handle, incluye link; si no, envía sin link
-const emailLinks = dp?.handle
-  ? { "Producto (storefront)": `https://${getShopDomain()}/products/${dp.handle}` }
-  : {};
-
+// Enviar correo (no bloquear y sobrevivir al unload del iframe)
 queueDesignEmail({
-  attachPreviews: false,           // deja false: payload chico y seguro dentro del iframe
-  attrs,                           // tus atributos del diseño (DesignId, DesignPreview, etc.)
+  attachPreviews: false, // usa false para que el payload sea pequeño y no se corte al navegar
+  attrs,                 // tus atributos (DesignId, DesignPreview, etc.)
   meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: emailLinks,
-});
-// ——— fin disparo de correo ———
-
+  links: { Storefront: location.origin } // o quítalo si no quieres enlaces
+}).then(r => {
+  if (!r?.ok) console.warn('send-design-email no confirmó OK (cliente):', r);
+}).catch(() => {});
 
       // 3) Dispara correo (no bloquea checkout)
       try {
         const preview =
           (attrs.find(a => (a.key || "").toLowerCase().includes("designpreview"))?.value) || "";
-
-  // Dispara email pero no bloquees el checkout:
-// dentro de buyNow(), después de armar attrs/shortDescription/basePrice...
-fetch('/api/send-design-email', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  keepalive: true,
-  body: JSON.stringify({
-    attachPreviews: false,           // o true si quieres adjuntar imágenes descargándolas
-    attrs,
-    meta: { Descripcion: shortDescription, Precio: basePrice },
-    links: { Storefront: `https://${getShopDomain()}/products/${dp?.handle ?? ''}` }
-  })
-}).then(r => r.json()).then(r => {
-  if (!r.ok) console.warn('email falló:', r);
-}).catch(()=>{ /* no bloquees el checkout */ });
 
 
       // 4) Checkout (Storefront API) — usa la variante seleccionada
