@@ -1,114 +1,57 @@
 // pages/api/send-design-email.js
 import nodemailer from "nodemailer";
 
-export const config = {
-  api: { bodyParser: { sizeLimit: "6mb" } }, // por si envías payloads un poco grandes
-};
-
-function pick(x) {
-  return String(x ?? "").trim();
-}
-
-function htmlEscape(s) {
-  return pick(s).replace(/</g, "&lt;").replace(/>/g, "&gt;"); // harden HTML
-}
-
-function renderHTML({ designId, previewUrl, layers = [], meta = {}, links = {} }) {
-  const metaRows = Object.entries(meta || {})
-    .filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== "")
-    .map(
-      ([k, v]) =>
-        `<tr><td style="padding:6px 10px;"><b>${htmlEscape(k)}</b></td><td style="padding:6px 10px;">${htmlEscape(
-          String(v)
-        )}</td></tr>`
-    )
-    .join("");
-
-  const layerList = (layers || [])
-    .map((L, i) => {
-      const name = htmlEscape(L?.name || `Layer ${i + 1}`);
-      const url = htmlEscape(L?.url || "");
-      if (!url) return "";
-      return `<li style="margin:4px 0;"><a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a></li>`;
-    })
-    .join("");
-
-  const extraLinks = Object.entries(links || {})
-    .filter(([_, v]) => v)
-    .map(
-      ([k, v]) =>
-        `<li style="margin:4px 0;"><a href="${htmlEscape(String(v))}" target="_blank" rel="noopener noreferrer">${htmlEscape(
-          k
-        )}</a></li>`
-    )
-    .join("");
-
-  return `
-    <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #222;">
-      <h2 style="margin-bottom: 0.4rem;">Nuevo DOBO creado</h2>
-      <p style="margin-top: 0.2rem;"><b>Design ID:</b> ${htmlEscape(designId || "")}</p>
-
-      ${previewUrl ? `<p><img src="${htmlEscape(previewUrl)}" alt="Preview" style="max-width:560px;border:1px solid #eee;border-radius:8px;"/></p>` : ""}
-
-      ${metaRows ? `
-        <h3 style="margin-bottom:0.4rem;">Resumen</h3>
-        <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #eee;">
-          <tbody>${metaRows}</tbody>
-        </table>
-      ` : ""}
-
-      ${layerList ? `
-        <h3 style="margin-bottom:0.4rem;">Capas y recursos</h3>
-        <ul style="padding-left: 18px; margin-top: 0;">${layerList}</ul>
-      ` : `<p style="color:#999;">No se recibieron URLs de capas.</p>`}
-
-      ${extraLinks ? `
-        <h3 style="margin-bottom:0.4rem;">Enlaces</h3>
-        <ul style="padding-left: 18px; margin-top: 0;">${extraLinks}</ul>
-      ` : ""}
-    </div>
-  `;
-}
-
-async function urlToAttachment(url, filename) {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "application/octet-stream";
-    const ab = await res.arrayBuffer();
-    const buf = Buffer.from(ab);
-    if (buf.length > 10 * 1024 * 1024) return null; // límite seguro 10MB por adjunto
-    return { filename: filename || "design-preview.png", content: buf, contentType: ct };
-  } catch {
-    return null;
-  }
+function escapeHtml(s = "") {
+  return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;" }[c]));
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method-not-allowed" });
+
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  const defaultTo = process.env.MERCHANT_NOTIF_EMAIL || user;
+
+  if (!user || !pass || !defaultTo) {
+    return res.status(500).json({ ok: false, error: "Missing env: GMAIL_USER / GMAIL_APP_PASSWORD / MERCHANT_NOTIF_EMAIL" });
   }
 
+  const { attrs = [], meta = {}, links = {}, to, attachAll = false } = req.body || {};
+
+  // Detectar URLs de imagen (preview/capas) desde attrs
+  const lower = s => String(s || "").toLowerCase();
+  const urlish = v => typeof v === "string" && /^https?:\/\//.test(v);
+
+  const previews = (attrs || []).filter(a =>
+    lower(a?.key).includes("preview") || lower(a?.key).includes("thumb")
+  );
+
+  const layers = attachAll
+    ? (attrs || []).filter(a =>
+        lower(a?.key).includes("layer") || lower(a?.key).endsWith(".png") || lower(a?.value).endsWith(".png")
+      )
+    : [];
+
+  const urls = [...previews, ...layers]
+    .map(a => a?.value)
+    .filter(urlish);
+
+  // Adjunta hasta 10 imágnes remotas
+  const attachments = urls.slice(0, 10).map((u, i) => ({
+    filename: `img_${i + 1}.png`,
+    path: u,
+  }));
+
+  const html = `
+    <h2>Nuevo diseño DOBO</h2>
+    <p><b>Fecha:</b> ${new Date().toISOString()}</p>
+    ${Object.entries(meta).map(([k, v]) => `<p><b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}</p>`).join("")}
+    ${Object.entries(links).map(([k, v]) => `<p><a href="${escapeHtml(String(v))}">${escapeHtml(k)}</a></p>`).join("")}
+    ${previews.length ? `<p><img src="${escapeHtml(String(previews[0].value))}" style="max-width:520px;" /></p>` : ""}
+    <details><summary>Attrs</summary><pre>${escapeHtml(JSON.stringify(attrs, null, 2))}</pre></details>
+  `;
+
   try {
-    const {
-      to,
-      subject,
-      designId,
-      previewUrl,
-      layers = [],   // [{ name, url }]
-      meta = {},     // { Color, Tamaño, Planta, Maceta, Precio, ... }
-      links = {},    // { "Producto (storefront)": "...", "Producto (admin)": "..." }
-      attachAll = false, // si true adjunta capas (ojo con tamaño)
-    } = req.body || {};
-
-    const user = pick(process.env.GMAIL_USER);
-    const pass = pick(process.env.GMAIL_APP_PASSWORD);
-    const defaultTo = pick(process.env.MERCHANT_NOTIF_EMAIL) || pick(process.env.EMAIL_TO_FALLBACK);
-
-    if (!user || !pass) throw new Error("Missing Gmail env (GMAIL_USER / GMAIL_APP_PASSWORD)");
-    const TO = pick(to) || defaultTo;
-    if (!TO) throw new Error("Missing recipient (to or MERCHANT_NOTIF_EMAIL)");
-
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
       port: 465,
@@ -116,33 +59,16 @@ export default async function handler(req, res) {
       auth: { user, pass },
     });
 
-    const html = renderHTML({ designId, previewUrl, layers, meta, links });
-
-    const attachments = [];
-    if (previewUrl) {
-      const att = await urlToAttachment(previewUrl, "design-preview.png");
-      if (att) attachments.push(att);
-    }
-    if (attachAll) {
-      for (const L of Array.isArray(layers) ? layers : []) {
-        if (!L?.url) continue;
-        const safeName = String(L?.name || "layer").replace(/[^\w.\-]+/g, "_");
-        const att = await urlToAttachment(L.url, `${safeName}.png`);
-        if (att) attachments.push(att);
-      }
-    }
-
     const info = await transporter.sendMail({
-      from: `"DOBO" <${user}>`,
-      to: TO,
-      subject: pick(subject) || `DOBO listo – ${pick(designId || "")}`,
+      from: user,
+      to: to || defaultTo,
+      subject: `DOBO - Nuevo diseño${meta?.Descripcion ? " · " + meta.Descripcion : ""}`,
       html,
       attachments,
     });
 
-    return res.status(200).json({ ok: true, id: info?.messageId || null });
+    return res.status(200).json({ ok: true, id: info?.messageId || null, attachments: attachments.length });
   } catch (e) {
-    console.error("send-design-email error:", e);
-    return res.status(200).json({ ok: false, error: String(e?.message || e) });
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
 }
