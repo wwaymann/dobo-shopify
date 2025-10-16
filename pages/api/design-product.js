@@ -1,6 +1,4 @@
-// Crea un "producto DOBO" vía Shopify Admin REST y devuelve variantId numérico.
-// NOTA: usamos req.body (no re-leer el stream) para evitar el "Promise <pending>".
-
+// pages/api/design-product.js
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -9,6 +7,7 @@ export default async function handler(req, res) {
 
   const SHOP = process.env.SHOPIFY_SHOP || process.env.NEXT_PUBLIC_SHOP_DOMAIN;
   const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
+  const PUB_ID = process.env.SHOPIFY_PUBLICATION_ID; // <- Tienda online
 
   if (!SHOP || !ADMIN_TOKEN) {
     return res.status(500).json({
@@ -22,7 +21,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✅ AQUÍ el cambio clave: usar req.body
     const {
       title = "DOBO",
       price = 0,
@@ -35,10 +33,10 @@ export default async function handler(req, res) {
       shortDescription = "",
     } = (req.body && typeof req.body === "object") ? req.body : {};
 
-    // Construcción mínima y válida para Admin REST
+    // ✅ ACTIVO en vez de draft
     const product = {
       title: String(title || `DOBO ${plantTitle} + ${potTitle}`).slice(0, 250),
-      status: "draft",
+      status: "active",
       vendor: "DOBO",
       product_type: "DOBO",
       body_html:
@@ -55,7 +53,6 @@ export default async function handler(req, res) {
                 .filter(Boolean)
                 .join(" · ")
             ),
-      // IMPORTANTÍSIMO: tags como STRING, no array
       tags: [
         "DOBO",
         "custom",
@@ -68,7 +65,6 @@ export default async function handler(req, res) {
         .filter(Boolean)
         .join(", "),
       images: previewUrl ? [{ src: String(previewUrl) }] : [],
-      // 1 sola variante (Default Title). No mandamos product.options
       variants: [
         {
           price: String(Number(price || 0)),
@@ -82,9 +78,8 @@ export default async function handler(req, res) {
     };
 
     const apiVersion = "2024-07";
-    const url = `https://${SHOP}/admin/api/${apiVersion}/products.json`;
-
-    const resp = await fetch(url, {
+    // 1) Crear producto (REST)
+    const createResp = await fetch(`https://${SHOP}/admin/api/${apiVersion}/products.json`, {
       method: "POST",
       headers: {
         "X-Shopify-Access-Token": ADMIN_TOKEN,
@@ -93,52 +88,69 @@ export default async function handler(req, res) {
       body: JSON.stringify({ product }),
     });
 
-    const text = await resp.text();
+    const raw = await createResp.text();
     let json;
-    try { json = JSON.parse(text); } catch { json = null; }
+    try { json = JSON.parse(raw); } catch { json = null; }
 
-    if (!resp.ok || json?.errors) {
-      return res.status(resp.status || 500).json({
+    if (!createResp.ok || json?.errors) {
+      return res.status(createResp.status || 500).json({
         ok: false,
         error: "admin:create-product",
-        details: json?.errors || text || `HTTP ${resp.status}`,
+        details: json?.errors || raw || `HTTP ${createResp.status}`,
       });
     }
 
     const created = json?.product;
     const variant = created?.variants?.[0];
+    const adminGraphQLId = created?.admin_graphql_api_id;
 
-    if (!variant?.id) {
-      return res.status(500).json({
-        ok: false,
-        error: "missing-variant",
-        details: created || json,
+    if (!variant?.id || !adminGraphQLId) {
+      return res.status(500).json({ ok: false, error: "missing-variant-or-gid", details: created });
+    }
+
+    // 2) Publicar en “Tienda online” (GraphQL) si tenemos el PublicationId
+    if (PUB_ID) {
+      const gql = `
+        mutation PublishToOnlineStore($id: ID!, $pubId: ID!) {
+          publishablePublish(id: $id, input: { publicationId: $pubId }) {
+            userErrors { field message }
+          }
+        }
+      `;
+      const gresp = await fetch(`https://${SHOP}/admin/api/${apiVersion}/graphql.json`, {
+        method: "POST",
+        headers: {
+          "X-Shopify-Access-Token": ADMIN_TOKEN,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: gql,
+          variables: { id: adminGraphQLId, pubId: PUB_ID },
+        }),
       });
+
+      const gjson = await gresp.json().catch(() => ({}));
+      const errs = gjson?.data?.publishablePublish?.userErrors;
+      if (!gresp.ok || (errs && errs.length)) {
+        // No lo hacemos fallar: seguimos pero lo registramos
+        console.warn("publishablePublish error", errs || gjson);
+      }
     }
 
     return res.status(200).json({
       ok: true,
       productId: created.id,
-      variantId: variant.id, // numérico => sirve directo para /cart/add
+      variantId: variant.id, // numérico
       image: created?.image?.src || (created?.images?.[0]?.src ?? ""),
-      adminGraphQLId: created?.admin_graphql_api_id,
-      variantGraphQLId: variant?.admin_graphql_api_id,
+      adminGraphQLId,
     });
   } catch (e) {
-    return res.status(500).json({
-      ok: false,
-      error: "unhandled",
-      details: e?.message || String(e),
-    });
+    return res.status(500).json({ ok: false, error: "unhandled", details: e?.message || String(e) });
   }
 }
 
 function escapeHtml(s = "") {
   return String(s).replace(/[&<>\"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[m]);
 }
