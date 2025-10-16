@@ -3,39 +3,48 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
 
-// Importa helpers ya existentes
+// Helpers existentes del proyecto
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
-
-// Dispara email sin bloquear checkout y sobreviviendo al unload del iframe
-function queueDesignEmail({ attrs = [], meta = {}, links = {}, attachPreviews = false }) {
+// -----------------------------------------------------------------------------
+// Envío de email sin bloquear la navegación (iframe-safe).
+// Primero intenta navigator.sendBeacon (sobrevive a redirecciones), si no, fetch
+// con keepalive. No hace await: dispara y seguimos al checkout.
+// -----------------------------------------------------------------------------
+function sendEmailNow(payload) {
   try {
-    const payload = JSON.stringify({ attrs, meta, links, attachPreviews });
+    const url = new URL("/api/send-design-email", location.origin).toString();
+    const json = JSON.stringify(payload);
 
-    // 1) Beacon (sobrevive a navegación; límite ~64KB)
-    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-      const blob = new Blob([payload], { type: "application/json" });
-      const ok = navigator.sendBeacon("/api/send-design-email", blob);
-      if (ok) return Promise.resolve({ ok: true, method: "beacon" });
+    // Preferir Beacon (límite aprox. 64KB)
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
     }
 
-    // 2) Fallback: fetch con keepalive (no bloquear ni esperar)
-    return fetch("/api/send-design-email", {
+    // Fallback: fetch con keepalive
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: json,
       keepalive: true,
-      body: payload,
-    }).then(r => r.json()).catch(() => ({ ok: false, method: "fetch-error" }));
-  } catch {
-    return Promise.resolve({ ok: false, method: "client-error" });
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        if (!r?.ok) console.warn("email api responded not ok", r);
+      })
+      .catch((err) => console.warn("email api error", err));
+  } catch (e) {
+    console.warn("sendEmailNow failed", e);
   }
 }
 
-// *** NO importes sendDesignEmail aquí; usaremos fetch a /api/send-design-email ***
-
-// ================== helpers opcionales del carrito (form POST) ==================
-// (Los dejamos por si los usas en otro flujo; no interfieren con cartCreateAndRedirect)
+// -----------------------------------------------------------------------------
+// (Opcional) Flujo alternativo por POST /cart/add. Lo dejo por si lo usas
+// en otra parte. El flujo principal abajo usa cartCreateAndRedirect.
+// -----------------------------------------------------------------------------
 function postCart(
   shopDomain,
   primaryVariantId,
@@ -45,7 +54,7 @@ function postCart(
   redirectPath = "/checkout"
 ) {
   const shop = String(shopDomain || "").trim();
-  if (!shop || /vercel\.(app|com)$/.test(shop)) {
+  if (!shop || /vercel\.(app|com)$/i.test(shop)) {
     alert("dominio de tienda inválido");
     return;
   }
@@ -63,11 +72,7 @@ function postCart(
       if (!k) return;
       properties[k] = String(a?.value ?? "");
     });
-    lines.push({
-      id: normalizeId(id),
-      quantity: Number(q) || 1,
-      properties,
-    });
+    lines.push({ id: normalizeId(id), quantity: Number(q) || 1, properties });
   };
 
   pushLine(primaryVariantId, qty, attributes);
@@ -107,15 +112,12 @@ function postCart(
   form.submit();
 }
 
-async function addToCart({ selectedVariant, quantity = 1, attributes = [], accessoryVariantIds = [] }) {
-  const shop = getShopDomain();
-  const chosen = selectedVariant?.id;
-  if (!chosen) throw new Error("variant-missing");
-  postCart(shop, chosen, quantity, attributes, accessoryVariantIds, "/cart");
-}
-
-// ================== utilidades locales ==================
-const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), { ssr: false });
+// -----------------------------------------------------------------------------
+// UI/helpers
+// -----------------------------------------------------------------------------
+const CustomizationOverlay = dynamic(() => import("../../components/CustomizationOverlay"), {
+  ssr: false,
+});
 
 const money = (v, code = "CLP") =>
   new Intl.NumberFormat("es-CL", {
@@ -131,6 +133,7 @@ export default function HomePage() {
   const [plants, setPlants] = useState([]);
   const [pots, setPots] = useState([]);
   const [accessories, setAccessories] = useState([]);
+
   const [selectedPlantIndex, setSelectedPlantIndex] = useState(0);
   const [selectedPotIndex, setSelectedPotIndex] = useState(0);
   const [selectedColor, setSelectedColor] = useState("Cemento");
@@ -140,14 +143,19 @@ export default function HomePage() {
   const sceneWrapRef = useRef(null);
   const stageRef = useRef(null);
 
+  // Carga de productos (tu API existente)
   useEffect(() => {
     let done = false;
     (async () => {
       try {
         const sizeQ = encodeURIComponent(activeSize);
         const [rPots, rPlants, rAcc] = await Promise.all([
-          fetch(`/api/products?size=${sizeQ}&type=maceta&first=40`, { cache: "no-store" }).catch(() => null),
-          fetch(`/api/products?size=${sizeQ}&type=planta&first=40`, { cache: "no-store" }).catch(() => null),
+          fetch(`/api/products?size=${sizeQ}&type=maceta&first=40`, { cache: "no-store" }).catch(
+            () => null
+          ),
+          fetch(`/api/products?size=${sizeQ}&type=planta&first=40`, { cache: "no-store" }).catch(
+            () => null
+          ),
           fetch(`/api/products?type=accesorio&first=40`, { cache: "no-store" }).catch(() => null),
         ]);
         const jsonSafe = async (r) => (r && r.ok ? await r.json() : null);
@@ -192,8 +200,7 @@ export default function HomePage() {
     };
   }, [activeSize]);
 
-  const selectedPot = pots[selectedPotIndex];
-
+  // Variante seleccionada y colores disponibles
   const selectedVariant = useMemo(() => {
     const pot = pots[selectedPotIndex];
     if (!pot) return null;
@@ -254,7 +261,9 @@ export default function HomePage() {
     ];
   }
 
-  // ================== COMPRAR AHORA (con envío de email no bloqueante) ==================
+  // ---------------------------------------------------------------------------
+  // COMPRAR AHORA (dispara email y luego checkout Storefront API)
+  // ---------------------------------------------------------------------------
   async function buyNow() {
     try {
       // 1) Atributos de diseño
@@ -268,35 +277,29 @@ export default function HomePage() {
         attrs = await minimalDesignAttributes();
       }
 
-      // 2) Breve descripción + precio base
+      // 2) Descripción y precio
       const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
       const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
       const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
+      const shortDescription = (
+        `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+        `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+        `${activeSize ?? ""} · ${selectedColor ?? ""}`
+      ).replace(/\s+/g, " ").trim();
 
- 
+      // 3) Disparar email (no se hace await)
+      sendEmailNow({
+        attrs,
+        meta: { Descripcion: shortDescription, Precio: basePrice },
+        links: {},            // puedes añadir { "Producto": `https://${getShopDomain()}/products/${handle}` }
+        attachPreviews: true, // si tu API adjunta previews a partir de attrs (DesignPreview, Layer:*, etc.)
+      });
 
-// Enviar correo (no bloquear y sobrevivir al unload del iframe)
-queueDesignEmail({
-  attachPreviews: false, // usa false para que el payload sea pequeño y no se corte al navegar
-  attrs,                 // tus atributos (DesignId, DesignPreview, etc.)
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin } // o quítalo si no quieres enlaces
-}).then(r => {
-  if (!r?.ok) console.warn('send-design-email no confirmó OK (cliente):', r);
-}).catch(() => {});
-
-      // 3) Dispara correo (no bloquea checkout)
-      try {
-        const preview =
-          (attrs.find(a => (a.key || "").toLowerCase().includes("designpreview"))?.value) || "";
-
-
-      // 4) Checkout (Storefront API) — usa la variante seleccionada
+      // 4) Ir a checkout usando Storefront API
       const variantId =
         selectedVariant?.id ||
         pots?.[selectedPotIndex]?.variants?.[0]?.id ||
         null;
-
       if (!variantId) throw new Error("variant-missing");
 
       const lines = [
@@ -307,17 +310,15 @@ queueDesignEmail({
         },
       ];
 
-      // Si tienes accesorios en tu estado:
-      // const accIds = (typeof getAccessoryVariantIds === 'function' ? getAccessoryVariantIds() : []);
-      // accIds.forEach(acc => lines.push({ quantity: 1, merchandiseId: toGid(acc), attributes: [] }));
-
       await cartCreateAndRedirect(lines);
     } catch (e) {
       alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
     }
   }
 
-  // ================== UI ==================
+  // ---------------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------------
   return (
     <div className={styles?.container || ""} style={{ padding: 16, paddingBottom: 80 }}>
       <div className="row justify-content-center gx-5 gy-4">
