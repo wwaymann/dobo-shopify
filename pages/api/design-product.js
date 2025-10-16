@@ -1,5 +1,5 @@
-// pages/api/design-product.js
-// Crea un "producto DOBO" via Shopify Admin REST y devuelve variantId numérico para /cart/add
+// Crea un "producto DOBO" vía Shopify Admin REST y devuelve variantId numérico.
+// NOTA: usamos req.body (no re-leer el stream) para evitar el "Promise <pending>".
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -16,15 +16,13 @@ export default async function handler(req, res) {
       error: "missing-env",
       details: {
         need: ["SHOPIFY_SHOP", "SHOPIFY_ADMIN_TOKEN"],
-        have: {
-          SHOP: Boolean(SHOP),
-          ADMIN_TOKEN: Boolean(ADMIN_TOKEN),
-        },
+        have: { SHOP: Boolean(SHOP), ADMIN_TOKEN: Boolean(ADMIN_TOKEN) },
       },
     });
   }
 
   try {
+    // ✅ AQUÍ el cambio clave: usar req.body
     const {
       title = "DOBO",
       price = 0,
@@ -35,15 +33,14 @@ export default async function handler(req, res) {
       plantTitle = "",
       potTitle = "",
       shortDescription = "",
-    } = (await safeJson(req)) || {};
+    } = (req.body && typeof req.body === "object") ? req.body : {};
 
-    // ---- Construcción mínima y válida para Admin REST ----
+    // Construcción mínima y válida para Admin REST
     const product = {
       title: String(title || `DOBO ${plantTitle} + ${potTitle}`).slice(0, 250),
       status: "draft",
       vendor: "DOBO",
       product_type: "DOBO",
-      // Usa descripción corta si se envía; si no, generamos una compacta
       body_html:
         shortDescription?.trim()
           ? escapeHtml(shortDescription.trim())
@@ -58,7 +55,7 @@ export default async function handler(req, res) {
                 .filter(Boolean)
                 .join(" · ")
             ),
-      // IMPORTANTE: tags debe ser **string** separada por comas
+      // IMPORTANTÍSIMO: tags como STRING, no array
       tags: [
         "DOBO",
         "custom",
@@ -70,22 +67,21 @@ export default async function handler(req, res) {
       ]
         .filter(Boolean)
         .join(", "),
-      // Preview por URL (opcional)
       images: previewUrl ? [{ src: String(previewUrl) }] : [],
-      // Una sola variante (Default Title) con precio; NO mandamos product.options
+      // 1 sola variante (Default Title). No mandamos product.options
       variants: [
         {
           price: String(Number(price || 0)),
           option1: "Default Title",
           sku: String(designId),
-          inventory_management: null, // sin control de inventario
+          inventory_management: null,
           inventory_policy: "deny",
           taxable: false,
         },
       ],
     };
 
-    const apiVersion = "2024-07"; // o la que uses en el resto del proyecto
+    const apiVersion = "2024-07";
     const url = `https://${SHOP}/admin/api/${apiVersion}/products.json`;
 
     const resp = await fetch(url, {
@@ -99,13 +95,8 @@ export default async function handler(req, res) {
 
     const text = await resp.text();
     let json;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = null;
-    }
+    try { json = JSON.parse(text); } catch { json = null; }
 
-    // Shopify REST devuelve { errors: ... } en 422 o 400
     if (!resp.ok || json?.errors) {
       return res.status(resp.status || 500).json({
         ok: false,
@@ -128,7 +119,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       productId: created.id,
-      variantId: variant.id, // **numérico**, sirve para /cart/add
+      variantId: variant.id, // numérico => sirve directo para /cart/add
       image: created?.image?.src || (created?.images?.[0]?.src ?? ""),
       adminGraphQLId: created?.admin_graphql_api_id,
       variantGraphQLId: variant?.admin_graphql_api_id,
@@ -150,17 +141,4 @@ function escapeHtml(s = "") {
     '"': "&quot;",
     "'": "&#39;",
   })[m]);
-}
-
-async function safeJson(req) {
-  try {
-    const buf = await new Promise((r) => {
-      let data = "";
-      req.on("data", (c) => (data += c));
-      req.on("end", () => r(data));
-    });
-    return JSON.parse(buf || "{}");
-  } catch {
-    return {};
-  }
 }
