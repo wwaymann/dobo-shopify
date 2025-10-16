@@ -6,6 +6,12 @@ import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 import { sendDesignEmail } from "../../lib/sendDesignEmail"; // ajusta la ruta según tu estructura
 
+// features/home/HomePage.jsx
+// (este archivo se ejecuta en el cliente)
+const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const FALLBACK_PREVIEW = CLOUD_NAME
+  ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/v1729100000/dobo-preview.png`
+  : '';
 
 // === DOBO checkout helpers (single source of truth) ===
 const toGid = (id) =>
