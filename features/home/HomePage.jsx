@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
+import { sendDesignEmail } from "../lib/sendDesignEmail"; // ajusta la ruta según tu estructura
 
 
 // === DOBO checkout helpers (single source of truth) ===
@@ -94,63 +95,108 @@ async function addToCart({ selectedVariant, quantity = 1, attributes = [], acces
   postCart(shop, chosen, quantity, attributes, accessoryVariantIds, "/cart");
 }
 
+// Helper local para leer atributos
+function findAttr(attrs, name) {
+  const n = String(name || "").toLowerCase();
+  const it = (attrs || []).find(a => String(a?.key || "").toLowerCase() === n);
+  return it?.value || "";
+}
+
+// ---- TU FUNCIÓN FINAL ----
 async function buyNow() {
   try {
-    // 1) Atributos del diseño (si tu helper existe, úsalo)
+    // 1) Atributos del diseño (usa tu helper si existe; si no, fallback mínimo)
     let attrs = [];
     if (typeof buildAndSaveDesignForCartCheckout === "function") {
       const r = await buildAndSaveDesignForCartCheckout();
-      attrs = r?.attributes || [];
+      attrs = Array.isArray(r?.attributes) ? r.attributes : [];
+    } else if (typeof prepareDesignAttributes === "function") {
+      attrs = await prepareDesignAttributes();
+    } else {
+      const id = `dobo-${Date.now()}`;
+      attrs = [
+        { key: "_DesignId", value: id },
+        { key: "_LinePriority", value: "0" },
+      ];
     }
 
-    // 2) Precios base (tu lógica actual)
+    // 2) Precios base (robusto a nulos)
     const potPrice = Number(
       selectedVariant?.price?.amount ??
       selectedVariant?.price ??
-      0
+      pots?.[selectedPotIndex]?.variants?.[0]?.price?.amount ??
+      pots?.[selectedPotIndex]?.variants?.[0]?.price ?? 0
     );
     const plantPrice = Number(
       plants?.[selectedPlantIndex]?.minPrice?.amount ??
-      plants?.[selectedPlantIndex]?.minPrice ??
-      0
+      plants?.[selectedPlantIndex]?.minPrice ?? 0
     );
-    const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+    const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
 
-    // 3) Descripción compacta
-    const shortDescription = `DOBO ${plants[selectedPlantIndex]?.title || ""} + ${pots[selectedPotIndex]?.title || ""} · ${activeSize || ""} · ${selectedColor || ""}`.trim();
+    // 3) Descripción compacta (no “todas las imágenes”, solo breve)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
 
-    // 4) Intentar crear el producto DOBO
-    const resp = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `DOBO ${plants[selectedPlantIndex]?.title || ""} + ${pots[selectedPotIndex]?.title || ""}`.trim(),
-        previewUrl: attrs.find(a => (a.key||"").toLowerCase().includes("designpreview"))?.value || "",
-        price: basePrice,
-        color: selectedColor || "",
-        size: activeSize || "",
-        designId: attrs.find(a => (a.key||"").toLowerCase().includes("designid"))?.value || `dobo-${Date.now()}`,
-        plantTitle: plants[selectedPlantIndex]?.title || "",
-        potTitle: pots[selectedPotIndex]?.title || "",
-        shortDescription,
-      }),
-    });
+    // 4) Intentar crear el producto DOBO (publicable) — no bloquea el flujo si falla
+    const previewUrl = findAttr(attrs, "_designpreview") || findAttr(attrs, "designpreview");
+    const designId   = findAttr(attrs, "_designid")      || findAttr(attrs, "designid") || `dobo-${Date.now()}`;
 
-    const dp = await resp.json().catch(() => null);
-    if (!resp.ok || !dp?.ok || !dp?.variantId) {
-      const msg =
-        (dp && (dp.details || dp.error)) ||
-        `HTTP ${resp.status}`;
-      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    const createBody = {
+      title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
+      previewUrl,
+      price: basePrice,
+      color: selectedColor || "Único",
+      size:  activeSize     || "Único",
+      designId,
+      plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+      potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+      shortDescription,
+      publishOnline: true,  // si tu endpoint /api/design-product lo soporta, publícalo en "Tienda online"
+    };
+
+    let dp = null;
+    try {
+      const resp = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createBody),
+      });
+      dp = await resp.json().catch(() => null);
+      if (!resp.ok || !dp?.ok || !dp?.variantId) {
+        console.warn("design-product falló; usando fallback a la variante elegida", dp);
+        dp = null;
+      }
+    } catch (e) {
+      console.warn("design-product request error:", e);
+      dp = null;
     }
 
-    // 5) Añadir al carrito con la variante creada (y accesorios)
-    const accIds = getAccessoryVariantIds ? getAccessoryVariantIds() : [];
-    const shop = (typeof getShopDomain === "function")
-      ? getShopDomain()
-      : (process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com");
+    // 5) Disparar correo con preview/capas (NO bloquear checkout)
+    //    (El endpoint /api/send-design-email usa GMAIL_USER, GMAIL_APP_PASSWORD, MERCHANT_NOTIF_EMAIL)
+    sendDesignEmail(attrs, {
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: dp?.handle
+        ? { "Producto (storefront)": `https://${getShopDomain()}/products/${dp.handle}` }
+        : {},
+      // attachAll: true, // activa si quieres adjuntar todas las capas (cuidado con tamaño)
+    }).then(r => { if (!r?.ok) console.warn("sendDesignEmail:", r); }).catch(()=>{});
 
-    postCart(shop, dp.variantId, quantity, attrs, accIds, "/checkout");
+    // 6) Preparar checkout (usar DOBO si se creó; si no, fallback a la variante seleccionada)
+    const shop = getShopDomain();
+    const accIds = typeof getAccessoryVariantIds === "function" ? getAccessoryVariantIds() : [];
+
+    const chosenVariant =
+      dp?.variantId ||
+      selectedVariant?.id ||
+      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
+      null;
+
+    if (!chosenVariant) throw new Error("variant-missing");
+
+    postCart(shop, chosenVariant, quantity, attrs, accIds, "/checkout");
   } catch (e) {
     alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
