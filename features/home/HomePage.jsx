@@ -239,6 +239,7 @@ export default function HomePage() {
   }
 
 // ---------------- Comprar ahora (reemplaza tu buyNow por éste) ----------------
+// ---------------- Comprar ahora (versión final) ----------------
 async function buyNow() {
   try {
     // 1) Atributos de diseño
@@ -249,7 +250,6 @@ async function buyNow() {
     } else if (typeof window.prepareDesignAttributes === "function") {
       attrs = await window.prepareDesignAttributes();
     } else {
-      // mínimo si no hay helpers
       attrs = [
         { key: "DesignId", value: `dobo-${Date.now()}` },
         { key: "DesignColor", value: selectedColor || "" },
@@ -267,21 +267,20 @@ async function buyNow() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // 3) Datos útiles para el server (preview/designId) y versión "delgada" para correo
-    const lowerKey = (k) => String(k || "").toLowerCase();
-    const getVal   = (name) => attrs.find(a => lowerKey(a.key) === name)?.value || "";
-    const previewUrl = attrs.find(a => lowerKey(a.key).includes("designpreview"))?.value || "";
+    // 3) Extraer preview/designId y adelgazar attrs para correo
+    const lower = (k) => String(k || "").toLowerCase();
+    const getVal = (name) => attrs.find(a => lower(a.key) === name)?.value || "";
+    const previewUrl = attrs.find(a => lower(a.key).includes("designpreview"))?.value || "";
     const designId   = getVal("designid") || getVal("_designid") || `dobo-${Date.now()}`;
 
     const thinAttrs = (attrs || [])
       .filter(a => {
-        const k = lowerKey(a.key);
+        const k = lower(a.key);
         return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
       })
       .map(a => ({ key: String(a.key), value: String(a.value || "") }));
 
-    // 4) Crear el producto DOBO en el server.
-    // IMPORTANTE: mandamos 'attrs' para que el BACKEND envíe el correo (no depende del iFrame).
+    // 4) Crear el producto DOBO en el backend (AHÍ se envía el correo)
     let dp = null;
     try {
       const resp = await fetch("/api/design-product", {
@@ -295,15 +294,15 @@ async function buyNow() {
           size:  activeSize     || "Único",
           designId,
           shortDescription,
-          publishOnline: true, // si tu endpoint lo soporta
-          attrs: thinAttrs,     // <--- CLAVE para que /api/design-product mande el correo
+          publishOnline: true,
+          attrs: thinAttrs, // <--- el backend usará esto para enviar el correo
         }),
       });
       dp = await resp.json().catch(() => null);
 
       if (!resp.ok || !dp?.ok || !dp?.variantId) {
-        console.warn("design-product falló; usando fallback y disparando email desde el cliente", dp);
-        // Fallback: intentamos enviar el correo desde el cliente para no perder el aviso
+        console.warn("design-product falló; envío correo desde cliente (fallback)", dp);
+        // Fallback de correo para no perder notificación:
         sendEmailNow({
           attrs: thinAttrs,
           meta:  { Descripcion: shortDescription, Precio: basePrice },
@@ -313,7 +312,7 @@ async function buyNow() {
         dp = null;
       }
     } catch (e) {
-      console.warn("design-product request error; disparo correo desde cliente (fallback):", e);
+      console.warn("design-product request error; envío correo (fallback):", e);
       sendEmailNow({
         attrs: thinAttrs,
         meta:  { Descripcion: shortDescription, Precio: basePrice },
@@ -323,7 +322,7 @@ async function buyNow() {
       dp = null;
     }
 
-    // 5) Ir al checkout (usando DOBO si existe, o la variante elegida si no)
+    // 5) Ir a checkout (usa DOBO si existe, si no la variante seleccionada)
     const variantId = dp?.variantId ||
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
@@ -337,6 +336,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
 }
+
 
 
   return (
