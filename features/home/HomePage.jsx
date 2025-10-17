@@ -61,7 +61,80 @@ async function exportImageTextLayers() {
   }
 }
 
+// Sube un dataURL/blob a https (Cloudinary vía tu endpoint), o deja pasar si ya es https
+async function ensureHttpsUrl(u) {
+  try {
+    const s = String(u || "");
+    if (!s) return "";
+    if (/^https:\/\//i.test(s)) return s;
+    if (/^data:|^blob:/i.test(s)) {
+      const r = await fetch("/api/upload-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: s }),
+      });
+      const j = await r.json().catch(() => null);
+      return j?.ok && j?.url ? j.url : "";
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
 
+function mergeAttrs(attrs = [], extras = []) {
+  const map = new Map();
+  for (const a of (attrs || [])) {
+    const k = String(a?.key || "");
+    if (k) map.set(k, String(a?.value ?? ""));
+  }
+  for (const e of (extras || [])) {
+    if (!e) continue;
+    const k = String(e.key || "");
+    if (!k) continue;
+    map.set(k, String(e.value ?? ""));
+  }
+  return Array.from(map.entries()).map(([key, value]) => ({ key, value }));
+}
+
+// Captura de capas desde el DOM como última red de seguridad
+function pickFromDom(stageRef, sceneWrapRef) {
+  const root = stageRef?.current || sceneWrapRef?.current || document;
+  const q = (sel) => { try { return root.querySelector(sel); } catch { return null; } };
+  const toData = (c) => { try { return c?.toDataURL?.("image/png", 0.92) || ""; } catch { return ""; } };
+  const fromImg = (img) => { try { return img?.src || ""; } catch { return ""; } };
+  const svgUrl = (el) => {
+    try {
+      const svg = el?.outerHTML || "";
+      if (!svg) return "";
+      const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+      return URL.createObjectURL(blob); // luego se sube a https
+    } catch { return ""; }
+  };
+
+  // Preview
+  let preview = "";
+  const cPrev = q("canvas[data-preview='true'], canvas#dobo-preview, canvas");
+  const iPrev = q("img[data-preview='true'], img#dobo-preview");
+  if (cPrev) preview = toData(cPrev);
+  else if (iPrev) preview = fromImg(iPrev);
+
+  // Capa imagen
+  let layerImage = "";
+  const cImg = q("canvas[data-layer='image'], canvas#dobo-layer-image");
+  const iImg = q("img[data-layer='image'], img#dobo-layer-image, img[data-layer='base']");
+  if (cImg) layerImage = toData(cImg);
+  else if (iImg) layerImage = fromImg(iImg);
+
+  // Capa texto (SVG preferido)
+  let layerText = "";
+  const svgTxt = q("svg[data-layer='text'], svg#dobo-layer-text");
+  const htmlTxt = q("[data-layer='text'], #dobo-layer-text");
+  if (svgTxt) layerText = svgUrl(svgTxt);
+  // (Si tu texto no es SVG, puedes rasterizar htmlTxt con html2canvas si lo tienes cargado.)
+
+  return { preview, layerImage, layerText };
+}
 // Normaliza attrs a pares {key,value} string
 function normAttrs(arr = []) {
   return (Array.isArray(arr) ? arr : [])
@@ -96,48 +169,22 @@ function withLayerFallbacks(attrs = []) {
   return out;
 }
 
-// Beacon/fetch no bloqueante para mandar el email en paralelo
 function sendEmailNow(payload) {
   try {
-    const url = new URL('/api/send-design-email', location.origin).toString();
+    const url = new URL("/api/send-design-email", location.origin).toString();
     const json = JSON.stringify(payload);
-    if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: 'application/json' });
-      navigator.sendBeacon(url, blob);
-      return;
-    }
-    fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: json, keepalive: true })
-      .then(r => r.json())
-      .then(r => { if (!r?.ok) console.warn('email api responded not ok', r); })
-      .catch(err => console.warn('email api error', err));
-  } catch (e) {
-    console.warn('sendEmailNow failed', e);
-  }
-}
-
-
-// En cliente: dispara email y no bloquea checkout
-// --- PON ESTO ARRIBA (una sola vez) ---
-// Fallback para mandar correo si por alguna razón /api/design-product falla.
-// Normalmente NO se usará si el server ya disparó el correo.
-function sendEmailNow(payload) {
-  try {
-    const url = "/api/send-design-email";
-    const json = JSON.stringify(payload);
-
     if (navigator.sendBeacon && json.length < 64000) {
       const blob = new Blob([json], { type: "application/json" });
       navigator.sendBeacon(url, blob);
       return;
     }
-
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      keepalive: true,
-      body: json,
-    }).catch(() => {});
-  } catch {}
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
+      .then(r => r.json())
+      .then(r => { if (!r?.ok) console.warn("email api not ok:", r); })
+      .catch(err => console.warn("email api error:", err));
+  } catch (e) {
+    console.warn("sendEmailNow failed", e);
+  }
 }
 
 // --- Helpers de email (cliente) ---
