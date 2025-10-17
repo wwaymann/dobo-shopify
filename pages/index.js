@@ -5,14 +5,17 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import * as DS from "../lib/designStore"; // namespace import
 
+// ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
+import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
+
 // ---------- Utils básicos ----------
 const gidToNum = (id) => {
   const s = String(id || "");
   return s.includes("gid://") ? s.split("/").pop() : s;
 };
 
-// Sube dataURL/blob/http a https (Cloudinary) usando tu API
-async function ensureHttpsUrl(u) {
+// Sube dataURL/blob/http a https (Cloudinary) mediante tu API local
+async function ensureHttpsUrl(u, namePrefix = "img") {
   try {
     const s = String(u || "");
     if (!s) return "";
@@ -21,7 +24,7 @@ async function ensureHttpsUrl(u) {
       const r = await fetch("/api/upload-design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrl: s, filename: `preview-${Date.now()}.png` })
+        body: JSON.stringify({ dataUrl: s, filename: `${namePrefix}-${Date.now()}.png` })
       });
       const j = await r.json().catch(() => ({}));
       return j?.url || "";
@@ -32,19 +35,28 @@ async function ensureHttpsUrl(u) {
   }
 }
 
+// Filtra attrs para el email (incluye DO/NO si existen)
 function shrinkAttrsForEmail(attrs = []) {
-  const keep = new Set(["_designid", "designid", "_designpreview", "designpreview"]);
+  const keep = new Set([
+    "_designid","designid","_designpreview","designpreview",
+    "overlay:all","layer:image","layer:text"
+  ]);
   const out = [];
   for (const a of (attrs || [])) {
     const k = String(a?.key || "").toLowerCase();
     const v = String(a?.value ?? "");
-    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("capa:")) {
+    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("overlay:")) {
       out.push({ key: a.key, value: v });
     }
   }
-  return out.slice(0, 50);
+  for (const k of ["_DO","_NO"]) {
+    const hit = (attrs || []).find(a => a.key === k);
+    if (hit) out.push({ key: k, value: String(hit.value || "") });
+  }
+  return out.slice(0, 100);
 }
 
+// Envía email sin bloquear navegación
 function sendEmailNow(payload) {
   try {
     const url = new URL("/api/send-design-email", location.origin).toString();
@@ -60,8 +72,9 @@ function sendEmailNow(payload) {
   } catch (e) { console.warn("sendEmailNow failed", e); }
 }
 
-// ---------- Local fallbacks para exportar capas ----------
-function exportPreviewDataURLLocal(canvas, { multiplier = 2 } = {}) {
+// ---------- Fallbacks de exportación (por si DS no exporta) ----------
+// Overlay completo (texto+imágenes) desde el canvas Fabric
+function exportOverlayAllLocal(canvas, { multiplier = 2 } = {}) {
   try {
     const c = canvas || (typeof window !== "undefined" && window.doboDesignAPI?.getCanvas?.());
     if (!c || !c.toDataURL) return "";
@@ -69,43 +82,66 @@ function exportPreviewDataURLLocal(canvas, { multiplier = 2 } = {}) {
   } catch { return ""; }
 }
 
-// Soporta objetos grupo: mantiene solo los del tipo solicitado
+// Oculta/rehabilita objetos por predicado (maneja grupos)
+function maskCanvasByPredicate(canvas, predicate) {
+  const hidden = [];
+  const toggleChild = (g, keepChild) => {
+    if (!g || !Array.isArray(g._objects)) return;
+    for (const ch of g._objects) {
+      const keep = keepChild(ch);
+      if (!keep) { hidden.push(ch); ch.__wasVisible = ch.visible; ch.visible = false; }
+    }
+  };
+  const hasKind = (o, kind) => {
+    const isImg = o.type === "image";
+    const isTxt = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
+    if (kind === "image" && isImg) return true;
+    if (kind === "text"  && isTxt) return true;
+    if (o.type === "group" && Array.isArray(o._objects)) {
+      return o._objects.some(ch => hasKind(ch, kind));
+    }
+    return false;
+  };
+  canvas.getObjects().forEach(o => {
+    const res = predicate(o, { hasKind });
+    if (res === "children") {
+      toggleChild(o, (ch) => predicate(ch, { hasKind }) === true);
+    } else if (res !== true) {
+      hidden.push(o); o.__wasVisible = o.visible; o.visible = false;
+    }
+  });
+  canvas.requestRenderAll();
+  return () => {
+    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; });
+    canvas.requestRenderAll();
+  };
+}
+
+// Exporta solo imagen o solo texto (profundidad en grupos)
 async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
   try {
     const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
     if (!c?.getObjects) return "";
-
     const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
     const wantText  = names.map(String).some(n => /text|texto/i.test(n));
     const kind = wantImage ? "image" : wantText ? "text" : "";
-    if (!kind) return "";
 
-    const hasKind = (o) => {
+    const restore = maskCanvasByPredicate(c, (o, { hasKind }) => {
+      if (!kind) return false;
+      if (o.type === "group") {
+        return hasKind(o, kind) ? "children" : false;
+      }
       const isImg = o.type === "image";
       const isTxt = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-      if ((kind === "image" && isImg) || (kind === "text" && isTxt)) return true;
-      if (o.type === "group" && Array.isArray(o._objects)) {
-        return o._objects.some(child => hasKind(child));
-      }
-      return false;
-    };
-
-    const hidden = [];
-    c.getObjects().forEach(o => {
-      const keep = hasKind(o);
-      if (!keep) { hidden.push(o); o.__wasVisible = o.visible; o.visible = false; }
+      return (kind === "image" && isImg) || (kind === "text" && isTxt);
     });
-
     const url = c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
-
-    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; });
-    c.requestRenderAll();
-
+    restore();
     return url;
   } catch { return ""; }
 }
 
-// ---------- Preview integrado (maceta + planta + overlay) ----------
+// ---------- Preview INTEGRADO (maceta + planta + overlay) ----------
 function selectStageEl(canvas) {
   const cEl = canvas?.lowerCanvasEl || canvas?.upperCanvasEl || null;
   return (
@@ -122,11 +158,7 @@ function pickImg(stageEl, role) {
   const sels = role === "pot"
     ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
     : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
-  for (const s of sels) {
-    const el = stageEl.querySelector(s);
-    if (el) return el;
-  }
-  // Fallbacks: primera o segunda imagen del stage
+  for (const s of sels) { const el = stageEl.querySelector(s); if (el) return el; }
   const imgs = stageEl.querySelectorAll("img");
   if (imgs.length === 0) return null;
   if (role === "pot") return imgs[0];
@@ -154,68 +186,77 @@ async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2 }
   try {
     const canvas = fabricCanvas || (typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null);
     const stage  = stageEl || selectStageEl(canvas);
-    if (!canvas || !stage) {
-      // Sin stage: caemos al overlay puro
-      return exportPreviewDataURLLocal(canvas, { multiplier });
-    }
+    if (!canvas) return "";
 
-    const W = Math.round((canvas.getWidth?.() || stage.clientWidth || 800));
-    const H = Math.round((canvas.getHeight?.() || stage.clientHeight || 800));
+    const W = Math.round(canvas.getWidth?.() || stage?.clientWidth || 800);
+    const H = Math.round(canvas.getHeight?.() || stage?.clientHeight || 800);
 
     const out = document.createElement("canvas");
     out.width  = Math.max(1, Math.round(W * multiplier));
     out.height = Math.max(1, Math.round(H * multiplier));
     const ctx = out.getContext("2d");
 
-    // Base: maceta + planta (posiciones según DOM)
-    const potEl   = pickImg(stage, "pot");
-    const plantEl = pickImg(stage, "plant");
+    let drewAnyBase = false;
 
-    if (potEl) {
-      const r = stageRelativeRect(potEl, stage);
-      try {
-        const potImg = await loadImageCORS(potEl.currentSrc || potEl.src);
-        ctx.drawImage(potImg, Math.round(r.x * multiplier), Math.round(r.y * multiplier),
-                      Math.round(r.w * multiplier), Math.round(r.h * multiplier));
-      } catch { /* si CORS falla, ignoramos esa capa */ }
-    }
-    if (plantEl) {
-      const r = stageRelativeRect(plantEl, stage);
-      try {
-        const plantImg = await loadImageCORS(plantEl.currentSrc || plantEl.src);
-        ctx.drawImage(plantImg, Math.round(r.x * multiplier), Math.round(r.y * multiplier),
-                      Math.round(r.w * multiplier), Math.round(r.h * multiplier));
-      } catch { /* idem */ }
-    }
+    if (stage) {
+      const potEl   = pickImg(stage, "pot");
+      const plantEl = pickImg(stage, "plant");
 
-    // Overlay: usar un canvas fabric a la resolución pedida
-    let overlayCanvas = null;
-    if (typeof canvas?.toCanvasElement === "function") {
-      overlayCanvas = canvas.toCanvasElement(multiplier);
-    } else if (canvas?.lowerCanvasEl) {
-      overlayCanvas = canvas.lowerCanvasEl;
-      // Escalar si es necesario
-      if (overlayCanvas && multiplier !== 1) {
-        ctx.save();
-        ctx.scale(multiplier, multiplier);
-        ctx.drawImage(overlayCanvas, 0, 0);
-        ctx.restore();
-        return out.toDataURL("image/png");
+      if (potEl) {
+        const r = stageRelativeRect(potEl, stage);
+        try {
+          const potImg = await loadImageCORS(potEl.currentSrc || potEl.src);
+          ctx.drawImage(potImg, r.x*multiplier, r.y*multiplier, r.w*multiplier, r.h*multiplier);
+          drewAnyBase = true;
+        } catch {}
+      }
+      if (plantEl) {
+        const r = stageRelativeRect(plantEl, stage);
+        try {
+          const plantImg = await loadImageCORS(plantEl.currentSrc || plantEl.src);
+          ctx.drawImage(plantImg, r.x*multiplier, r.y*multiplier, r.w*multiplier, r.h*multiplier);
+          drewAnyBase = true;
+        } catch {}
       }
     }
-    if (overlayCanvas) {
-      ctx.drawImage(overlayCanvas, 0, 0);
+
+    // Si no pudimos dibujar la base (CORS o no hay stage), prueba con backgroundImage del Fabric
+    if (!drewAnyBase && canvas?.backgroundImage) {
+      try {
+        const bi = canvas.backgroundImage.getElement?.() || canvas.backgroundImage._element;
+        if (bi) {
+          ctx.drawImage(bi, 0, 0, W*multiplier, H*multiplier);
+          drewAnyBase = true;
+        }
+      } catch {}
+    }
+
+    // Overlay del Fabric encima
+    if (typeof canvas?.toCanvasElement === "function") {
+      const overlayCanvas = canvas.toCanvasElement(multiplier);
+      if (overlayCanvas) ctx.drawImage(overlayCanvas, 0, 0);
+    } else if (canvas?.lowerCanvasEl) {
+      ctx.save();
+      ctx.scale(multiplier, multiplier);
+      ctx.drawImage(canvas.lowerCanvasEl, 0, 0);
+      ctx.restore();
     }
 
     return out.toDataURL("image/png");
   } catch {
-    // Fallback final
-    const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
-    return exportPreviewDataURLLocal(c, { multiplier: 2 });
+    // Último recurso: devuelve solo overlay
+    return exportOverlayAllLocal(null, { multiplier });
   }
 }
 
-
+// Componer asunto del email: "DO 12345 · NO 67890" (fallback "DOBO")
+function makeEmailSubject({ doNum, noNum }) {
+  const L = [];
+  if (doNum) L.push(`DO ${doNum}`);
+  if (noNum) L.push(`NO ${noNum}`);
+  return L.length ? L.join(" · ") : "DOBO";
+}
+// ===================== FIN HELPERS DOBO =====================
 
 
 
