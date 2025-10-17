@@ -3,23 +3,73 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
-// arriba en pages/index.js
-import * as DS from "../lib/designStore";
+import * as DS from "../lib/designStore"; // namespace import
 
+// ---------- Utils básicos ----------
+const gidToNum = (id) => {
+  const s = String(id || "");
+  return s.includes("gid://") ? s.split("/").pop() : s;
+};
 
-// --- Fallbacks si lib/designStore no exporta las funciones ---
-// Obtiene un PNG del canvas completo (fondo transparente)
-function exportPreviewDataURLLocal(canvas, { multiplier = 2 } = {}) {
+// Sube dataURL/blob/http a https (Cloudinary) usando tu API
+async function ensureHttpsUrl(u) {
   try {
-    const c = canvas || (typeof window !== "undefined" && window.doboDesignAPI?.getCanvas?.());
-    if (!c || !c.toDataURL) return "";
-    return c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+    const s = String(u || "");
+    if (!s) return "";
+    if (/^https:\/\//i.test(s)) return s;
+    if (/^data:|^blob:|^http:\/\//i.test(s)) {
+      const r = await fetch("/api/upload-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: s, filename: `preview-${Date.now()}.png` })
+      });
+      const j = await r.json().catch(() => ({}));
+      return j?.url || "";
+    }
+    return "";
   } catch {
     return "";
   }
 }
 
-// Exporta solo un tipo de objetos (imagen o texto) como PNG
+function shrinkAttrsForEmail(attrs = []) {
+  const keep = new Set(["_designid", "designid", "_designpreview", "designpreview"]);
+  const out = [];
+  for (const a of (attrs || [])) {
+    const k = String(a?.key || "").toLowerCase();
+    const v = String(a?.value ?? "");
+    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("capa:")) {
+      out.push({ key: a.key, value: v });
+    }
+  }
+  return out.slice(0, 50);
+}
+
+function sendEmailNow(payload) {
+  try {
+    const url = new URL("/api/send-design-email", location.origin).toString();
+    const json = JSON.stringify(payload);
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
+      .then(r => r.json()).then(r => { if (!r?.ok) console.warn("[email] not ok", r); })
+      .catch(err => console.warn("[email] error", err));
+  } catch (e) { console.warn("sendEmailNow failed", e); }
+}
+
+// ---------- Local fallbacks para exportar capas ----------
+function exportPreviewDataURLLocal(canvas, { multiplier = 2 } = {}) {
+  try {
+    const c = canvas || (typeof window !== "undefined" && window.doboDesignAPI?.getCanvas?.());
+    if (!c || !c.toDataURL) return "";
+    return c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+  } catch { return ""; }
+}
+
+// Soporta objetos grupo: mantiene solo los del tipo solicitado
 async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
   try {
     const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
@@ -28,14 +78,21 @@ async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
     const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
     const wantText  = names.map(String).some(n => /text|texto/i.test(n));
     const kind = wantImage ? "image" : wantText ? "text" : "";
-
     if (!kind) return "";
+
+    const hasKind = (o) => {
+      const isImg = o.type === "image";
+      const isTxt = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
+      if ((kind === "image" && isImg) || (kind === "text" && isTxt)) return true;
+      if (o.type === "group" && Array.isArray(o._objects)) {
+        return o._objects.some(child => hasKind(child));
+      }
+      return false;
+    };
 
     const hidden = [];
     c.getObjects().forEach(o => {
-      const isImg = o.type === "image";
-      const isTxt = o.type === "i-text" || o.type === "textbox" || o.type === "text";
-      const keep = (kind === "image" && isImg) || (kind === "text" && isTxt);
+      const keep = hasKind(o);
       if (!keep) { hidden.push(o); o.__wasVisible = o.visible; o.visible = false; }
     });
 
@@ -45,16 +102,125 @@ async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
     c.requestRenderAll();
 
     return url;
+  } catch { return ""; }
+}
+
+// ---------- Preview integrado (maceta + planta + overlay) ----------
+function selectStageEl(canvas) {
+  const cEl = canvas?.lowerCanvasEl || canvas?.upperCanvasEl || null;
+  return (
+    document.querySelector("[data-stage-root]") ||
+    cEl?.closest?.("[data-stage-root]") ||
+    document.getElementById("dobo-stage") ||
+    document.getElementById("design-stage") ||
+    cEl?.parentElement || null
+  );
+}
+
+function pickImg(stageEl, role) {
+  if (!stageEl) return null;
+  const sels = role === "pot"
+    ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
+    : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
+  for (const s of sels) {
+    const el = stageEl.querySelector(s);
+    if (el) return el;
+  }
+  // Fallbacks: primera o segunda imagen del stage
+  const imgs = stageEl.querySelectorAll("img");
+  if (imgs.length === 0) return null;
+  if (role === "pot") return imgs[0];
+  if (role === "plant") return imgs.length > 1 ? imgs[1] : imgs[0];
+  return null;
+}
+
+function stageRelativeRect(el, stageEl) {
+  const er = el.getBoundingClientRect();
+  const sr = stageEl.getBoundingClientRect();
+  return { x: er.left - sr.left, y: er.top - sr.top, w: er.width, h: er.height };
+}
+
+function loadImageCORS(src) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = src;
+  });
+}
+
+async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2 } = {}) {
+  try {
+    const canvas = fabricCanvas || (typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null);
+    const stage  = stageEl || selectStageEl(canvas);
+    if (!canvas || !stage) {
+      // Sin stage: caemos al overlay puro
+      return exportPreviewDataURLLocal(canvas, { multiplier });
+    }
+
+    const W = Math.round((canvas.getWidth?.() || stage.clientWidth || 800));
+    const H = Math.round((canvas.getHeight?.() || stage.clientHeight || 800));
+
+    const out = document.createElement("canvas");
+    out.width  = Math.max(1, Math.round(W * multiplier));
+    out.height = Math.max(1, Math.round(H * multiplier));
+    const ctx = out.getContext("2d");
+
+    // Base: maceta + planta (posiciones según DOM)
+    const potEl   = pickImg(stage, "pot");
+    const plantEl = pickImg(stage, "plant");
+
+    if (potEl) {
+      const r = stageRelativeRect(potEl, stage);
+      try {
+        const potImg = await loadImageCORS(potEl.currentSrc || potEl.src);
+        ctx.drawImage(potImg, Math.round(r.x * multiplier), Math.round(r.y * multiplier),
+                      Math.round(r.w * multiplier), Math.round(r.h * multiplier));
+      } catch { /* si CORS falla, ignoramos esa capa */ }
+    }
+    if (plantEl) {
+      const r = stageRelativeRect(plantEl, stage);
+      try {
+        const plantImg = await loadImageCORS(plantEl.currentSrc || plantEl.src);
+        ctx.drawImage(plantImg, Math.round(r.x * multiplier), Math.round(r.y * multiplier),
+                      Math.round(r.w * multiplier), Math.round(r.h * multiplier));
+      } catch { /* idem */ }
+    }
+
+    // Overlay: usar un canvas fabric a la resolución pedida
+    let overlayCanvas = null;
+    if (typeof canvas?.toCanvasElement === "function") {
+      overlayCanvas = canvas.toCanvasElement(multiplier);
+    } else if (canvas?.lowerCanvasEl) {
+      overlayCanvas = canvas.lowerCanvasEl;
+      // Escalar si es necesario
+      if (overlayCanvas && multiplier !== 1) {
+        ctx.save();
+        ctx.scale(multiplier, multiplier);
+        ctx.drawImage(overlayCanvas, 0, 0);
+        ctx.restore();
+        return out.toDataURL("image/png");
+      }
+    }
+    if (overlayCanvas) {
+      ctx.drawImage(overlayCanvas, 0, 0);
+    }
+
+    return out.toDataURL("image/png");
   } catch {
-    return "";
+    // Fallback final
+    const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    return exportPreviewDataURLLocal(c, { multiplier: 2 });
   }
 }
 
-// Helper único (NO lo declares en más lugares del archivo)
-const gidToNum = (id) => {
-  const s = String(id || "");
-  return s.includes("gid://") ? s.split("/").pop() : s;
-};
+
+
+
+
+
+
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
@@ -815,56 +981,10 @@ async function waitDesignerReady(timeout = 20000) {
   
 
 
-// Sube dataURL/blob a https (Cloudinary) para poder guardarlo en properties/email
-async function ensureHttpsUrl(u) {
-  try {
-    const s = String(u || "");
-    if (!s) return "";
-    if (/^https:\/\//i.test(s)) return s;
-    if (/^data:|^blob:|^http:\/\//i.test(s)) {
-      const r = await fetch("/api/upload-design", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrl: s, filename: `layer-${Date.now()}.png` })
-      });
-      const j = await r.json().catch(() => ({}));
-      return j?.url || "";
-    }
-    return "";
-  } catch {
-    return "";
-  }
-}
 
-// Compacta attrs solo a lo necesario para email/beacon
-function shrinkAttrsForEmail(attrs = []) {
-  const keep = new Set(["_designid", "designid", "_designpreview", "designpreview"]);
-  const out = [];
-  for (const a of (attrs || [])) {
-    const k = String(a?.key || "").toLowerCase();
-    const v = String(a?.value ?? "");
-    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("capa:")) {
-      out.push({ key: a.key, value: v });
-    }
-  }
-  return out.slice(0, 50);
-}
 
-// Envía email sin bloquear checkout
-function sendEmailNow(payload) {
-  try {
-    const url = new URL("/api/send-design-email", location.origin).toString();
-    const json = JSON.stringify(payload);
-    if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: "application/json" });
-      navigator.sendBeacon(url, blob);
-      return;
-    }
-    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
-      .then(r => r.json()).then(r => { if (!r?.ok) console.warn("[email] not ok", r); })
-      .catch(err => console.warn("[email] error", err));
-  } catch (e) { console.warn("sendEmailNow failed", e); }
-}
+
+
 
 function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   const asStr = (v) => String(v || "").trim();
