@@ -362,7 +362,7 @@ const thinAttrs = (attrs || []).filter(a => {
 const title =
   `DOBO ${(plants?.[selectedPlantIndex]?.title || "").trim()} + ${(pots?.[selectedPotIndex]?.title || "").trim()}`.trim();
 
-  // 3) Generar y subir capas + preview
+// 3) Generar y subir capas + preview
 const { imageUrl: LAYER_IMAGE, textUrl: LAYER_TEXT, previewUrl: PREVIEW_AUTO } = await exportImageTextLayers();
 
 // Empujar claves Layer:* a los atributos SI existen
@@ -381,6 +381,24 @@ const thinAttrs = (attrs || []).filter(a => {
   const k = String(a?.key || "").toLowerCase();
   return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
 }).map(a => ({ key: String(a.key), value: String(a.value || "") }));
+
+// Enviar a /api/design-product con attrs incluidos
+const resp = await fetch("/api/design-product", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
+    price: basePrice,
+    shortDescription,
+    color: selectedColor || "Único",
+    size:  activeSize   || "Único",
+    designId: (attrs.find(a => (a.key||"").toLowerCase()==="designid" || (a.key||"").toLowerCase()==="_designid")?.value) || `dobo-${Date.now()}`,
+    plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+    potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+    previewUrl,
+    attrs: thinAttrs,          // <- IMPORTANTE: aquí viajan Layer:Image y Layer:Text
+  }),
+});
 
 // Enviar a /api/design-product con attrs incluidos
 const resp = await fetch("/api/design-product", {
