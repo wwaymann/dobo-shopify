@@ -3,7 +3,9 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
-import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
+// arriba en pages/index.js
+import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign, exportOnly, exportLayerAllPNG } from '../lib/designStore';
+
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
@@ -35,6 +37,55 @@ function ControlesPublicar() {
   return <button className="btn btn-primary" onClick={onPublish}>Publicar diseño</button>;
 }
 
+// Sube dataURL a Cloudinary vía tu API local (usa NEXT_PUBLIC_*)
+async function ensureHttpsUrl(u) {
+  try {
+    const s = String(u || '');
+    if (!s) return '';
+    if (/^https:\/\//i.test(s)) return s;
+    if (/^data:|^blob:|^http:\/\//i.test(s)) {
+      const r = await fetch('/api/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: s, filename: `layer-${Date.now()}.png` })
+      });
+      const j = await r.json().catch(() => ({}));
+      return j?.url || '';
+    }
+    return '';
+  } catch { return ''; }
+}
+
+// Payload chico para beacon/email (solo lo esencial)
+function shrinkAttrsForEmail(attrs = []) {
+  const keep = new Set(['_designid', 'designid', '_designpreview', 'designpreview']);
+  const out = [];
+  for (const a of (attrs || [])) {
+    const k = String(a?.key || '');
+    const v = String(a?.value ?? '');
+    const lk = k.toLowerCase();
+    if (keep.has(lk) || lk.startsWith('layer:') || lk.startsWith('capa:')) {
+      out.push({ key: k, value: v });
+    }
+  }
+  return out.slice(0, 50);
+}
+
+// Dispara el email sin bloquear el checkout
+function sendEmailNow(payload) {
+  try {
+    const url = new URL('/api/send-design-email', location.origin).toString();
+    const json = JSON.stringify(payload);
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: 'application/json' });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: json })
+      .then(r => r.json()).then(r => { if (!r?.ok) console.warn('[email] not ok', r); })
+      .catch(err => console.warn('[email] error', err));
+  } catch (e) { console.warn('sendEmailNow failed', e); }
+}
 
 /* ---------- tamaño: normalización de etiquetas ---------- */
 function normalizeSizeTag(raw) {
@@ -759,124 +810,269 @@ async function waitDesignerReady(timeout = 20000) {
 
 
   
-  function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
-    const asStr = (v) => String(v || "").trim();
-    const isNum = (v) => /^\d+$/.test(asStr(v));
-    const gidToNum = (id) => { const s = asStr(id); return s.includes("gid://") ? s.split("/").pop() : s; };
-    const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
-    if (!isNum(main)) throw new Error("Variant principal inválido");
-    const accs = (accessoryIds || []).map((id) => (isNum(id) ? asStr(id) : gidToNum(id))).filter(isNum);
+// Helper: pasar gid -> num para accesorios (evita "gid://")
+const gidToNumeric = (id) => {
+  const s = String(id || "");
+  return s.includes("gid://") ? s.split("/").pop() : s;
+};
 
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = `https://${shop}/cart/add`;
-    form.target = "_top"; // forzar navegación en top-level cuando se ejecuta dentro de un iframe
-    const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
-    let line = 0;
+// Sube dataURL/blob a https (Cloudinary) para poder guardarlo en properties/email
+async function ensureHttpsUrl(u) {
+  try {
+    const s = String(u || "");
+    if (!s) return "";
+    if (/^https:\/\//i.test(s)) return s;
+    if (/^data:|^blob:|^http:\/\//i.test(s)) {
+      const r = await fetch("/api/upload-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: s, filename: `layer-${Date.now()}.png` })
+      });
+      const j = await r.json().catch(() => ({}));
+      return j?.url || "";
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
 
-    const getA = (name) => {
-      const n = name.toLowerCase();
-      return (attrs || []).find((a) => {
-        const k = (a.key || "").toLowerCase();
-        return k === n || k === `_${n}`;
-      })?.value || "";
-    };
+// Compacta attrs solo a lo necesario para email/beacon
+function shrinkAttrsForEmail(attrs = []) {
+  const keep = new Set(["_designid", "designid", "_designpreview", "designpreview"]);
+  const out = [];
+  for (const a of (attrs || [])) {
+    const k = String(a?.key || "").toLowerCase();
+    const v = String(a?.value ?? "");
+    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("capa:")) {
+      out.push({ key: a.key, value: v });
+    }
+  }
+  return out.slice(0, 50);
+}
 
-    const previewUrl = getA("DesignPreview"), designId = getA("DesignId"),
-          designPlant = getA("DesignPlant"), designPot = getA("DesignPot"),
-          designColor = getA("DesignColor"), designSize = getA("DesignSize");
+// Envía email sin bloquear checkout
+function sendEmailNow(payload) {
+  try {
+    const url = new URL("/api/send-design-email", location.origin).toString();
+    const json = JSON.stringify(payload);
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
+      .then(r => r.json()).then(r => { if (!r?.ok) console.warn("[email] not ok", r); })
+      .catch(err => console.warn("[email] error", err));
+  } catch (e) { console.warn("sendEmailNow failed", e); }
+}
 
-    add(`items[${line}][id]`, main);
-    add(`items[${line}][quantity]`, String(qty || 1));
-    add(`items[${line}][properties][_LinePriority]`, "0");
-    if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
-    if (designId) add(`items[${line}][properties][_DesignId]`, designId);
-    if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
-    if (designPot) add(`items[${line}][properties][_DesignPot]`, designPot);
-    if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
-    if (designSize) add(`items[${line}][properties][_DesignSize]`, designSize);
+function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
+  const asStr = (v) => String(v || "").trim();
+  const isNum = (v) => /^\d+$/.test(asStr(v));
+  const gidToNum = (id) => { const s = asStr(id); return s.includes("gid://") ? s.split("/").pop() : s; };
+  const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
+  if (!isNum(main)) throw new Error("Variant principal inválido");
+  const accs = (accessoryIds || []).map((id) => (isNum(id) ? asStr(id) : gidToNum(id))).filter(isNum);
+
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.target = "_top"; // forzar navegación en top-level cuando se ejecuta dentro de un iframe
+  form.action = `https://${shop}/cart/add`;
+  const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
+  let line = 0;
+
+  const getA = (name) => {
+    const n = name.toLowerCase();
+    return (attrs || []).find((a) => {
+      const k = (a.key || "").toLowerCase();
+      return k === n || k === `_${n}`;
+    })?.value || "";
+  };
+
+  // Leer de attrs (ahora también tendremos Layer:Image / Layer:Text)
+  const previewUrl  = getA("DesignPreview"),
+        designId    = getA("DesignId"),
+        designPlant = getA("DesignPlant"),
+        designPot   = getA("DesignPot"),
+        designColor = getA("DesignColor"),
+        designSize  = getA("DesignSize"),
+        layerImg    = getA("Layer:Image"),
+        layerTxt    = getA("Layer:Text");
+
+  // Línea principal
+  add(`items[${line}][id]`, main);
+  add(`items[${line}][quantity]`, String(qty || 1));
+  add(`items[${line}][properties][_LinePriority]`, "0");
+  if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
+  if (designId)   add(`items[${line}][properties][_DesignId]`, designId);
+  if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
+  if (designPot)   add(`items[${line}][properties][_DesignPot]`, designPot);
+  if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
+  if (designSize)  add(`items[${line}][properties][_DesignSize]`, designSize);
+
+  // Nuevas properties: URLs de capas
+  if (layerImg) add(`items[${line}][properties][_LayerImage]`, layerImg);
+  if (layerTxt) add(`items[${line}][properties][_LayerText]`, layerTxt);
+
+  line++;
+
+  // Accesorios
+  accs.forEach((id) => {
+    add(`items[${line}][id]`, id);
+    add(`items[${line}][quantity]`, "1");
+    add(`items[${line}][properties][_Accessory]`, "true");
+    add(`items[${line}][properties][_LinePriority]`, "1");
     line++;
+  });
 
-    accs.forEach((id) => {
-      add(`items[${line}][id]`, id);
-      add(`items[${line}][quantity]`, "1");
-      add(`items[${line}][properties][_Accessory]`, "true");
-      add(`items[${line}][properties][_LinePriority]`, "1");
-      line++;
+  if (returnTo) add("return_to", returnTo);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+const getAccessoryVariantIds = () =>
+  selectedAccessoryIndices
+    .map((i) => accessories[i]?.variants?.[0]?.id)
+    .map(gidToNumeric)
+    .filter((id) => /^\d+$/.test(id));
+
+async function buyNow() {
+  try {
+    // 1) Atributos base
+    let attrs = await prepareDesignAttributes();
+
+    // 2) Capturar preview + capas (imagen/texto) y subir a https
+    let preview = await exportPreviewDataURL(window.doboDesignAPI?.getCanvas?.(), { multiplier: 2 }) || "";
+    let layerImg = await exportOnly(["image","imagen","plant","planta"], { multiplier: 2 }) || "";
+    let layerTxt = await exportOnly(["text","texto"], { multiplier: 2 }) || "";
+
+    preview  = await ensureHttpsUrl(preview);
+    layerImg = await ensureHttpsUrl(layerImg);
+    layerTxt = await ensureHttpsUrl(layerTxt);
+
+    // 3) Merge a attrs (evita duplicados si ya existen claves)
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    pushKV("DesignPreview", preview);
+    pushKV("Layer:Image",   layerImg);
+    pushKV("Layer:Text",    layerTxt);
+
+    // 4) Precios y producto temporal
+    const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+        previewUrl: preview || (attrs.find((a) => a.key === "_DesignPreview")?.value || ""),
+        price: basePrice,
+        color: selectedColor || "Único",
+        size:  activeSize   || "Único",
+        designId: attrs.find((a) => a.key === "_DesignId")?.value,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle:   pots[selectedPotIndex]?.title   || "Maceta",
+      }),
+    });
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    // 5) Publicar assets en el variant
+    const apiReady = await waitDesignerReady(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    // 6) Email no bloqueante con preview+capas
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
+    sendEmailNow({
+      attrs: shrinkAttrsForEmail(attrs),
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true
     });
 
-    if (returnTo) add("return_to", returnTo);
-    document.body.appendChild(form);
-    form.submit();
+    // 7) Ir directo a checkout con properties completas
+    const accIds = getAccessoryVariantIds();
+    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e.message}`);
   }
-  const getAccessoryVariantIds = () =>
-    selectedAccessoryIndices.map((i) => accessories[i]?.variants?.[0]?.id).map(gidToNumeric).filter((id) => /^\d+$/.test(id));
-  async function buyNow() {
-    try {
-      const attrs = await prepareDesignAttributes();
-      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-      const plantPrice = productMin(plants[selectedPlantIndex]);
-      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-      const dpRes = await fetch("/api/design-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
-          price: basePrice,
-          color: selectedColor || "Único",
-          size: activeSize || "Único",
-          designId: attrs.find((a) => a.key === "_DesignId")?.value,
-          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-          potTitle: pots[selectedPotIndex]?.title || "Maceta",
-        }),
-      });
-      const dp = await dpRes.json();
-      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-      const apiReady = await waitDesignerReady(20000);
-      if (!apiReady) throw new Error("designer-not-ready");
-      const pub = await publishDesignForVariant(dp.variantId);
-      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-    
-      const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
-    } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e.message}`);
-    }
+}
+
+async function addToCart() {
+  try {
+    // 1) Atributos base
+    let attrs = await prepareDesignAttributes();
+
+    // 2) Capturar preview + capas (imagen/texto) y subir a https
+    let preview = await exportPreviewDataURL(window.doboDesignAPI?.getCanvas?.(), { multiplier: 2 }) || "";
+    let layerImg = await exportOnly(["image","imagen","plant","planta"], { multiplier: 2 }) || "";
+    let layerTxt = await exportOnly(["text","texto"], { multiplier: 2 }) || "";
+
+    preview  = await ensureHttpsUrl(preview);
+    layerImg = await ensureHttpsUrl(layerImg);
+    layerTxt = await ensureHttpsUrl(layerTxt);
+
+    // 3) Merge a attrs
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    pushKV("DesignPreview", preview);
+    pushKV("Layer:Image",   layerImg);
+    pushKV("Layer:Text",    layerTxt);
+
+    // 4) Precios y producto temporal
+    const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+        previewUrl: preview || (attrs.find((a) => a.key === "_DesignPreview")?.value || ""),
+        price: basePrice,
+        color: selectedColor || "Único",
+        size:  activeSize   || "Único",
+        designId: attrs.find((a) => a.key === "_DesignId")?.value,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle:   pots[selectedPotIndex]?.title   || "Maceta",
+      }),
+    });
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    const apiReady = await waitDesignerReady(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    // Email no bloqueante (útil para auditoría de carrito)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
+    sendEmailNow({
+      attrs: shrinkAttrsForEmail(attrs),
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true
+    });
+
+    // Añadir al carrito (y quedarse en /cart)
+    const accIds = getAccessoryVariantIds();
+    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+  } catch (e) {
+    alert(`No se pudo añadir: ${e.message}`);
   }
-  async function addToCart() {
-    try {
-      const attrs = await prepareDesignAttributes();
-      const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-      const plantPrice = productMin(plants[selectedPlantIndex]);
-      const basePrice = Number(((potPrice + plantPrice) * quantity).toFixed(2));
-      const dpRes = await fetch("/api/design-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-          previewUrl: attrs.find((a) => a.key === "_DesignPreview")?.value || "",
-          price: basePrice,
-          color: selectedColor || "Único",
-          size: activeSize || "Único",
-          designId: attrs.find((a) => a.key === "_DesignId")?.value,
-          plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-          potTitle: pots[selectedPotIndex]?.title || "Maceta",
-        }),
-      });
-     const dp = await dpRes.json();
-      if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
-      const apiReady = await waitDesignerReady(20000);
-      if (!apiReady) throw new Error("designer-not-ready");
-      const pub = await publishDesignForVariant(dp.variantId);
-      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
-     
-      const accIds = getAccessoryVariantIds();
-      postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
-    } catch (e) {
-      alert(`No se pudo añadir: ${e.message}`);
-    }
-  }
+}
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
