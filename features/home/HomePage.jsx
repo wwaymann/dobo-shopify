@@ -9,63 +9,58 @@ import { getShopDomain } from "../../lib/shopDomain";
 const CLOUD_NAME   = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const CLOUD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UNSIGNED_PRESET;
 
+// Sube un dataURL o URL https a Cloudinary (unsigned)
 async function uploadToCloudinary(dataUrl, filename = "layer.png") {
   try {
     if (!CLOUD_NAME || !CLOUD_PRESET || !dataUrl) return null;
     const form = new FormData();
-    form.append("file", dataUrl);                 // dataURL (base64) o URL https directa
+    form.append("file", dataUrl);
     form.append("upload_preset", CLOUD_PRESET);
-    form.append("public_id", `dobo/${Date.now()}-${filename}`); // opcional: carpeta/slug
-
-    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-      method: "POST",
-      body: form,
-    });
+    form.append("public_id", `dobo/${Date.now()}-${filename}`);
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: form });
     const j = await r.json().catch(() => null);
     return j?.secure_url || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-// === Exportar capas de diseño (imagen/texto) y preview ===
+// Intenta exportar capas (imagen/texto) y preview desde tu diseñador y subirlas
 async function exportImageTextLayers() {
-  // Devuelve { imageUrl, textUrl, previewUrl } ya subidas a Cloudinary (https)
   let imgData = null, txtData = null, prevData = null;
 
   try {
-    // 1) Si tu diseñador expone exportOnly(["image"]) / exportOnly(["text"])
+    // Opción 1: API del diseñador separando capas
     if (typeof window.exportOnly === "function") {
-      try { imgData = await window.exportOnly(["image", "imagen"]); } catch {}
-      try { txtData = await window.exportOnly(["text", "texto"]); } catch {}
+      try { imgData = await window.exportOnly(["image","imagen"]); } catch {}
+      try { txtData = await window.exportOnly(["text","texto"]);   } catch {}
     }
-
-    // 2) Si expone exportLayerAllPNG() que devuelve array con {name, dataUrl}
+    // Opción 2: devuelve todas las capas en PNG [{name,dataUrl}]
     if ((!imgData || !txtData) && typeof window.exportLayerAllPNG === "function") {
       try {
-        const layers = await window.exportLayerAllPNG(); // [{name, dataUrl}, ...]
-        const find = (names) =>
-          (layers || []).find(L => names.some(n => String(L?.name||"").toLowerCase().includes(n)));
+        const layers = await window.exportLayerAllPNG();
+        const find = (names) => (layers || []).find(L => names.some(n => String(L?.name||"").toLowerCase().includes(n)));
         imgData = imgData || find(["image","imagen","plant","planta"])?.dataUrl || null;
         txtData = txtData || find(["text","texto"])?.dataUrl || null;
       } catch {}
     }
-
-    // 3) Preview global (si existe)
+    // Preview general (si existe)
     if (typeof window.exportPreviewDataURL === "function") {
       try { prevData = await window.exportPreviewDataURL(); } catch {}
     }
 
-    // 4) Subir lo que haya a Cloudinary
-    const imageUrl   = imgData ? await uploadToCloudinary(imgData, "layer-image.png") : null;
-    const textUrl    = txtData ? await uploadToCloudinary(txtData, "layer-text.png") : null;
-    const previewUrl = prevData ? await uploadToCloudinary(prevData, "preview.png") : (imageUrl || null);
+    // Subir lo que haya
+    const imageUrl   = imgData ? await uploadToCloudinary(imgData, "layer-image.png")  : null;
+    const textUrl    = txtData ? await uploadToCloudinary(txtData, "layer-text.png")   : null;
+    const previewUrl = prevData ? await uploadToCloudinary(prevData, "preview.png")    : (imageUrl || null);
+
+    // Log de diagnóstico
+    console.log("[DOBO] exportImageTextLayers", { CLOUD_NAME, CLOUD_PRESET, imageUrl, textUrl, previewUrl });
 
     return { imageUrl, textUrl, previewUrl };
   } catch {
     return { imageUrl: null, textUrl: null, previewUrl: null };
   }
 }
+
 
 
 // En cliente: dispara email y no bloquea checkout
@@ -366,25 +361,43 @@ const thinAttrs = (attrs || []).filter(a => {
 const title =
   `DOBO ${(plants?.[selectedPlantIndex]?.title || "").trim()} + ${(pots?.[selectedPotIndex]?.title || "").trim()}`.trim();
 
-    // === Generar y subir capas separadas (imagen/texto) + preview ===
-const { imageUrl: LAYER_IMAGE, textUrl: LAYER_TEXT, previewUrl: PREVIEW_FROM_TOOL } =
-  await exportImageTextLayers();
+  // 3) Generar y subir capas + preview
+const { imageUrl: LAYER_IMAGE, textUrl: LAYER_TEXT, previewUrl: PREVIEW_AUTO } = await exportImageTextLayers();
 
-// Empuja estas claves a tus atributos del diseño
+// Empujar claves Layer:* a los atributos SI existen
 if (LAYER_IMAGE) attrs.push({ key: "Layer:Image", value: LAYER_IMAGE });
 if (LAYER_TEXT)  attrs.push({ key: "Layer:Text",  value: LAYER_TEXT  });
 
-// Si aún no hay DesignPreview en attrs y tenemos preview generado, añadirlo
+// Asegurar DesignPreview si no venía de tu helper
 const hasPreview = (attrs || []).some(a => String(a?.key||"").toLowerCase().includes("designpreview"));
 const previewUrl = hasPreview
   ? (attrs.find(a => String(a?.key||"").toLowerCase().includes("designpreview"))?.value || "")
-  : (PREVIEW_FROM_TOOL || "");
+  : (PREVIEW_AUTO || "");
+if (previewUrl && !hasPreview) attrs.push({ key: "DesignPreview", value: previewUrl });
 
-// adelgazar attrs para el correo (solo útiles)
+// adelgazar attrs para email (solo lo útil)
 const thinAttrs = (attrs || []).filter(a => {
   const k = String(a?.key || "").toLowerCase();
   return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
 }).map(a => ({ key: String(a.key), value: String(a.value || "") }));
+
+// Enviar a /api/design-product con attrs incluidos
+const resp = await fetch("/api/design-product", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
+    price: basePrice,
+    shortDescription,
+    color: selectedColor || "Único",
+    size:  activeSize   || "Único",
+    designId: (attrs.find(a => (a.key||"").toLowerCase()==="designid" || (a.key||"").toLowerCase()==="_designid")?.value) || `dobo-${Date.now()}`,
+    plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+    potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+    previewUrl,
+    attrs: thinAttrs,          // <- IMPORTANTE: aquí viajan Layer:Image y Layer:Text
+  }),
+});
 
     
 let dp = null;
