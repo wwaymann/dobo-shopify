@@ -280,47 +280,59 @@ async function buyNow() {
       })
       .map(a => ({ key: String(a.key), value: String(a.value || "") }));
 
-    // 4) Crear el producto DOBO en el backend (AHÍ se envía el correo)
-    let dp = null;
-    try {
-      const resp = await fetch("/api/design-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
-          previewUrl,
-          price: basePrice,
-          color: selectedColor || "Único",
-          size:  activeSize     || "Único",
-          designId,
-          shortDescription,
-          publishOnline: true,
-          attrs: thinAttrs, // <--- el backend usará esto para enviar el correo
-        }),
-      });
-      dp = await resp.json().catch(() => null);
+  // === 4) Crear DOBO y dejar que el backend envíe el correo ===
+const getAttr = (name) => {
+  const n = String(name || "").toLowerCase();
+  const it = (attrs || []).find(a => String(a?.key || "").toLowerCase() === n);
+  return it?.value || "";
+};
+const designId =
+  getAttr("_designid") ||
+  getAttr("designid") ||
+  `dobo-${Date.now()}`;
 
-      if (!resp.ok || !dp?.ok || !dp?.variantId) {
-        console.warn("design-product falló; envío correo desde cliente (fallback)", dp);
-        // Fallback de correo para no perder notificación:
-        sendEmailNow({
-          attrs: thinAttrs,
-          meta:  { Descripcion: shortDescription, Precio: basePrice },
-          links: { Storefront: location.origin },
-          attachPreviews: true,
-        });
-        dp = null;
-      }
-    } catch (e) {
-      console.warn("design-product request error; envío correo (fallback):", e);
-      sendEmailNow({
-        attrs: thinAttrs,
-        meta:  { Descripcion: shortDescription, Precio: basePrice },
-        links: { Storefront: location.origin },
-        attachPreviews: true,
-      });
-      dp = null;
-    }
+const previewUrl =
+  (attrs || []).find(a => String(a?.key || "").toLowerCase().includes("designpreview"))?.value || "";
+
+// adelgazar attrs para el email (solo lo útil)
+const thinAttrs = (attrs || []).filter(a => {
+  const k = String(a?.key || "").toLowerCase();
+  return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
+}).map(a => ({ key: String(a.key), value: String(a.value || "") }));
+
+const title =
+  `DOBO ${(plants?.[selectedPlantIndex]?.title || "").trim()} + ${(pots?.[selectedPotIndex]?.title || "").trim()}`.trim();
+
+let dp = null;
+try {
+  const resp = await fetch("/api/design-product", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      price: basePrice,                 // <- precio correcto
+      previewUrl,                       // <- imagen/adjunto
+      shortDescription,                 // <- cuerpo del correo
+      color: selectedColor || "Único",
+      size:  activeSize     || "Único",
+      designId,
+      plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+      potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+      attrs: thinAttrs,                 // <- DesignPreview / Layer:* para adjuntos
+    }),
+  });
+  dp = await resp.json().catch(() => null);
+  if (!resp.ok || !dp?.ok) {
+    console.warn("design-product falló:", dp);
+    dp = null;
+  }
+} catch (e) {
+  console.warn("design-product request error:", e);
+  dp = null;
+}
+
+// (luego sigues con tu checkout actual como ya lo tienes)
+
 
     // 5) Ir a checkout (usa DOBO si existe, si no la variante seleccionada)
     const variantId = dp?.variantId ||
