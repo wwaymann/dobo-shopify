@@ -136,6 +136,40 @@ export default async function handler(req, res) {
         console.warn("publishablePublish error", errs || gjson);
       }
     }
+// >>> ENVÍO DE CORREO (no bloqueante)
+try {
+  // Construye la URL absoluta a tu propia API (sirve en Vercel)
+  const base = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
+
+  // Sanitiza attrs que te mandó el cliente (si los incluyes en el body)
+  const attrsIn = Array.isArray(req.body?.attrs) ? req.body.attrs : [];
+  const attrs = attrsIn.map(a => ({
+    key: String(a?.key || ''),
+    value: String(a?.value ?? ''),
+  }));
+
+  // Datos básicos para el correo
+  const emailPayload = {
+    attrs,                                     // aquí pueden ir DesignPreview y Layer:...
+    meta: {
+      Descripcion: req.body?.shortDescription || 'DOBO',
+      Precio: Number(req.body?.price || 0),
+    },
+    links: {
+      'Producto (storefront)': `https://${process.env.SHOPIFY_SHOP}/products/${handle}`,
+    },
+    attachPreviews: true,                       // intenta adjuntar previews/capas https
+  };
+
+  // Disparo "fire-and-forget": no bloquea la respuesta de esta API
+  fetch(`${base}/api/send-design-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(emailPayload),
+  }).catch(() => {}); // silencioso: no impide el 200 de esta API
+} catch (e) {
+  console.warn('post-create email failed (non-blocking):', e);
+}
 
     return res.status(200).json({
       ok: true,
