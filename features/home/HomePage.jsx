@@ -63,6 +63,7 @@ async function exportImageTextLayers() {
 
 
 
+
 // En cliente: dispara email y no bloquea checkout
 // --- PON ESTO ARRIBA (una sola vez) ---
 // Fallback para mandar correo si por alguna razón /api/design-product falla.
