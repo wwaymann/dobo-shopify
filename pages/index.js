@@ -1059,15 +1059,13 @@ async function buyNow() {
     // 1) Atributos base
     let attrs = await prepareDesignAttributes();
 
-    // 2) Capturar preview + capas con DS ó fallbacks
-    const canvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    // 2) Capturas: PREVIEW INTEGRADO + CAPAS
+    const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
 
-    let preview = await (
-      typeof DS.exportPreviewDataURL === "function"
-        ? DS.exportPreviewDataURL(canvas, { multiplier: 2 })
-        : exportPreviewDataURLLocal(canvas, { multiplier: 2 })
-    ) || "";
+    // Preview integrado (maceta + planta + overlay)
+    let preview = await exportIntegratedPreview({ fabricCanvas, multiplier: 2 }) || "";
 
+    // Capas (overlay) – usar DS si existe, si no fallbacks locales
     let layerImg = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
@@ -1080,20 +1078,18 @@ async function buyNow() {
         : exportOnlyLocal(["text","texto"], { multiplier: 2 })
     ) || "";
 
-    // Subir a https si vinieron como dataURL/blob
+    // 3) Subir a https si son dataURL/blob
     preview  = await ensureHttpsUrl(preview);
     layerImg = await ensureHttpsUrl(layerImg);
     layerTxt = await ensureHttpsUrl(layerTxt);
 
-    // 3) Merge a attrs (evita duplicados si ya existen claves)
-    const pushKV = (k, v) => {
-      if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }];
-    };
+    // 4) Merge a attrs sin duplicar claves
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
     pushKV("DesignPreview", preview);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 4) Precios y producto temporal
+    // 5) Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1115,13 +1111,13 @@ async function buyNow() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // 5) Publicar assets en el variant
+    // 6) Publicar assets en el variant
     const apiReady = await waitDesignerReady(20000);
     if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 6) Email no bloqueante con preview+capas
+    // 7) Email no bloqueante con preview+capas
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1134,8 +1130,12 @@ async function buyNow() {
       attachPreviews: true
     });
 
-    // 7) Ir directo a checkout con properties completas
-    const accIds = getAccessoryVariantIds();
+    // 8) Checkout
+    const accIds = selectedAccessoryIndices
+      .map((i) => accessories[i]?.variants?.[0]?.id)
+      .map(gidToNum)
+      .filter((id) => /^\d+$/.test(id));
+
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
     alert(`No se pudo iniciar el checkout: ${e.message}`);
@@ -1147,14 +1147,10 @@ async function addToCart() {
     // 1) Atributos base
     let attrs = await prepareDesignAttributes();
 
-    // 2) Capturar preview + capas con DS ó fallbacks
-    const canvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    // 2) Capturas: PREVIEW INTEGRADO + CAPAS
+    const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
 
-    let preview = await (
-      typeof DS.exportPreviewDataURL === "function"
-        ? DS.exportPreviewDataURL(canvas, { multiplier: 2 })
-        : exportPreviewDataURLLocal(canvas, { multiplier: 2 })
-    ) || "";
+    let preview = await exportIntegratedPreview({ fabricCanvas, multiplier: 2 }) || "";
 
     let layerImg = await (
       typeof DS.exportOnly === "function"
@@ -1168,20 +1164,18 @@ async function addToCart() {
         : exportOnlyLocal(["text","texto"], { multiplier: 2 })
     ) || "";
 
-    // Subir a https si vinieron como dataURL/blob
+    // 3) Subir a https
     preview  = await ensureHttpsUrl(preview);
     layerImg = await ensureHttpsUrl(layerImg);
     layerTxt = await ensureHttpsUrl(layerTxt);
 
-    // 3) Merge a attrs (evita duplicados)
-    const pushKV = (k, v) => {
-      if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }];
-    };
+    // 4) Merge atributos
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
     pushKV("DesignPreview", preview);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 4) Precios y producto temporal
+    // 5) Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1208,7 +1202,7 @@ async function addToCart() {
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // Email no bloqueante (auditoría de carrito)
+    // 6) Email no bloqueante
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1221,13 +1215,18 @@ async function addToCart() {
       attachPreviews: true
     });
 
-    // Añadir al carrito (quedarse en /cart)
-    const accIds = getAccessoryVariantIds();
+    // 7) Al carrito
+    const accIds = selectedAccessoryIndices
+      .map((i) => accessories[i]?.variants?.[0]?.id)
+      .map(gidToNum)
+      .filter((id) => /^\d+$/.test(id));
+
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
+
 
 
   /* ---------- handlers swipe ---------- */
