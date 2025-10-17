@@ -398,9 +398,10 @@ export default function HomePage() {
 
 // ---------------- Comprar ahora (reemplaza tu buyNow por éste) ----------------
 // ---------------- Comprar ahora (versión final) ----------------
+// ---------------- Comprar ahora (con capas garantizadas) ----------------
 async function buyNow() {
   try {
-    // 1) Atributos (tu helper si existe)
+    // 1) Atributos base (tu helper si existe)
     let attrs = [];
     if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
       const r = await window.buildAndSaveDesignForCartCheckout();
@@ -411,10 +412,7 @@ async function buyNow() {
       attrs = await minimalDesignAttributes();
     }
 
-    // 1.1) Completar con Layer:* si aún no están (desde globals u otras fuentes)
-    attrs = withLayerFallbacks(attrs);
-
-    // 2) Precio + descripción corta
+    // 2) Precio + descripción
     const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
     const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
@@ -424,46 +422,49 @@ async function buyNow() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // 3) Disparar email (no bloqueante) con attrs delgadas (incluye layer:* y preview)
-    const thinAttrs = pickAttrsForEmail(attrs);
-    sendEmailNow({
-      attachPreviews: true,
-      attrs: thinAttrs,
-      meta:  { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin }
-    });
+    // 3) Intentamos obtener LAS CAPAS
+    // 3a) Primero, de attrs del helper
+    const getAttr = (k) => (attrs || []).find(a => String(a?.key || "").toLowerCase() === k)?.value || "";
+    let preview  = getAttr("designpreview") || getAttr("_designpreview");
+    let layerImg = getAttr("layer:image");
+    let layerTxt = getAttr("layer:text");
 
-    // 4) Crear producto DOBO (pasando también attrs al server para que él dispare otro email)
-    const resp = await fetch("/api/design-product", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
-        previewUrl:
-          thinAttrs.find(a => a.key.toLowerCase().includes('designpreview'))?.value || "",
-        price: basePrice,
-        color: selectedColor || "Único",
-        size:  activeSize     || "Único",
-        designId:
-          thinAttrs.find(a => a.key.toLowerCase() === 'designid' || a.key.toLowerCase() === '_designid')?.value
-          || `dobo-${Date.now()}`,
-        plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
-        potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
-        shortDescription,
-        publishOnline: true,
-        // 🔴 AQUÍ viajan las capas al servidor:
-        attrs: thinAttrs,
-      }),
-    });
+    // 3b) Luego, de globals que puede haber puesto el Overlay
+    if (!preview)  preview  = window.DOBO_PREVIEW_URL || "";
+    if (!layerImg) layerImg = window.DOBO_LAYER_IMAGE || "";
+    if (!layerTxt) layerTxt = window.DOBO_LAYER_TEXT  || "";
 
-    const dp = await resp.json().catch(() => null);
-    if (!resp.ok || !dp?.ok || !dp?.variantId) {
-      console.warn("design-product falló; usaré la variante actual", dp);
+    // 3c) Último recurso: capturar del DOM
+    if (!preview || !layerImg || !layerTxt) {
+      const pick = pickFromDom(stageRef, sceneWrapRef);
+      preview  = preview  || pick.preview;
+      layerImg = layerImg || pick.layerImage;
+      layerTxt = layerTxt || pick.layerText;
     }
 
-    // 5) Checkout (usa DOBO si lo creó, si no la variante actual)
+    // 3d) Asegurar HTTPS subiendo data:/blob:
+    preview  = await ensureHttpsUrl(preview);
+    layerImg = await ensureHttpsUrl(layerImg);
+    layerTxt = await ensureHttpsUrl(layerTxt);
+
+    // 3e) Inyectar/mergear en attrs (sobrescribe claves si ya existían)
+    attrs = mergeAttrs(attrs, [
+      preview  && { key: "DesignPreview", value: preview },
+      layerImg && { key: "Layer:Image",   value: layerImg },
+      layerTxt && { key: "Layer:Text",    value: layerTxt },
+    ].filter(Boolean));
+
+    // 4) Disparar email (no bloqueante). El server adjuntará DesignPreview y Layer:* si son https válidas
+    const links = { Storefront: location.origin };
+    sendEmailNow({
+      attrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links,
+      attachPreviews: true,   // nuestro /api/send-design-email reconoce Layer:* con esto
+    });
+
+    // 5) Ir a checkout (Storefront API)
     const variantId =
-      dp?.variantId ||
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
       null;
@@ -475,6 +476,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
 }
+
 
 
 
