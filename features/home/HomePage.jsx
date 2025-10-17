@@ -115,24 +115,19 @@ const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
 
 function sendEmailNow(payload) {
   try {
-    const url = "/api/send-design-email";
     const json = JSON.stringify(payload);
+    const url = new URL('/api/send-design-email', location.origin).toString();
 
-    // 1) Preferir Beacon si pesan poco (<~64KB)
     if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: "application/json" });
-      navigator.sendBeacon(url, blob);
+      const blob = new Blob([json], { type: 'application/json' });
+      navigator.sendBeacon(url, blob);  // no esperes respuesta
       return;
     }
-    // 2) Fallback keepalive (no bloquear)
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-      keepalive: true,
-    }).catch(()=>{});
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, keepalive: true })
+      .then(r => r.json()).then(r => { if (!r?.ok) console.warn('email not ok', r); })
+      .catch(err => console.warn('email api error', err));
   } catch (e) {
-    console.warn("sendEmailNow failed", e);
+    console.warn('sendEmailNow failed', e);
   }
 }
 
@@ -270,17 +265,14 @@ export default function HomePage() {
       });
 
       // ...dentro de buyNow(), cuando ya tengas `attrs`, `shortDescription`, `basePrice`:
-const preview =
-  attrs.find(a => (a.key||"").toLowerCase().includes("designpreview"))?.value || "";
-
+// dentro de buyNow(), tras obtener attrs/preview:
+const preview = (attrs.find(a => (a.key || '').toLowerCase().includes('designpreview'))?.value) || '';
 sendEmailNow({
-  attachPreviews: true,         // adjunta DesignPreview
-  // attachAll: true,           // si quieres adjuntar TODAS las capas con URL
-  attrs,                        // aquí pueden venir tus Layer:Base, Layer:Plant, etc.
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attrs, // aquí pueden ir también tus Layer:...
+  meta:  { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin }
 });
-
       // 4) Ir a checkout (Storefront API)
       const variantId =
         selectedVariant?.id ||
