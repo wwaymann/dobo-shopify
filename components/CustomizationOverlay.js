@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
 import { applyRelief2DFromURLs } from "../lib/relief2d";
 
-export default function CustomizationOverlay({ /* ...props */ }) {
 // props: { canvas, stageRef, zoomRef }
 export function useCanvasZoom(canvas, stageRef, zoomRef) {
   // 1) Zoom inicial EXACTO = 0.5, una sola vez
@@ -1218,38 +1217,7 @@ useEffect(() => {
 
     c.requestRenderAll();
   }, [vecBias, vecInvert]);
-  useEffect(() => {
-    // expone helpers para que HomePage pueda encontrar los nodos
-    if (typeof window !== "undefined") {
-      window.__DOBO__ = window.__DOBO__ || {};
-      window.__DOBO__.getLayerNodes = () => ({
-        image: document.getElementById("dobo-image-layer"),
-        text:  document.getElementById("dobo-text-layer"),
-      });
-    }
-  }, []);
 
-  return (
-    <div>
-      {/* Capa de IMAGEN / gráficos */}
-      <div id="dobo-image-layer" data-layer="image">
-        {/* EJEMPLO: si renderizas imágenes, añade crossOrigin/referrerPolicy */}
-        {/* Ajusta a tu estructura real */}
-        {/* <img src={urlMaceta} crossOrigin="anonymous" referrerPolicy="no-referrer" />
-            <img src={urlPlanta} crossOrigin="anonymous" referrerPolicy="no-referrer" /> */}
-        {/* ...tu render actual... */}
-      </div>
-
-      {/* Capa de TEXTO */}
-      <div id="dobo-text-layer" data-layer="text">
-        {/* Ejemplo:
-        <div style={{ fontFamily, color, ... }}>{textoUsuario}</div>
-        */}
-        {/* ...tu render actual... */}
-      </div>
-    </div>
-  );
-}
   // Offset de relieve en caliente
   useEffect(() => {
     if (!editing || selType !== 'image') return;
