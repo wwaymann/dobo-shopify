@@ -10,10 +10,10 @@ import { getShopDomain } from "../../lib/shopDomain";
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const UP_PRESET  = process.env.NEXT_PUBLIC_CLOUDINARY_UNSIGNED_PRESET;
 
-// === Captura NO bloqueante de nodos (imagen/texto) ===
+// === helpers de captura & subida ===
 async function captureNodeToDataURL(node) {
   if (!node) return null;
-  const { default: html2canvas } = await import("html2canvas"); // lazy import
+  const { default: html2canvas } = await import("html2canvas");
   const canvas = await html2canvas(node, {
     backgroundColor: null,
     useCORS: true,
@@ -24,8 +24,9 @@ async function captureNodeToDataURL(node) {
   return canvas.toDataURL("image/png", 1.0);
 }
 
-// === Subida a Cloudinary dataURL -> URL segura ===
 async function uploadDataURLToCloudinary(name, dataURL) {
+  const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const UP_PRESET  = process.env.NEXT_PUBLIC_CLOUDINARY_UNSIGNED_PRESET;
   if (!CLOUD_NAME || !UP_PRESET || !dataURL) return null;
   const fd = new FormData();
   fd.append("file", dataURL);
@@ -37,11 +38,6 @@ async function uploadDataURLToCloudinary(name, dataURL) {
   return j?.secure_url || j?.url || null;
 }
 
-/**
- * Busca nodos por varios selectores comunes para cada capa.
- * Si no encuentras nodos, no falla: simplemente no adjunta esa capa.
- * Puedes ajustar/añadir tus selectores reales del CustomizationOverlay.
- */
 function findFirst(selectorList) {
   for (const sel of selectorList) {
     const n = document.querySelector(sel);
@@ -56,23 +52,35 @@ function findFirst(selectorList) {
  */
 async function captureAndUploadLayers(designId) {
   try {
-    const imgNode  = findFirst(["#dobo-image-layer", ".dobo-layer-image", '[data-layer="image"]']);
-    const textNode = findFirst(["#dobo-text-layer",  ".dobo-layer-text",  '[data-layer="text"]']);
+    const overlay = window.__DOBO__?.getLayerNodes?.() || {};
+    // Usa preferentemente lo que expone el Overlay; si no, busca por selectores
+    const imgNode  = overlay.image || findFirst(["#dobo-image-layer", ".dobo-layer-image", '[data-layer="image"]']);
+    const textNode = overlay.text  || findFirst(["#dobo-text-layer",  ".dobo-layer-text",  '[data-layer="text"]']);
+
+    console.info("[layers] nodes", { imgNode: !!imgNode, textNode: !!textNode });
 
     const attrs = [];
 
-    // Capa imagen
     if (imgNode) {
-      const dataURL = await captureNodeToDataURL(imgNode);
-      const url = await uploadDataURLToCloudinary(`${designId}-image`, dataURL);
-      if (url) attrs.push({ key: "Layer:Image", value: url });
+      try {
+        const dataURL = await captureNodeToDataURL(imgNode);
+        const url = await uploadDataURLToCloudinary(`${designId}-image`, dataURL);
+        if (url) attrs.push({ key: "Layer:Image", value: url });
+        console.info("[layers] image uploaded:", url);
+      } catch (e) {
+        console.warn("[layers] image capture/upload failed:", e);
+      }
     }
 
-    // Capa texto
     if (textNode) {
-      const dataURL = await captureNodeToDataURL(textNode);
-      const url = await uploadDataURLToCloudinary(`${designId}-text`, dataURL);
-      if (url) attrs.push({ key: "Layer:Text", value: url });
+      try {
+        const dataURL = await captureNodeToDataURL(textNode);
+        const url = await uploadDataURLToCloudinary(`${designId}-text`, dataURL);
+        if (url) attrs.push({ key: "Layer:Text", value: url });
+        console.info("[layers] text uploaded:", url);
+      } catch (e) {
+        console.warn("[layers] text capture/upload failed:", e);
+      }
     }
 
     return attrs;
@@ -80,34 +88,6 @@ async function captureAndUploadLayers(designId) {
     console.warn("captureAndUploadLayers error:", e);
     return [];
   }
-}
-
-// Mantén tu sendEmailNow como lo tienes (beacon/keepalive).
-// Si no lo tienes, aquí va uno compacto y robusto:
-function sendEmailNow(payload) {
-  try {
-    const url = new URL("/api/send-design-email", location.origin).toString();
-    const json = JSON.stringify(payload);
-    if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: "application/json" });
-      navigator.sendBeacon(url, blob);
-      return;
-    }
-    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: json, keepalive: true })
-      .then(r => r.json())
-      .then(r => { if (!r?.ok) console.warn("email api responded not ok", r); })
-      .catch(err => console.warn("email api error", err));
-  } catch (e) {
-    console.warn("sendEmailNow failed", e);
-  }
-}
-
-// Por si quieres adelgazar attrs en el correo:
-function shrinkAttrsForEmail(attrs) {
-  return (attrs || []).map(a => ({
-    key: String(a?.key || ""),
-    value: String(a?.value ?? ""),
-  })).filter(a => a.key && a.value);
 }
 
 
@@ -271,6 +251,7 @@ function withLayerFallbacks(attrs = []) {
   return out;
 }
 
+// Si no lo tienes ya:
 function sendEmailNow(payload) {
   try {
     const url = new URL("/api/send-design-email", location.origin).toString();
@@ -280,10 +261,10 @@ function sendEmailNow(payload) {
       navigator.sendBeacon(url, blob);
       return;
     }
-    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: json, keepalive: true })
       .then(r => r.json())
-      .then(r => { if (!r?.ok) console.warn("email api not ok:", r); })
-      .catch(err => console.warn("email api error:", err));
+      .then(r => { if (!r?.ok) console.warn("email api responded not ok", r); })
+      .catch(err => console.warn("email api error", err));
   } catch (e) {
     console.warn("sendEmailNow failed", e);
   }
@@ -503,7 +484,7 @@ export default function HomePage() {
 // ---------------- Comprar ahora (con capas garantizadas) ----------------
 async function buyNow() {
   try {
-    // 1) Atributos base (tu helper si existe)
+    // 1) Atributos base
     let attrs = [];
     if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
       const r = await window.buildAndSaveDesignForCartCheckout();
@@ -514,12 +495,12 @@ async function buyNow() {
       attrs = await minimalDesignAttributes();
     }
 
-    // aseguremos un designId
+    // designId
     const designId =
       (attrs.find(a => (a.key || "").toLowerCase() === "designid" || (a.key || "").toLowerCase() === "_designid")?.value)
       || `dobo-${Date.now()}`;
 
-    // 2) Precio + descripción (no cambia tu lógica)
+    // 2) Precio + descripción
     const potPrice   = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
     const basePrice  = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
@@ -529,23 +510,21 @@ async function buyNow() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // 3) CAPTURAR y SUBIR capas (añade Layer:Image / Layer:Text si existen)
-    //    No bloquea el checkout si Cloudinary no está; simplemente no adjunta capas.
-    const extraLayerAttrs = await captureAndUploadLayers(designId);
-    if (extraLayerAttrs.length) {
-      attrs = [...attrs, ...extraLayerAttrs];
-    }
+    // 3) Captura & subida de capas
+    const layerAttrs = await captureAndUploadLayers(designId);
+    if (layerAttrs.length) attrs = [...attrs, ...layerAttrs];
 
-    // 4) Disparar correo (no bloqueante)
-    const thin = shrinkAttrsForEmail(attrs);
+    // 4) Disparar correo (no bloquea)
+    const thin = (attrs || []).map(a => ({ key: String(a.key || ""), value: String(a.value ?? "") }));
+    console.info("[email] sending with attrs:", thin);
     sendEmailNow({
-      attrs: thin,
+      attrs: thin,                               // incluirá Layer:Image / Layer:Text si existieron
       meta:  { Descripcion: shortDescription, Precio: basePrice },
       links: { "Storefront": location.origin },
-      attachPreviews: true,   // el server adjunta Preview y toda key que empiece con "Layer:"
+      attachPreviews: true,
     });
 
-    // 5) Ir a checkout (como ya lo tenías)
+    // 5) Checkout
     const variantId =
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
@@ -558,6 +537,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
 }
+
 
 
 
