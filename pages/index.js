@@ -4,7 +4,51 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 // arriba en pages/index.js
-import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign, exportOnly, exportLayerAllPNG } from '../lib/designStore';
+import * as DS from "../lib/designStore";
+
+
+// --- Fallbacks si lib/designStore no exporta las funciones ---
+// Obtiene un PNG del canvas completo (fondo transparente)
+function exportPreviewDataURLLocal(canvas, { multiplier = 2 } = {}) {
+  try {
+    const c = canvas || (typeof window !== "undefined" && window.doboDesignAPI?.getCanvas?.());
+    if (!c || !c.toDataURL) return "";
+    return c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+  } catch {
+    return "";
+  }
+}
+
+// Exporta solo un tipo de objetos (imagen o texto) como PNG
+async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
+  try {
+    const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    if (!c?.getObjects) return "";
+
+    const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
+    const wantText  = names.map(String).some(n => /text|texto/i.test(n));
+    const kind = wantImage ? "image" : wantText ? "text" : "";
+
+    if (!kind) return "";
+
+    const hidden = [];
+    c.getObjects().forEach(o => {
+      const isImg = o.type === "image";
+      const isTxt = o.type === "i-text" || o.type === "textbox" || o.type === "text";
+      const keep = (kind === "image" && isImg) || (kind === "text" && isTxt);
+      if (!keep) { hidden.push(o); o.__wasVisible = o.visible; o.visible = false; }
+    });
+
+    const url = c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+
+    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; });
+    c.requestRenderAll();
+
+    return url;
+  } catch {
+    return "";
+  }
+}
 
 // Helper único (NO lo declares en más lugares del archivo)
 const gidToNum = (id) => {
@@ -895,17 +939,36 @@ async function buyNow() {
     // 1) Atributos base
     let attrs = await prepareDesignAttributes();
 
-    // 2) Capturar preview + capas (imagen/texto) y subir a https
-    let preview = await exportPreviewDataURL(window.doboDesignAPI?.getCanvas?.(), { multiplier: 2 }) || "";
-    let layerImg = await exportOnly(["image","imagen","plant","planta"], { multiplier: 2 }) || "";
-    let layerTxt = await exportOnly(["text","texto"], { multiplier: 2 }) || "";
+    // 2) Capturar preview + capas con DS ó fallbacks
+    const canvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
 
+    let preview = await (
+      typeof DS.exportPreviewDataURL === "function"
+        ? DS.exportPreviewDataURL(canvas, { multiplier: 2 })
+        : exportPreviewDataURLLocal(canvas, { multiplier: 2 })
+    ) || "";
+
+    let layerImg = await (
+      typeof DS.exportOnly === "function"
+        ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
+        : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
+    ) || "";
+
+    let layerTxt = await (
+      typeof DS.exportOnly === "function"
+        ? DS.exportOnly(["text","texto"], { multiplier: 2 })
+        : exportOnlyLocal(["text","texto"], { multiplier: 2 })
+    ) || "";
+
+    // Subir a https si vinieron como dataURL/blob
     preview  = await ensureHttpsUrl(preview);
     layerImg = await ensureHttpsUrl(layerImg);
     layerTxt = await ensureHttpsUrl(layerTxt);
 
     // 3) Merge a attrs (evita duplicados si ya existen claves)
-    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    const pushKV = (k, v) => {
+      if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }];
+    };
     pushKV("DesignPreview", preview);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
@@ -964,17 +1027,36 @@ async function addToCart() {
     // 1) Atributos base
     let attrs = await prepareDesignAttributes();
 
-    // 2) Capturar preview + capas (imagen/texto) y subir a https
-    let preview = await exportPreviewDataURL(window.doboDesignAPI?.getCanvas?.(), { multiplier: 2 }) || "";
-    let layerImg = await exportOnly(["image","imagen","plant","planta"], { multiplier: 2 }) || "";
-    let layerTxt = await exportOnly(["text","texto"], { multiplier: 2 }) || "";
+    // 2) Capturar preview + capas con DS ó fallbacks
+    const canvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
 
+    let preview = await (
+      typeof DS.exportPreviewDataURL === "function"
+        ? DS.exportPreviewDataURL(canvas, { multiplier: 2 })
+        : exportPreviewDataURLLocal(canvas, { multiplier: 2 })
+    ) || "";
+
+    let layerImg = await (
+      typeof DS.exportOnly === "function"
+        ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
+        : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
+    ) || "";
+
+    let layerTxt = await (
+      typeof DS.exportOnly === "function"
+        ? DS.exportOnly(["text","texto"], { multiplier: 2 })
+        : exportOnlyLocal(["text","texto"], { multiplier: 2 })
+    ) || "";
+
+    // Subir a https si vinieron como dataURL/blob
     preview  = await ensureHttpsUrl(preview);
     layerImg = await ensureHttpsUrl(layerImg);
     layerTxt = await ensureHttpsUrl(layerTxt);
 
-    // 3) Merge a attrs
-    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    // 3) Merge a attrs (evita duplicados)
+    const pushKV = (k, v) => {
+      if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }];
+    };
     pushKV("DesignPreview", preview);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
@@ -1006,7 +1088,7 @@ async function addToCart() {
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // Email no bloqueante (útil para auditoría de carrito)
+    // Email no bloqueante (auditoría de carrito)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1019,13 +1101,14 @@ async function addToCart() {
       attachPreviews: true
     });
 
-    // Añadir al carrito (y quedarse en /cart)
+    // Añadir al carrito (quedarse en /cart)
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
+
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
