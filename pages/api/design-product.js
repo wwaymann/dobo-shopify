@@ -150,54 +150,47 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3) Enviar correo (desde el backend)
-    try {
-      // URL absoluta a tu propia API (sirve en Vercel/prod y local)
-      const proto = req.headers["x-forwarded-proto"] || "https";
-      const host =
-        req.headers["x-forwarded-host"] || req.headers.host || process.env.VERCEL_URL;
-      const base = `${proto}://${host}`;
+// >>> ENVÍO DE CORREO (no bloqueante)
+try {
+  const base = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
 
-      // Sanitizar attrs del body (si vinieron)
-      const attrs = Array.isArray(attrsIn)
-        ? attrsIn.map((a) => ({
-            key: String(a?.key || ""),
-            value: String(a?.value ?? ""),
-          }))
-        : [];
+  const attrsIn = Array.isArray(req.body?.attrs) ? req.body.attrs : [];
+  const attrsSan = attrsIn.map(a => ({
+    key: String(a?.key || ''),
+    value: String(a?.value ?? ''),
+  }));
 
-      // Dominio storefront para armar link al producto
-      const shopHost = String(
-        process.env.SHOPIFY_SHOP || SHOP || "um7xus-0u.myshopify.com"
-      )
-        .replace(/^https?:\/\//i, "")
-        .replace(/\/+$/g, "");
+  // si no hay attrs útiles, usa previewUrl como DesignPreview
+  const hasUseful = attrsSan.some(a => {
+    const k = a.key.toLowerCase();
+    return k.includes('designpreview') || k.startsWith('layer:');
+  });
+  const attrsEff = hasUseful
+    ? attrsSan
+    : (previewUrl ? [{ key: 'DesignPreview', value: String(previewUrl) }] : []);
 
-      const emailPayload = {
-        attrs,
-        meta: {
-          Descripcion: shortDescription || "DOBO",
-          Precio: Number(price || 0),
-        },
-        links: created?.handle
-          ? { "Producto (storefront)": `https://${shopHost}/products/${created.handle}` }
-          : {},
-        attachPreviews: true, // el endpoint intentará adjuntar previews/capas https
-      };
+  const emailPayload = {
+    attrs: attrsEff,
+    meta: {
+      Descripcion: shortDescription || "DOBO",
+      Precio: Number(price || 0),
+    },
+    links: created?.handle
+      ? { "Producto (storefront)": `https://${SHOP}/products/${created.handle}` }
+      : {},
+    attachPreviews: true,
+  };
 
-      const eresp = await fetch(`${base}/api/send-design-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailPayload),
-      });
+  // fire-and-forget: no bloquea la respuesta
+  fetch(`${base}/api/send-design-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(emailPayload),
+  }).catch(() => {});
+} catch (e) {
+  console.warn('post-create email failed (non-blocking):', e);
+}
 
-      if (!eresp.ok) {
-        const edetail = await eresp.text().catch(() => "");
-        console.warn("send-design-email not ok:", eresp.status, edetail);
-      }
-    } catch (e) {
-      console.warn("post-create email failed (non-blocking):", e?.message || e);
-    }
 
     // 4) Responder al cliente
     return res.status(200).json({
