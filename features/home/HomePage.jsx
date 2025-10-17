@@ -6,8 +6,110 @@ import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
 // === Cloudinary (subida unsigned) ===
-const CLOUD_NAME   = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-const CLOUD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UNSIGNED_PRESET;
+// === Config Cloudinary (unsigned) ===
+const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const UP_PRESET  = process.env.NEXT_PUBLIC_CLOUDINARY_UNSIGNED_PRESET;
+
+// === Captura NO bloqueante de nodos (imagen/texto) ===
+async function captureNodeToDataURL(node) {
+  if (!node) return null;
+  const { default: html2canvas } = await import("html2canvas"); // lazy import
+  const canvas = await html2canvas(node, {
+    backgroundColor: null,
+    useCORS: true,
+    allowTaint: false,
+    scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)),
+    willReadFrequently: true,
+  });
+  return canvas.toDataURL("image/png", 1.0);
+}
+
+// === Subida a Cloudinary dataURL -> URL segura ===
+async function uploadDataURLToCloudinary(name, dataURL) {
+  if (!CLOUD_NAME || !UP_PRESET || !dataURL) return null;
+  const fd = new FormData();
+  fd.append("file", dataURL);
+  fd.append("upload_preset", UP_PRESET);
+  fd.append("folder", "dobo/design-layers");
+  if (name) fd.append("public_id", name);
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, { method: "POST", body: fd });
+  const j = await r.json().catch(() => null);
+  return j?.secure_url || j?.url || null;
+}
+
+/**
+ * Busca nodos por varios selectores comunes para cada capa.
+ * Si no encuentras nodos, no falla: simplemente no adjunta esa capa.
+ * Puedes ajustar/añadir tus selectores reales del CustomizationOverlay.
+ */
+function findFirst(selectorList) {
+  for (const sel of selectorList) {
+    const n = document.querySelector(sel);
+    if (n) return n;
+  }
+  return null;
+}
+
+/**
+ * Captura y sube dos capas: imagen y texto.
+ * Devuelve atributos [{key:'Layer:Image', value:...}, {key:'Layer:Text', value:...}] (solo los que existan).
+ */
+async function captureAndUploadLayers(designId) {
+  try {
+    const imgNode  = findFirst(["#dobo-image-layer", ".dobo-layer-image", '[data-layer="image"]']);
+    const textNode = findFirst(["#dobo-text-layer",  ".dobo-layer-text",  '[data-layer="text"]']);
+
+    const attrs = [];
+
+    // Capa imagen
+    if (imgNode) {
+      const dataURL = await captureNodeToDataURL(imgNode);
+      const url = await uploadDataURLToCloudinary(`${designId}-image`, dataURL);
+      if (url) attrs.push({ key: "Layer:Image", value: url });
+    }
+
+    // Capa texto
+    if (textNode) {
+      const dataURL = await captureNodeToDataURL(textNode);
+      const url = await uploadDataURLToCloudinary(`${designId}-text`, dataURL);
+      if (url) attrs.push({ key: "Layer:Text", value: url });
+    }
+
+    return attrs;
+  } catch (e) {
+    console.warn("captureAndUploadLayers error:", e);
+    return [];
+  }
+}
+
+// Mantén tu sendEmailNow como lo tienes (beacon/keepalive).
+// Si no lo tienes, aquí va uno compacto y robusto:
+function sendEmailNow(payload) {
+  try {
+    const url = new URL("/api/send-design-email", location.origin).toString();
+    const json = JSON.stringify(payload);
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: json, keepalive: true })
+      .then(r => r.json())
+      .then(r => { if (!r?.ok) console.warn("email api responded not ok", r); })
+      .catch(err => console.warn("email api error", err));
+  } catch (e) {
+    console.warn("sendEmailNow failed", e);
+  }
+}
+
+// Por si quieres adelgazar attrs en el correo:
+function shrinkAttrsForEmail(attrs) {
+  return (attrs || []).map(a => ({
+    key: String(a?.key || ""),
+    value: String(a?.value ?? ""),
+  })).filter(a => a.key && a.value);
+}
+
 
 // Sube un dataURL o URL https a Cloudinary (unsigned)
 async function uploadToCloudinary(dataUrl, filename = "layer.png") {
@@ -412,58 +514,38 @@ async function buyNow() {
       attrs = await minimalDesignAttributes();
     }
 
-    // 2) Precio + descripción
-    const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
+    // aseguremos un designId
+    const designId =
+      (attrs.find(a => (a.key || "").toLowerCase() === "designid" || (a.key || "").toLowerCase() === "_designid")?.value)
+      || `dobo-${Date.now()}`;
+
+    // 2) Precio + descripción (no cambia tu lógica)
+    const potPrice   = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
-    const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
+    const basePrice  = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // 3) Intentamos obtener LAS CAPAS
-    // 3a) Primero, de attrs del helper
-    const getAttr = (k) => (attrs || []).find(a => String(a?.key || "").toLowerCase() === k)?.value || "";
-    let preview  = getAttr("designpreview") || getAttr("_designpreview");
-    let layerImg = getAttr("layer:image");
-    let layerTxt = getAttr("layer:text");
-
-    // 3b) Luego, de globals que puede haber puesto el Overlay
-    if (!preview)  preview  = window.DOBO_PREVIEW_URL || "";
-    if (!layerImg) layerImg = window.DOBO_LAYER_IMAGE || "";
-    if (!layerTxt) layerTxt = window.DOBO_LAYER_TEXT  || "";
-
-    // 3c) Último recurso: capturar del DOM
-    if (!preview || !layerImg || !layerTxt) {
-      const pick = pickFromDom(stageRef, sceneWrapRef);
-      preview  = preview  || pick.preview;
-      layerImg = layerImg || pick.layerImage;
-      layerTxt = layerTxt || pick.layerText;
+    // 3) CAPTURAR y SUBIR capas (añade Layer:Image / Layer:Text si existen)
+    //    No bloquea el checkout si Cloudinary no está; simplemente no adjunta capas.
+    const extraLayerAttrs = await captureAndUploadLayers(designId);
+    if (extraLayerAttrs.length) {
+      attrs = [...attrs, ...extraLayerAttrs];
     }
 
-    // 3d) Asegurar HTTPS subiendo data:/blob:
-    preview  = await ensureHttpsUrl(preview);
-    layerImg = await ensureHttpsUrl(layerImg);
-    layerTxt = await ensureHttpsUrl(layerTxt);
-
-    // 3e) Inyectar/mergear en attrs (sobrescribe claves si ya existían)
-    attrs = mergeAttrs(attrs, [
-      preview  && { key: "DesignPreview", value: preview },
-      layerImg && { key: "Layer:Image",   value: layerImg },
-      layerTxt && { key: "Layer:Text",    value: layerTxt },
-    ].filter(Boolean));
-
-    // 4) Disparar email (no bloqueante). El server adjuntará DesignPreview y Layer:* si son https válidas
-    const links = { Storefront: location.origin };
+    // 4) Disparar correo (no bloqueante)
+    const thin = shrinkAttrsForEmail(attrs);
     sendEmailNow({
-      attrs,
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links,
-      attachPreviews: true,   // nuestro /api/send-design-email reconoce Layer:* con esto
+      attrs: thin,
+      meta:  { Descripcion: shortDescription, Precio: basePrice },
+      links: { "Storefront": location.origin },
+      attachPreviews: true,   // el server adjunta Preview y toda key que empiece con "Layer:"
     });
 
-    // 5) Ir a checkout (Storefront API)
+    // 5) Ir a checkout (como ya lo tenías)
     const variantId =
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
@@ -476,6 +558,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
 }
+
 
 
 
