@@ -62,6 +62,58 @@ async function exportImageTextLayers() {
 }
 
 
+// Normaliza attrs a pares {key,value} string
+function normAttrs(arr = []) {
+  return (Array.isArray(arr) ? arr : [])
+    .map(a => ({ key: String(a?.key || ''), value: String(a?.value ?? '') }))
+    .filter(a => a.key);
+}
+
+// Subconjunto “delgado” para email (no metas objetos gigantes)
+function pickAttrsForEmail(attrs = []) {
+  const keep = new Set(['designid','_designid']);
+  return normAttrs(attrs).filter(a => {
+    const k = a.key.toLowerCase();
+    return k.startsWith('layer:') ||
+           k.includes('designpreview') ||
+           keep.has(k);
+  });
+}
+
+// Intenta completar Layer:* desde varias fuentes
+function withLayerFallbacks(attrs = []) {
+  const out = [...normAttrs(attrs)];
+  const has = (name) => out.some(a => a.key.toLowerCase() === name.toLowerCase());
+
+  // Si tu helper ya puso Layer:Image/Layer:Text, los respetamos.
+  // Si no, probamos variables globales que puedas setear desde tu overlay:
+  const LAYER_IMAGE = window?.DOBO_LAYER_IMAGE || '';
+  const LAYER_TEXT  = window?.DOBO_LAYER_TEXT  || '';
+
+  if (!has('Layer:Image') && LAYER_IMAGE) out.push({ key: 'Layer:Image', value: LAYER_IMAGE });
+  if (!has('Layer:Text')  && LAYER_TEXT)  out.push({ key: 'Layer:Text',  value: LAYER_TEXT  });
+
+  return out;
+}
+
+// Beacon/fetch no bloqueante para mandar el email en paralelo
+function sendEmailNow(payload) {
+  try {
+    const url = new URL('/api/send-design-email', location.origin).toString();
+    const json = JSON.stringify(payload);
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: 'application/json' });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+    fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: json, keepalive: true })
+      .then(r => r.json())
+      .then(r => { if (!r?.ok) console.warn('email api responded not ok', r); })
+      .catch(err => console.warn('email api error', err));
+  } catch (e) {
+    console.warn('sendEmailNow failed', e);
+  }
+}
 
 
 // En cliente: dispara email y no bloquea checkout
@@ -301,7 +353,7 @@ export default function HomePage() {
 // ---------------- Comprar ahora (versión final) ----------------
 async function buyNow() {
   try {
-    // 1) Atributos de diseño
+    // 1) Atributos (tu helper si existe)
     let attrs = [];
     if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
       const r = await window.buildAndSaveDesignForCartCheckout();
@@ -309,175 +361,65 @@ async function buyNow() {
     } else if (typeof window.prepareDesignAttributes === "function") {
       attrs = await window.prepareDesignAttributes();
     } else {
-      attrs = [
-        { key: "DesignId", value: `dobo-${Date.now()}` },
-        { key: "DesignColor", value: selectedColor || "" },
-        { key: "DesignSize", value: activeSize || "" },
-      ];
+      attrs = await minimalDesignAttributes();
     }
 
-    // 2) Precio + descripción
-    const potPrice   = selectedVariant?.price ? num(selectedVariant.price) : 0;
+    // 1.1) Completar con Layer:* si aún no están (desde globals u otras fuentes)
+    attrs = withLayerFallbacks(attrs);
+
+    // 2) Precio + descripción corta
+    const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
-    const basePrice  = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
+    const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // 3) Extraer preview/designId y adelgazar attrs para correo
-    const lower = (k) => String(k || "").toLowerCase();
-    const getVal = (name) => attrs.find(a => lower(a.key) === name)?.value || "";
-    const previewUrl = attrs.find(a => lower(a.key).includes("designpreview"))?.value || "";
-    const designId   = getVal("designid") || getVal("_designid") || `dobo-${Date.now()}`;
+    // 3) Disparar email (no bloqueante) con attrs delgadas (incluye layer:* y preview)
+    const thinAttrs = pickAttrsForEmail(attrs);
+    sendEmailNow({
+      attachPreviews: true,
+      attrs: thinAttrs,
+      meta:  { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin }
+    });
 
-    const thinAttrs = (attrs || [])
-      .filter(a => {
-        const k = lower(a.key);
-        return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
-      })
-      .map(a => ({ key: String(a.key), value: String(a.value || "") }));
+    // 4) Crear producto DOBO (pasando también attrs al server para que él dispare otro email)
+    const resp = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
+        previewUrl:
+          thinAttrs.find(a => a.key.toLowerCase().includes('designpreview'))?.value || "",
+        price: basePrice,
+        color: selectedColor || "Único",
+        size:  activeSize     || "Único",
+        designId:
+          thinAttrs.find(a => a.key.toLowerCase() === 'designid' || a.key.toLowerCase() === '_designid')?.value
+          || `dobo-${Date.now()}`,
+        plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+        potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+        shortDescription,
+        publishOnline: true,
+        // 🔴 AQUÍ viajan las capas al servidor:
+        attrs: thinAttrs,
+      }),
+    });
 
-  // === 4) Crear DOBO y dejar que el backend envíe el correo ===
-const getAttr = (name) => {
-  const n = String(name || "").toLowerCase();
-  const it = (attrs || []).find(a => String(a?.key || "").toLowerCase() === n);
-  return it?.value || "";
-};
-const designId =
-  getAttr("_designid") ||
-  getAttr("designid") ||
-  `dobo-${Date.now()}`;
+    const dp = await resp.json().catch(() => null);
+    if (!resp.ok || !dp?.ok || !dp?.variantId) {
+      console.warn("design-product falló; usaré la variante actual", dp);
+    }
 
-const previewUrl =
-  (attrs || []).find(a => String(a?.key || "").toLowerCase().includes("designpreview"))?.value || "";
-
-// adelgazar attrs para el email (solo lo útil)
-const thinAttrs = (attrs || []).filter(a => {
-  const k = String(a?.key || "").toLowerCase();
-  return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
-}).map(a => ({ key: String(a.key), value: String(a.value || "") }));
-
-const title =
-  `DOBO ${(plants?.[selectedPlantIndex]?.title || "").trim()} + ${(pots?.[selectedPotIndex]?.title || "").trim()}`.trim();
-
-// 3) Generar y subir capas + preview
-const { imageUrl: LAYER_IMAGE, textUrl: LAYER_TEXT, previewUrl: PREVIEW_AUTO } = await exportImageTextLayers();
-
-// Empujar claves Layer:* a los atributos SI existen
-// tras exportar/subir capas:
-if (LAYER_IMAGE) attrs.push({ key: 'Layer:Image', value: LAYER_IMAGE });
-if (LAYER_TEXT)  attrs.push({ key: 'Layer:Text',  value: LAYER_TEXT  });
-
-// asegúrate también de tener DesignPreview:
-if (PREVIEW_URL && !attrs.some(a => String(a.key).toLowerCase().includes('designpreview'))) {
-  attrs.push({ key: 'DesignPreview', value: PREVIEW_URL });
-}
-
-// y al crear el producto:
-await fetch('/api/design-product', {
-  method: 'POST',
-  headers: { 'Content-Type':'application/json' },
-  body: JSON.stringify({
-    // ...otros campos
-    attrs: attrs
-      .filter(a => {
-        const k = String(a.key||'').toLowerCase();
-        return k.startsWith('layer:') || k.includes('designpreview') || k === 'designid' || k === '_designid';
-      })
-      .map(a => ({ key: String(a.key), value: String(a.value||'') })),
-  })
-});
-
-
-// Asegurar DesignPreview si no venía de tu helper
-const hasPreview = (attrs || []).some(a => String(a?.key||"").toLowerCase().includes("designpreview"));
-const previewUrl = hasPreview
-  ? (attrs.find(a => String(a?.key||"").toLowerCase().includes("designpreview"))?.value || "")
-  : (PREVIEW_AUTO || "");
-if (previewUrl && !hasPreview) attrs.push({ key: "DesignPreview", value: previewUrl });
-
-// adelgazar attrs para email (solo lo útil)
-const thinAttrs = (attrs || []).filter(a => {
-  const k = String(a?.key || "").toLowerCase();
-  return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
-}).map(a => ({ key: String(a.key), value: String(a.value || "") }));
-
-// Enviar a /api/design-product con attrs incluidos
-const resp = await fetch("/api/design-product", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
-    price: basePrice,
-    shortDescription,
-    color: selectedColor || "Único",
-    size:  activeSize   || "Único",
-    designId: (attrs.find(a => (a.key||"").toLowerCase()==="designid" || (a.key||"").toLowerCase()==="_designid")?.value) || `dobo-${Date.now()}`,
-    plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
-    potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
-    previewUrl,
-    attrs: thinAttrs,          // <- IMPORTANTE: aquí viajan Layer:Image y Layer:Text
-  }),
-});
-
-// Enviar a /api/design-product con attrs incluidos
-const resp = await fetch("/api/design-product", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
-    price: basePrice,
-    shortDescription,
-    color: selectedColor || "Único",
-    size:  activeSize   || "Único",
-    designId: (attrs.find(a => (a.key||"").toLowerCase()==="designid" || (a.key||"").toLowerCase()==="_designid")?.value) || `dobo-${Date.now()}`,
-    plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
-    potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
-    previewUrl,
-    attrs: thinAttrs,          // <- IMPORTANTE: aquí viajan Layer:Image y Layer:Text
-  }),
-});
-
-    
-let dp = null;
-try {
-  const resp = await fetch("/api/design-product", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-  title,
-  price: basePrice,
-  previewUrl,        // <- ahora apunta al preview generado (si existe)
-  shortDescription,
-  color: selectedColor || "Único",
-  size:  activeSize   || "Único",
-  designId,
-  plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
-  potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
-  attrs: thinAttrs,  // <- incluye Layer:Image y Layer:Text si los conseguimos
-}),
-  });
-  dp = await resp.json().catch(() => null);
-  if (!resp.ok || !dp?.ok) {
-    console.warn("design-product falló:", dp);
-    dp = null;
-  }
-} catch (e) {
-  console.warn("design-product request error:", e);
-  dp = null;
-}
-
-// (luego sigues con tu checkout actual como ya lo tienes)
-
-
-    // 5) Ir a checkout (usa DOBO si existe, si no la variante seleccionada)
-    const variantId = dp?.variantId ||
+    // 5) Checkout (usa DOBO si lo creó, si no la variante actual)
+    const variantId =
+      dp?.variantId ||
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
       null;
-
     if (!variantId) throw new Error("variant-missing");
 
     const lines = [{ quantity, merchandiseId: toGid(variantId), attributes: attrs }];
@@ -486,6 +428,7 @@ try {
     alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
 }
+
 
 
 
