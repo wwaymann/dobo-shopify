@@ -5,6 +5,53 @@ import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
+// --- Helpers de email (cliente) ---
+// Reduce attrs a lo esencial para que sendBeacon no explote por tamaño
+function shrinkAttrsForEmail(attrs = []) {
+  const keep = new Set([
+    "_designid", "designid",
+    "_designpreview", "designpreview",
+  ]);
+  const out = [];
+  for (const a of attrs) {
+    const k = String(a?.key || "");
+    const v = String(a?.value ?? "");
+    const lk = k.toLowerCase();
+    if (keep.has(lk) || lk.startsWith("layer:") || lk.startsWith("capa:")) {
+      // URLs de capas/preview son válidas
+      out.push({ key: k, value: v });
+    }
+  }
+  // evita payloads ridículos
+  return out.slice(0, 50);
+}
+
+// Dispara el email. Con {forceFetch:true} espera respuesta del API (útil para debug).
+function sendEmailNow(payload, { forceFetch = false } = {}) {
+  try {
+    const url = new URL("/api/send-design-email", location.origin).toString();
+    const json = JSON.stringify(payload);
+
+    if (!forceFetch && navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return Promise.resolve({ ok: true, method: "beacon" });
+    }
+
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+      keepalive: !forceFetch, // si forceFetch, queremos respuesta completa
+    })
+      .then((r) => r.json())
+      .catch((e) => ({ ok: false, error: String(e) }));
+  } catch (e) {
+    return Promise.resolve({ ok: false, error: String(e) });
+  }
+}
+
+
 // ---------------- Email fire-and-forget (iframe-safe) ----------------
 function sendEmailNow(payload) {
   try {
@@ -232,60 +279,55 @@ export default function HomePage() {
   }
 
   // ---------------- Comprar ahora ----------------
-  async function buyNow() {
-    try {
-      // 1) Atributos (usa tu helper si existe)
-      let attrs = [];
-      if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
-        const r = await window.buildAndSaveDesignForCartCheckout();
-        attrs = Array.isArray(r?.attributes) ? r.attributes : [];
-      } else if (typeof window.prepareDesignAttributes === "function") {
-        attrs = await window.prepareDesignAttributes();
-      } else {
-        attrs = await minimalDesignAttributes();
-      }
-
-      // 2) Precio y descripción corta
-      const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
-      const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
-      const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
-      const shortDescription = (
-        `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-        `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-        `${activeSize ?? ""} · ${selectedColor ?? ""}`
-      ).replace(/\s+/g, " ").trim();
-
-      // 3) Disparar email con payload pequeño
-      const thinAttrs = shrinkAttrsForEmail(attrs);
-      sendEmailNow({
-        attrs: thinAttrs,
-        meta: { Descripcion: shortDescription, Precio: basePrice },
-        links: { Storefront: location.origin },  // añade más si quieres
-        attachPreviews: true,                     // el server decide si adjunta
-      });
-
-      // ...dentro de buyNow(), cuando ya tengas `attrs`, `shortDescription`, `basePrice`:
-// dentro de buyNow(), tras obtener attrs/preview:
-const preview = (attrs.find(a => (a.key || '').toLowerCase().includes('designpreview'))?.value) || '';
-sendEmailNow({
-  attachPreviews: true,
-  attrs, // aquí pueden ir también tus Layer:...
-  meta:  { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin }
-});
-      // 4) Ir a checkout (Storefront API)
-      const variantId =
-        selectedVariant?.id ||
-        pots?.[selectedPotIndex]?.variants?.[0]?.id ||
-        null;
-      if (!variantId) throw new Error("variant-missing");
-
-      const lines = [{ quantity, merchandiseId: toGid(variantId), attributes: attrs }];
-      await cartCreateAndRedirect(lines);
-    } catch (e) {
-      alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
+async function buyNow() {
+  try {
+    // 1) Atributos (tu helper si existe)
+    let attrs = [];
+    if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
+      const r = await window.buildAndSaveDesignForCartCheckout();
+      attrs = Array.isArray(r?.attributes) ? r.attributes : [];
+    } else if (typeof window.prepareDesignAttributes === "function") {
+      attrs = await window.prepareDesignAttributes();
+    } else {
+      attrs = await minimalDesignAttributes();
     }
+
+    // 2) Precio + descripción
+    const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
+    const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
+    const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
+
+    // 3) Email: payload reducido + attachPreviews
+    const thinAttrs = shrinkAttrsForEmail(attrs);
+    const emailRes = await sendEmailNow({
+      attrs: thinAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+    }, { forceFetch: true }); // <-- forzamos fetch UNA vez para ver la respuesta
+
+    console.log("[/api/send-design-email]", emailRes);
+    // Si llega ok:false, mira los Logs de Vercel de esa función; suele ser URL no válida o host no permitido.
+
+    // 4) Ir a checkout (Storefront API)
+    const variantId =
+      selectedVariant?.id ||
+      pots?.[selectedPotIndex]?.variants?.[0]?.id ||
+      null;
+    if (!variantId) throw new Error("variant-missing");
+
+    const lines = [{ quantity, merchandiseId: toGid(variantId), attributes: attrs }];
+    await cartCreateAndRedirect(lines);
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e?.message || String(e)}`);
   }
+}
+
 
   return (
     <div className={styles?.container || ""} style={{ padding: 16, paddingBottom: 80 }}>
