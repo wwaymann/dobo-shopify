@@ -6,6 +6,11 @@ import dynamic from "next/dynamic";
 // arriba en pages/index.js
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign, exportOnly, exportLayerAllPNG } from '../lib/designStore';
 
+// Helper único (NO lo declares en más lugares del archivo)
+const gidToNum = (id) => {
+  const s = String(id || "");
+  return s.includes("gid://") ? s.split("/").pop() : s;
+};
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
@@ -37,55 +42,9 @@ function ControlesPublicar() {
   return <button className="btn btn-primary" onClick={onPublish}>Publicar diseño</button>;
 }
 
-// Sube dataURL a Cloudinary vía tu API local (usa NEXT_PUBLIC_*)
-async function ensureHttpsUrl(u) {
-  try {
-    const s = String(u || '');
-    if (!s) return '';
-    if (/^https:\/\//i.test(s)) return s;
-    if (/^data:|^blob:|^http:\/\//i.test(s)) {
-      const r = await fetch('/api/upload-design', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: s, filename: `layer-${Date.now()}.png` })
-      });
-      const j = await r.json().catch(() => ({}));
-      return j?.url || '';
-    }
-    return '';
-  } catch { return ''; }
-}
-
-// Payload chico para beacon/email (solo lo esencial)
-function shrinkAttrsForEmail(attrs = []) {
-  const keep = new Set(['_designid', 'designid', '_designpreview', 'designpreview']);
-  const out = [];
-  for (const a of (attrs || [])) {
-    const k = String(a?.key || '');
-    const v = String(a?.value ?? '');
-    const lk = k.toLowerCase();
-    if (keep.has(lk) || lk.startsWith('layer:') || lk.startsWith('capa:')) {
-      out.push({ key: k, value: v });
-    }
-  }
-  return out.slice(0, 50);
-}
 
 // Dispara el email sin bloquear el checkout
-function sendEmailNow(payload) {
-  try {
-    const url = new URL('/api/send-design-email', location.origin).toString();
-    const json = JSON.stringify(payload);
-    if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: 'application/json' });
-      navigator.sendBeacon(url, blob);
-      return;
-    }
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: json })
-      .then(r => r.json()).then(r => { if (!r?.ok) console.warn('[email] not ok', r); })
-      .catch(err => console.warn('[email] error', err));
-  } catch (e) { console.warn('sendEmailNow failed', e); }
-}
+
 
 /* ---------- tamaño: normalización de etiquetas ---------- */
 function normalizeSizeTag(raw) {
@@ -810,11 +769,7 @@ async function waitDesignerReady(timeout = 20000) {
 
 
   
-// Helper: pasar gid -> num para accesorios (evita "gid://")
-const gidToNumeric = (id) => {
-  const s = String(id || "");
-  return s.includes("gid://") ? s.split("/").pop() : s;
-};
+
 
 // Sube dataURL/blob a https (Cloudinary) para poder guardarlo en properties/email
 async function ensureHttpsUrl(u) {
@@ -870,14 +825,17 @@ function sendEmailNow(payload) {
 function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   const asStr = (v) => String(v || "").trim();
   const isNum = (v) => /^\d+$/.test(asStr(v));
-  const gidToNum = (id) => { const s = asStr(id); return s.includes("gid://") ? s.split("/").pop() : s; };
+
   const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
   if (!isNum(main)) throw new Error("Variant principal inválido");
-  const accs = (accessoryIds || []).map((id) => (isNum(id) ? asStr(id) : gidToNum(id))).filter(isNum);
+
+  const accs = (accessoryIds || [])
+    .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
+    .filter(isNum);
 
   const form = document.createElement("form");
   form.method = "POST";
-  form.target = "_top"; // forzar navegación en top-level cuando se ejecuta dentro de un iframe
+  form.target = "_top";
   form.action = `https://${shop}/cart/add`;
   const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
   let line = 0;
@@ -890,7 +848,6 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     })?.value || "";
   };
 
-  // Leer de attrs (ahora también tendremos Layer:Image / Layer:Text)
   const previewUrl  = getA("DesignPreview"),
         designId    = getA("DesignId"),
         designPlant = getA("DesignPlant"),
@@ -900,7 +857,6 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
         layerImg    = getA("Layer:Image"),
         layerTxt    = getA("Layer:Text");
 
-  // Línea principal
   add(`items[${line}][id]`, main);
   add(`items[${line}][quantity]`, String(qty || 1));
   add(`items[${line}][properties][_LinePriority]`, "0");
@@ -910,14 +866,10 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   if (designPot)   add(`items[${line}][properties][_DesignPot]`, designPot);
   if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
   if (designSize)  add(`items[${line}][properties][_DesignSize]`, designSize);
-
-  // Nuevas properties: URLs de capas
-  if (layerImg) add(`items[${line}][properties][_LayerImage]`, layerImg);
-  if (layerTxt) add(`items[${line}][properties][_LayerText]`, layerTxt);
-
+  if (layerImg)    add(`items[${line}][properties][_LayerImage]`, layerImg);
+  if (layerTxt)    add(`items[${line}][properties][_LayerText]`, layerTxt);
   line++;
 
-  // Accesorios
   accs.forEach((id) => {
     add(`items[${line}][id]`, id);
     add(`items[${line}][quantity]`, "1");
@@ -930,6 +882,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   document.body.appendChild(form);
   form.submit();
 }
+
 
 const getAccessoryVariantIds = () =>
   selectedAccessoryIndices
