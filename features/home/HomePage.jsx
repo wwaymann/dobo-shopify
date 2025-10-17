@@ -5,6 +5,30 @@ import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
+// En cliente: dispara email y no bloquea checkout
+// --- PON ESTO ARRIBA (una sola vez) ---
+// Fallback para mandar correo si por alguna razón /api/design-product falla.
+// Normalmente NO se usará si el server ya disparó el correo.
+function sendEmailNow(payload) {
+  try {
+    const url = "/api/send-design-email";
+    const json = JSON.stringify(payload);
+
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: json,
+    }).catch(() => {});
+  } catch {}
+}
+
 // --- Helpers de email (cliente) ---
 // Reduce attrs a lo esencial para que sendBeacon no explote por tamaño
 function shrinkAttrsForEmail(attrs = []) {
@@ -26,32 +50,7 @@ function shrinkAttrsForEmail(attrs = []) {
   return out.slice(0, 50);
 }
 
-// En cliente: dispara email y no bloquea checkout
-function sendEmailNow(payload) {
-  try {
-    const origin =
-      process.env.NEXT_PUBLIC_APP_ORIGIN || window.location.origin;
-    const url = `${origin.replace(/\/$/, "")}/api/send-design-email`;
-    const json = JSON.stringify(payload || {});
 
-    // 1) sendBeacon (sobrevive a unload). Nota: límite ~64KB
-    if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: "application/json" });
-      navigator.sendBeacon(url, blob);
-      return;
-    }
-
-    // 2) Fallback fetch con keepalive (no esperamos la respuesta)
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-      keepalive: true,
-    }).catch(() => {});
-  } catch (e) {
-    console.warn("sendEmailNow failed", e);
-  }
-}
 
 
 // Filtra attrs pesados: fuera data:base64 y claves raras; sólo URLs cortas
@@ -239,10 +238,10 @@ export default function HomePage() {
     ];
   }
 
-  // ---------------- Comprar ahora ----------------
+// ---------------- Comprar ahora (reemplaza tu buyNow por éste) ----------------
 async function buyNow() {
   try {
-    // 1) Atributos (tu helper si existe)
+    // 1) Atributos de diseño
     let attrs = [];
     if (typeof window.buildAndSaveDesignForCartCheckout === "function") {
       const r = await window.buildAndSaveDesignForCartCheckout();
@@ -250,38 +249,86 @@ async function buyNow() {
     } else if (typeof window.prepareDesignAttributes === "function") {
       attrs = await window.prepareDesignAttributes();
     } else {
-      attrs = await minimalDesignAttributes();
+      // mínimo si no hay helpers
+      attrs = [
+        { key: "DesignId", value: `dobo-${Date.now()}` },
+        { key: "DesignColor", value: selectedColor || "" },
+        { key: "DesignSize", value: activeSize || "" },
+      ];
     }
 
-  
     // 2) Precio + descripción
-    const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
+    const potPrice   = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
-    const basePrice = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
+    const basePrice  = Math.max(0, Number(((potPrice + plantPrice) * quantity).toFixed(2)));
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-   const thinAttrs = (attrs || []).filter(a => {
-  const k = String(a?.key || "").toLowerCase();
-  // deja solo lo útil para correo, y evita objetos gigantes
-  return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
-}).map(a => ({ key: String(a.key), value: String(a.value || "") }));
+    // 3) Datos útiles para el server (preview/designId) y versión "delgada" para correo
+    const lowerKey = (k) => String(k || "").toLowerCase();
+    const getVal   = (name) => attrs.find(a => lowerKey(a.key) === name)?.value || "";
+    const previewUrl = attrs.find(a => lowerKey(a.key).includes("designpreview"))?.value || "";
+    const designId   = getVal("designid") || getVal("_designid") || `dobo-${Date.now()}`;
 
-sendEmailNow({
-  attrs: thinAttrs,
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true
-});
+    const thinAttrs = (attrs || [])
+      .filter(a => {
+        const k = lowerKey(a.key);
+        return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
+      })
+      .map(a => ({ key: String(a.key), value: String(a.value || "") }));
 
-    // 4) Ir a checkout (Storefront API)
-    const variantId =
+    // 4) Crear el producto DOBO en el server.
+    // IMPORTANTE: mandamos 'attrs' para que el BACKEND envíe el correo (no depende del iFrame).
+    let dp = null;
+    try {
+      const resp = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ${pots?.[selectedPotIndex]?.title ?? ""}`.trim(),
+          previewUrl,
+          price: basePrice,
+          color: selectedColor || "Único",
+          size:  activeSize     || "Único",
+          designId,
+          shortDescription,
+          publishOnline: true, // si tu endpoint lo soporta
+          attrs: thinAttrs,     // <--- CLAVE para que /api/design-product mande el correo
+        }),
+      });
+      dp = await resp.json().catch(() => null);
+
+      if (!resp.ok || !dp?.ok || !dp?.variantId) {
+        console.warn("design-product falló; usando fallback y disparando email desde el cliente", dp);
+        // Fallback: intentamos enviar el correo desde el cliente para no perder el aviso
+        sendEmailNow({
+          attrs: thinAttrs,
+          meta:  { Descripcion: shortDescription, Precio: basePrice },
+          links: { Storefront: location.origin },
+          attachPreviews: true,
+        });
+        dp = null;
+      }
+    } catch (e) {
+      console.warn("design-product request error; disparo correo desde cliente (fallback):", e);
+      sendEmailNow({
+        attrs: thinAttrs,
+        meta:  { Descripcion: shortDescription, Precio: basePrice },
+        links: { Storefront: location.origin },
+        attachPreviews: true,
+      });
+      dp = null;
+    }
+
+    // 5) Ir al checkout (usando DOBO si existe, o la variante elegida si no)
+    const variantId = dp?.variantId ||
       selectedVariant?.id ||
       pots?.[selectedPotIndex]?.variants?.[0]?.id ||
       null;
+
     if (!variantId) throw new Error("variant-missing");
 
     const lines = [{ quantity, merchandiseId: toGid(variantId), attributes: attrs }];
