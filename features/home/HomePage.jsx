@@ -292,6 +292,11 @@ async function buyNow() {
       attrs = await minimalDesignAttributes();
     }
 
+    sendEmailNow({
+  meta: { Descripcion: "Test básico", Precio: 0 },
+  links: { Nota: "Este es un correo de prueba sin adjuntos" }
+}, { forceFetch: true }).then(console.log);
+
     // 2) Precio + descripción
     const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
