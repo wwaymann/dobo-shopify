@@ -366,8 +366,30 @@ const title =
 const { imageUrl: LAYER_IMAGE, textUrl: LAYER_TEXT, previewUrl: PREVIEW_AUTO } = await exportImageTextLayers();
 
 // Empujar claves Layer:* a los atributos SI existen
-if (LAYER_IMAGE) attrs.push({ key: "Layer:Image", value: LAYER_IMAGE });
-if (LAYER_TEXT)  attrs.push({ key: "Layer:Text",  value: LAYER_TEXT  });
+// tras exportar/subir capas:
+if (LAYER_IMAGE) attrs.push({ key: 'Layer:Image', value: LAYER_IMAGE });
+if (LAYER_TEXT)  attrs.push({ key: 'Layer:Text',  value: LAYER_TEXT  });
+
+// asegúrate también de tener DesignPreview:
+if (PREVIEW_URL && !attrs.some(a => String(a.key).toLowerCase().includes('designpreview'))) {
+  attrs.push({ key: 'DesignPreview', value: PREVIEW_URL });
+}
+
+// y al crear el producto:
+await fetch('/api/design-product', {
+  method: 'POST',
+  headers: { 'Content-Type':'application/json' },
+  body: JSON.stringify({
+    // ...otros campos
+    attrs: attrs
+      .filter(a => {
+        const k = String(a.key||'').toLowerCase();
+        return k.startsWith('layer:') || k.includes('designpreview') || k === 'designid' || k === '_designid';
+      })
+      .map(a => ({ key: String(a.key), value: String(a.value||'') })),
+  })
+});
+
 
 // Asegurar DesignPreview si no venía de tu helper
 const hasPreview = (attrs || []).some(a => String(a?.key||"").toLowerCase().includes("designpreview"));
