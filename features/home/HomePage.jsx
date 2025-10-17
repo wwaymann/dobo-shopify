@@ -5,6 +5,69 @@ import styles from "../../styles/home.module.css";
 import { cartCreateAndRedirect, toGid } from "../../lib/checkout";
 import { getShopDomain } from "../../lib/shopDomain";
 
+// === Cloudinary (subida unsigned) ===
+const CLOUD_NAME   = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const CLOUD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UNSIGNED_PRESET;
+
+async function uploadToCloudinary(dataUrl, filename = "layer.png") {
+  try {
+    if (!CLOUD_NAME || !CLOUD_PRESET || !dataUrl) return null;
+    const form = new FormData();
+    form.append("file", dataUrl);                 // dataURL (base64) o URL https directa
+    form.append("upload_preset", CLOUD_PRESET);
+    form.append("public_id", `dobo/${Date.now()}-${filename}`); // opcional: carpeta/slug
+
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+      method: "POST",
+      body: form,
+    });
+    const j = await r.json().catch(() => null);
+    return j?.secure_url || null;
+  } catch {
+    return null;
+  }
+}
+
+// === Exportar capas de diseño (imagen/texto) y preview ===
+async function exportImageTextLayers() {
+  // Devuelve { imageUrl, textUrl, previewUrl } ya subidas a Cloudinary (https)
+  let imgData = null, txtData = null, prevData = null;
+
+  try {
+    // 1) Si tu diseñador expone exportOnly(["image"]) / exportOnly(["text"])
+    if (typeof window.exportOnly === "function") {
+      try { imgData = await window.exportOnly(["image", "imagen"]); } catch {}
+      try { txtData = await window.exportOnly(["text", "texto"]); } catch {}
+    }
+
+    // 2) Si expone exportLayerAllPNG() que devuelve array con {name, dataUrl}
+    if ((!imgData || !txtData) && typeof window.exportLayerAllPNG === "function") {
+      try {
+        const layers = await window.exportLayerAllPNG(); // [{name, dataUrl}, ...]
+        const find = (names) =>
+          (layers || []).find(L => names.some(n => String(L?.name||"").toLowerCase().includes(n)));
+        imgData = imgData || find(["image","imagen","plant","planta"])?.dataUrl || null;
+        txtData = txtData || find(["text","texto"])?.dataUrl || null;
+      } catch {}
+    }
+
+    // 3) Preview global (si existe)
+    if (typeof window.exportPreviewDataURL === "function") {
+      try { prevData = await window.exportPreviewDataURL(); } catch {}
+    }
+
+    // 4) Subir lo que haya a Cloudinary
+    const imageUrl   = imgData ? await uploadToCloudinary(imgData, "layer-image.png") : null;
+    const textUrl    = txtData ? await uploadToCloudinary(txtData, "layer-text.png") : null;
+    const previewUrl = prevData ? await uploadToCloudinary(prevData, "preview.png") : (imageUrl || null);
+
+    return { imageUrl, textUrl, previewUrl };
+  } catch {
+    return { imageUrl: null, textUrl: null, previewUrl: null };
+  }
+}
+
+
 // En cliente: dispara email y no bloquea checkout
 // --- PON ESTO ARRIBA (una sola vez) ---
 // Fallback para mandar correo si por alguna razón /api/design-product falla.
@@ -303,23 +366,44 @@ const thinAttrs = (attrs || []).filter(a => {
 const title =
   `DOBO ${(plants?.[selectedPlantIndex]?.title || "").trim()} + ${(pots?.[selectedPotIndex]?.title || "").trim()}`.trim();
 
+    // === Generar y subir capas separadas (imagen/texto) + preview ===
+const { imageUrl: LAYER_IMAGE, textUrl: LAYER_TEXT, previewUrl: PREVIEW_FROM_TOOL } =
+  await exportImageTextLayers();
+
+// Empuja estas claves a tus atributos del diseño
+if (LAYER_IMAGE) attrs.push({ key: "Layer:Image", value: LAYER_IMAGE });
+if (LAYER_TEXT)  attrs.push({ key: "Layer:Text",  value: LAYER_TEXT  });
+
+// Si aún no hay DesignPreview en attrs y tenemos preview generado, añadirlo
+const hasPreview = (attrs || []).some(a => String(a?.key||"").toLowerCase().includes("designpreview"));
+const previewUrl = hasPreview
+  ? (attrs.find(a => String(a?.key||"").toLowerCase().includes("designpreview"))?.value || "")
+  : (PREVIEW_FROM_TOOL || "");
+
+// adelgazar attrs para el correo (solo útiles)
+const thinAttrs = (attrs || []).filter(a => {
+  const k = String(a?.key || "").toLowerCase();
+  return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
+}).map(a => ({ key: String(a.key), value: String(a.value || "") }));
+
+    
 let dp = null;
 try {
   const resp = await fetch("/api/design-product", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      title,
-      price: basePrice,                 // <- precio correcto
-      previewUrl,                       // <- imagen/adjunto
-      shortDescription,                 // <- cuerpo del correo
-      color: selectedColor || "Único",
-      size:  activeSize     || "Único",
-      designId,
-      plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
-      potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
-      attrs: thinAttrs,                 // <- DesignPreview / Layer:* para adjuntos
-    }),
+  title,
+  price: basePrice,
+  previewUrl,        // <- ahora apunta al preview generado (si existe)
+  shortDescription,
+  color: selectedColor || "Único",
+  size:  activeSize   || "Único",
+  designId,
+  plantTitle: plants?.[selectedPlantIndex]?.title || "Planta",
+  potTitle:   pots?.[selectedPotIndex]?.title    || "Maceta",
+  attrs: thinAttrs,  // <- incluye Layer:Image y Layer:Text si los conseguimos
+}),
   });
   dp = await resp.json().catch(() => null);
   if (!resp.ok || !dp?.ok) {
