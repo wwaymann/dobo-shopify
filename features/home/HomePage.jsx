@@ -26,56 +26,33 @@ function shrinkAttrsForEmail(attrs = []) {
   return out.slice(0, 50);
 }
 
-// Dispara el email. Con {forceFetch:true} espera respuesta del API (útil para debug).
-function sendEmailNow(payload, { forceFetch = false } = {}) {
-  try {
-    const url = new URL("/api/send-design-email", location.origin).toString();
-    const json = JSON.stringify(payload);
-
-    if (!forceFetch && navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: "application/json" });
-      navigator.sendBeacon(url, blob);
-      return Promise.resolve({ ok: true, method: "beacon" });
-    }
-
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-      keepalive: !forceFetch, // si forceFetch, queremos respuesta completa
-    })
-      .then((r) => r.json())
-      .catch((e) => ({ ok: false, error: String(e) }));
-  } catch (e) {
-    return Promise.resolve({ ok: false, error: String(e) });
-  }
-}
-
-
-// ---------------- Email fire-and-forget (iframe-safe) ----------------
+// En cliente: dispara email y no bloquea checkout
 function sendEmailNow(payload) {
   try {
-    const url = new URL("/api/send-design-email", location.origin).toString();
-    const json = JSON.stringify(payload);
+    const origin =
+      process.env.NEXT_PUBLIC_APP_ORIGIN || window.location.origin;
+    const url = `${origin.replace(/\/$/, "")}/api/send-design-email`;
+    const json = JSON.stringify(payload || {});
 
+    // 1) sendBeacon (sobrevive a unload). Nota: límite ~64KB
     if (navigator.sendBeacon && json.length < 64000) {
       const blob = new Blob([json], { type: "application/json" });
       navigator.sendBeacon(url, blob);
       return;
     }
+
+    // 2) Fallback fetch con keepalive (no esperamos la respuesta)
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: json,
       keepalive: true,
-    })
-      .then((r) => r.json())
-      .then((r) => { if (!r?.ok) console.warn("email api responded not ok", r); })
-      .catch((err) => console.warn("email api error", err));
+    }).catch(() => {});
   } catch (e) {
     console.warn("sendEmailNow failed", e);
   }
 }
+
 
 // Filtra attrs pesados: fuera data:base64 y claves raras; sólo URLs cortas
 function shrinkAttrsForEmail(attrs) {
@@ -160,23 +137,7 @@ const money = (v, code = "CLP") =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(v || 0));
 const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
 
-function sendEmailNow(payload) {
-  try {
-    const json = JSON.stringify(payload);
-    const url = new URL('/api/send-design-email', location.origin).toString();
 
-    if (navigator.sendBeacon && json.length < 64000) {
-      const blob = new Blob([json], { type: 'application/json' });
-      navigator.sendBeacon(url, blob);  // no esperes respuesta
-      return;
-    }
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, keepalive: true })
-      .then(r => r.json()).then(r => { if (!r?.ok) console.warn('email not ok', r); })
-      .catch(err => console.warn('email api error', err));
-  } catch (e) {
-    console.warn('sendEmailNow failed', e);
-  }
-}
 
 function findAttr(attrs, name) {
   const n = String(name || "").toLowerCase();
@@ -292,11 +253,7 @@ async function buyNow() {
       attrs = await minimalDesignAttributes();
     }
 
-    sendEmailNow({
-  meta: { Descripcion: "Test básico", Precio: 0 },
-  links: { Nota: "Este es un correo de prueba sin adjuntos" }
-}, { forceFetch: true }).then(console.log);
-
+  
     // 2) Precio + descripción
     const potPrice = selectedVariant?.price ? num(selectedVariant.price) : 0;
     const plantPrice = num(plants?.[selectedPlantIndex]?.minPrice);
@@ -307,17 +264,18 @@ async function buyNow() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // 3) Email: payload reducido + attachPreviews
-    const thinAttrs = shrinkAttrsForEmail(attrs);
-    const emailRes = await sendEmailNow({
-      attrs: thinAttrs,
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-    }, { forceFetch: true }); // <-- forzamos fetch UNA vez para ver la respuesta
+   const thinAttrs = (attrs || []).filter(a => {
+  const k = String(a?.key || "").toLowerCase();
+  // deja solo lo útil para correo, y evita objetos gigantes
+  return k.includes("designpreview") || k.startsWith("layer:") || k === "designid" || k === "_designid";
+}).map(a => ({ key: String(a.key), value: String(a.value || "") }));
 
-    console.log("[/api/send-design-email]", emailRes);
-    // Si llega ok:false, mira los Logs de Vercel de esa función; suele ser URL no válida o host no permitido.
+sendEmailNow({
+  attrs: thinAttrs,
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true
+});
 
     // 4) Ir a checkout (Storefront API)
     const variantId =
