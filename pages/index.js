@@ -8,6 +8,41 @@ import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
+
+// 1) arriba de pages/index.js (una sola vez)
+function buildEmailAttrs(attrs = [], { previewIntegrated = "", overlayAll = "", layerImg = "", layerTxt = "" } = {}) {
+  const out = [...(attrs || [])];
+  const get = (k) => (out.find(a => a.key === k) || {}).value || "";
+  const put = (k, v) => { if (v && !out.some(a => a.key === k)) out.push({ key: k, value: String(v) }); };
+
+  const preview = previewIntegrated || get("DesignPreview") || get("_DesignPreview");
+  put("DesignPreview",  preview);
+  put("_DesignPreview", preview);
+
+  const ov = overlayAll || get("Overlay:All") || get("OverlayAll") || get("_OverlayAll");
+  put("Overlay:All", ov);
+  put("OverlayAll",  ov);
+  put("_OverlayAll", ov);
+
+  const li = layerImg || get("Layer:Image") || get("LayerImage") || get("_LayerImage");
+  put("Layer:Image", li);
+  put("LayerImage",  li);
+  put("_LayerImage", li);
+
+  const lt = layerTxt || get("Layer:Text") || get("LayerText") || get("_LayerText");
+  put("Layer:Text", lt);
+  put("LayerText",  lt);
+  put("_LayerText", lt);
+
+  const doNum = get("_DO") || get("DO");
+  const noNum = get("_NO") || get("NO");
+  put("_DO", doNum); put("DO", doNum);
+  put("_NO", noNum); put("NO", noNum);
+
+  return out;
+}
+
+
 // --- UTIL: marcar dirty hacia arriba (rompe cache de grupos) ---
 function markDirty(o) {
   if (!o) return;
@@ -1297,6 +1332,25 @@ async function buyNow() {
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
+// 2) dentro de buyNow / addToCart, justo antes de sendEmailNow(...)
+const emailAttrs = buildEmailAttrs(attrs, {
+  previewIntegrated,
+  overlayAll,
+  layerImg,
+  layerTxt
+});
+const doNum = (attrs.find(a => a.key === "_DO")?.value) || "";
+const noNum = (attrs.find(a => a.key === "_NO")?.value) || "";
+
+sendEmailNow({
+  subject: (doNum || noNum) ? `DO ${doNum} · NO ${noNum}` : undefined,
+  attrs: emailAttrs,
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true
+});
+
+    
     // 9) Email no bloqueante (4 adjuntos)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
@@ -1407,6 +1461,24 @@ async function addToCart() {
     if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    // 2) dentro de buyNow / addToCart, justo antes de sendEmailNow(...)
+const emailAttrs = buildEmailAttrs(attrs, {
+  previewIntegrated,
+  overlayAll,
+  layerImg,
+  layerTxt
+});
+const doNum = (attrs.find(a => a.key === "_DO")?.value) || "";
+const noNum = (attrs.find(a => a.key === "_NO")?.value) || "";
+
+sendEmailNow({
+  subject: (doNum || noNum) ? `DO ${doNum} · NO ${noNum}` : undefined,
+  attrs: emailAttrs,
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true
+});
 
     // 8) Email no bloqueante
     const shortDescription = (
