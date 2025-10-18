@@ -1339,8 +1339,6 @@ const emailAttrs = buildEmailAttrs(attrs, {
   layerImg,
   layerTxt
 });
-const doNum = (attrs.find(a => a.key === "_DO")?.value) || "";
-const noNum = (attrs.find(a => a.key === "_NO")?.value) || "";
 
 sendEmailNow({
   subject: (doNum || noNum) ? `DO ${doNum} · NO ${noNum}` : undefined,
