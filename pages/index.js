@@ -1219,7 +1219,7 @@ async function buyNow() {
 
     // 2) Capturas: PREVIEW INTEGRADO + CAPAS
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
-const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+
 const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
 const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
