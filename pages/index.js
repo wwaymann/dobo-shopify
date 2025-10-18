@@ -1214,68 +1214,56 @@ const getAccessoryVariantIds = () =>
 
 async function buyNow() {
   try {
-    // 1) Atributos base
     let attrs = await prepareDesignAttributes();
 
-    // 2) Capturas: PREVIEW INTEGRADO + CAPAS
+    // 1) Contexto base (una sola vez por función)
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
-const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+    // 2) DECLARACIONES ÚNICAS
+    let overlayAll = "";
+    let layerImg   = "";
+    let layerTxt   = "";
+    let previewIntegrated = "";
 
-// Overlay completo (texto + imágenes juntos, transparente)
-let overlayAll = await (
-  typeof DS.exportPreviewDataURL === "function"
-    ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
-    : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
-) || "";
+    // 3) Capturas (solo ASIGNAR, sin repetir let)
+    overlayAll = await (
+      typeof DS.exportPreviewDataURL === "function"
+        ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
+        : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
+    ) || "";
 
-// Capas separadas (con cache invalidada)
-let layerImg = await (
-  typeof DS.exportOnly === "function"
-    ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
-    : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
-) || "";
-
-let layerTxt = await (
-  typeof DS.exportOnly === "function"
-    ? DS.exportOnly(["text","texto"], { multiplier: 2 })
-    : exportOnlyLocal(["text","texto"], { multiplier: 2 })
-) || "";
-
-// Preview integrado (usa DOM, CORS-proxy, o datos)
-let previewIntegrated = await exportIntegratedPreview({
-  fabricCanvas, multiplier: 2, potUrl, plantUrl
-}) || "";
-
-    // Preview integrado (maceta + planta + overlay)
-    let preview = await exportIntegratedPreview({ fabricCanvas, multiplier: 2 }) || "";
-
-    // Capas (overlay) – usar DS si existe, si no fallbacks locales
-    let layerImg = await (
+    layerImg = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
         : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
     ) || "";
 
-    let layerTxt = await (
+    layerTxt = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["text","texto"], { multiplier: 2 })
         : exportOnlyLocal(["text","texto"], { multiplier: 2 })
     ) || "";
 
-    // 3) Subir a https si son dataURL/blob
-    preview  = await ensureHttpsUrl(preview);
-    layerImg = await ensureHttpsUrl(layerImg);
-    layerTxt = await ensureHttpsUrl(layerTxt);
+    previewIntegrated = await exportIntegratedPreview({
+      fabricCanvas, multiplier: 2, potUrl, plantUrl
+    }) || "";
 
-    // 4) Merge a attrs sin duplicar claves
+    // 4) Subir a https
+    overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt          = await ensureHttpsUrl(layerTxt, "layer-text");
+    previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
+
+    // 5) Merge attrs (sin duplicados)
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview", preview);
+    pushKV("DesignPreview", previewIntegrated);
+    pushKV("Overlay:All",   overlayAll);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 5) Precios y producto temporal
+    // 6) Precio y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1285,7 +1273,7 @@ let previewIntegrated = await exportIntegratedPreview({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: preview || (attrs.find((a) => a.key === "_DesignPreview")?.value || ""),
+        previewUrl: previewIntegrated || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1297,99 +1285,97 @@ let previewIntegrated = await exportIntegratedPreview({
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // 6) Publicar assets en el variant
+    // 7) DO / NO
+    const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+    const noNum = gidToNum(dp.variantId);
+    pushKV("_DO", doNum);
+    pushKV("_NO", noNum);
+
+    // 8) Publicar assets
     const apiReady = await waitDesignerReady(20000);
     if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 7) Email no bloqueante con preview+capas
+    // 9) Email no bloqueante (4 adjuntos)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
     sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
       attrs: shrinkAttrsForEmail(attrs),
       meta: { Descripcion: shortDescription, Precio: basePrice },
       links: { Storefront: location.origin },
-      attachPreviews: true
+      attachPreviews: true,
+      attachOverlayAll: true
     });
 
-    // 8) Checkout
+    // 10) Checkout
     const accIds = selectedAccessoryIndices
       .map((i) => accessories[i]?.variants?.[0]?.id)
       .map(gidToNum)
       .filter((id) => /^\d+$/.test(id));
-
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
     alert(`No se pudo iniciar el checkout: ${e.message}`);
   }
 }
 
+
 async function addToCart() {
   try {
-    // 1) Atributos base
     let attrs = await prepareDesignAttributes();
 
-    // 2) Capturas: PREVIEW INTEGRADO + CAPAS
+    // 1) Contexto base
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
-const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+    // 2) DECLARACIONES ÚNICAS
+    let overlayAll = "";
+    let layerImg   = "";
+    let layerTxt   = "";
+    let previewIntegrated = "";
 
-// Overlay completo (texto + imágenes juntos, transparente)
-let overlayAll = await (
-  typeof DS.exportPreviewDataURL === "function"
-    ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
-    : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
-) || "";
+    // 3) Capturas (asignaciones)
+    overlayAll = await (
+      typeof DS.exportPreviewDataURL === "function"
+        ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
+        : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
+    ) || "";
 
-// Capas separadas (con cache invalidada)
-let layerImg = await (
-  typeof DS.exportOnly === "function"
-    ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
-    : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
-) || "";
-
-let layerTxt = await (
-  typeof DS.exportOnly === "function"
-    ? DS.exportOnly(["text","texto"], { multiplier: 2 })
-    : exportOnlyLocal(["text","texto"], { multiplier: 2 })
-) || "";
-
-// Preview integrado (usa DOM, CORS-proxy, o datos)
-let previewIntegrated = await exportIntegratedPreview({
-  fabricCanvas, multiplier: 2, potUrl, plantUrl
-}) || "";
-
-    let preview = await exportIntegratedPreview({ fabricCanvas, multiplier: 2 }) || "";
-
-    let layerImg = await (
+    layerImg = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
         : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
     ) || "";
 
-    let layerTxt = await (
+    layerTxt = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["text","texto"], { multiplier: 2 })
         : exportOnlyLocal(["text","texto"], { multiplier: 2 })
     ) || "";
 
-    // 3) Subir a https
-    preview  = await ensureHttpsUrl(preview);
-    layerImg = await ensureHttpsUrl(layerImg);
-    layerTxt = await ensureHttpsUrl(layerTxt);
+    previewIntegrated = await exportIntegratedPreview({
+      fabricCanvas, multiplier: 2, potUrl, plantUrl
+    }) || "";
 
-    // 4) Merge atributos
+    // 4) Subir a https
+    overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt          = await ensureHttpsUrl(layerTxt, "layer-text");
+    previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
+
+    // 5) Merge attrs
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview", preview);
+    pushKV("DesignPreview", previewIntegrated);
+    pushKV("Overlay:All",   overlayAll);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 5) Precios y producto temporal
+    // 6) Precio y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1399,7 +1385,7 @@ let previewIntegrated = await exportIntegratedPreview({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: preview || (attrs.find((a) => a.key === "_DesignPreview")?.value || ""),
+        previewUrl: previewIntegrated || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1411,35 +1397,43 @@ let previewIntegrated = await exportIntegratedPreview({
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
+    const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+    const noNum = gidToNum(dp.variantId);
+    pushKV("_DO", doNum);
+    pushKV("_NO", noNum);
+
+    // 7) Publicar assets
     const apiReady = await waitDesignerReady(20000);
     if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 6) Email no bloqueante
+    // 8) Email no bloqueante
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
     sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
       attrs: shrinkAttrsForEmail(attrs),
       meta: { Descripcion: shortDescription, Precio: basePrice },
       links: { Storefront: location.origin },
-      attachPreviews: true
+      attachPreviews: true,
+      attachOverlayAll: true
     });
 
-    // 7) Al carrito
+    // 9) Añadir al carrito
     const accIds = selectedAccessoryIndices
       .map((i) => accessories[i]?.variants?.[0]?.id)
       .map(gidToNum)
       .filter((id) => /^\d+$/.test(id));
-
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
+
 
 
 
