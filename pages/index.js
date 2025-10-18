@@ -8,6 +8,13 @@ import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
+// --- UTIL: marcar dirty hacia arriba (rompe cache de grupos) ---
+function markDirty(o) {
+  if (!o) return;
+  o.dirty = true;
+  if (o.group) markDirty(o.group);
+}
+
 // ---------- Utils básicos ----------
 const gidToNum = (id) => {
   const s = String(id || "");
@@ -117,27 +124,75 @@ function maskCanvasByPredicate(canvas, predicate) {
   };
 }
 
-// Exporta solo imagen o solo texto (profundidad en grupos)
+// --- SOLO IMAGEN / SOLO TEXTO (con invalidación de cache y grupos) ---
 async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
   try {
     const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
     if (!c?.getObjects) return "";
+
     const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
     const wantText  = names.map(String).some(n => /text|texto/i.test(n));
     const kind = wantImage ? "image" : wantText ? "text" : "";
 
-    const restore = maskCanvasByPredicate(c, (o, { hasKind }) => {
-      if (!kind) return false;
-      if (o.type === "group") {
-        return hasKind(o, kind) ? "children" : false;
-      }
-      const isImg = o.type === "image";
-      const isTxt = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-      return (kind === "image" && isImg) || (kind === "text" && isTxt);
+    const isTxt = (o) => o?.type === "i-text" || o?.type === "textbox" || o?.type === "text" || typeof o?.text === "string";
+    const isImg = (o) => o?.type === "image" || (!!o?._element && o._element.tagName === "IMG");
+
+    const hidden = [];
+    const hide = (o) => { if (!o) return; hidden.push(o); o.__wasVisible = o.visible; o.visible = false; markDirty(o); };
+
+    // oculta lo que NO corresponda; respeta grupos/activeSelection
+    (c.getObjects() || []).forEach(o => {
+      const visit = (x) => {
+        if (!x) return;
+        if (x.type === "group" || x.type === "activeSelection") {
+          (x._objects || []).forEach(visit);
+          // si el grupo no tiene ningún hijo del tipo pedido, se oculta completo
+          const keepAny = (x._objects || []).some(ch => (kind === "image" ? isImg(ch) : isTxt(ch)));
+          if (!keepAny) hide(x);
+          return;
+        }
+        const keep = (kind === "image" && isImg(x)) || (kind === "text" && isTxt(x));
+        if (!keep) hide(x);
+      };
+      visit(o);
     });
+
+    // fuerza render
+    c.discardActiveObject?.();
+    c.renderAll?.();
+
     const url = c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
-    restore();
+
+    // restaurar
+    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; markDirty(o); });
+    c.renderAll?.();
+
     return url;
+  } catch {
+    return "";
+  }
+}
+
+// --- LECTURA de URL de imagen desde tus productos (fallback de datos) ---
+function readImageUrlFor(prod) {
+  return (
+    prod?.featuredImage?.url ||
+    prod?.image?.url || prod?.image?.src ||
+    (Array.isArray(prod?.images) && (prod.images[0]?.url || prod.images[0]?.src)) ||
+    ""
+  );
+}
+
+// --- Rehost CORS (convierte una URL remota en URL Cloudinary con CORS OK) ---
+async function rehostForCORS(url) {
+  if (!url) return "";
+  try {
+    const r = await fetch("/api/proxy-image", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+    const j = await r.json().catch(() => ({}));
+    return j?.url || "";
   } catch { return ""; }
 }
 
@@ -151,6 +206,18 @@ function selectStageEl(canvas) {
     document.getElementById("design-stage") ||
     cEl?.parentElement || null
   );
+}
+
+// --- Dibujo tipo object-fit: contain ---
+function drawContain(ctx, img, x, y, w, h) {
+  const sx = w / img.naturalWidth;
+  const sy = h / img.naturalHeight;
+  const s = Math.min(sx || 1, sy || 1);
+  const dw = (img.naturalWidth * s) | 0;
+  const dh = (img.naturalHeight * s) | 0;
+  const dx = x + ((w - dw) / 2) | 0;
+  const dy = y + ((h - dh) / 2) | 0;
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 function pickImg(stageEl, role) {
@@ -182,10 +249,20 @@ function loadImageCORS(src) {
   });
 }
 
-async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2 } = {}) {
+// --- Preview INTEGRADO (3 estrategias: DOM -> rehost -> datos) ---
+async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2, potUrl = "", plantUrl = "" } = {}) {
   try {
     const canvas = fabricCanvas || (typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null);
-    const stage  = stageEl || selectStageEl(canvas);
+    const stage  = stageEl || (function selectStageEl(c) {
+      const el = c?.lowerCanvasEl || c?.upperCanvasEl || null;
+      return (
+        document.querySelector("[data-stage-root]") ||
+        el?.closest?.("[data-stage-root]") ||
+        document.getElementById("dobo-stage") ||
+        document.getElementById("design-stage") ||
+        el?.parentElement || null
+      );
+    })(canvas);
     if (!canvas) return "";
 
     const W = Math.round(canvas.getWidth?.() || stage?.clientWidth || 800);
@@ -196,56 +273,96 @@ async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2 }
     out.height = Math.max(1, Math.round(H * multiplier));
     const ctx = out.getContext("2d");
 
-    let drewAnyBase = false;
+    // ---------- Estrategia A: DOM con posiciones ----------
+    const selImg = (root, role) => {
+      if (!root) return null;
+      const sels = role === "pot"
+        ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
+        : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
+      for (const s of sels) { const el = root.querySelector(s); if (el) return el; }
+      const imgs = root.querySelectorAll("img");
+      if (!imgs.length) return null;
+      return role === "plant" ? (imgs.length > 1 ? imgs[1] : imgs[0]) : imgs[0];
+    };
 
-    if (stage) {
-      const potEl   = pickImg(stage, "pot");
-      const plantEl = pickImg(stage, "plant");
-
-      if (potEl) {
-        const r = stageRelativeRect(potEl, stage);
-        try {
-          const potImg = await loadImageCORS(potEl.currentSrc || potEl.src);
-          ctx.drawImage(potImg, r.x*multiplier, r.y*multiplier, r.w*multiplier, r.h*multiplier);
-          drewAnyBase = true;
-        } catch {}
-      }
-      if (plantEl) {
-        const r = stageRelativeRect(plantEl, stage);
-        try {
-          const plantImg = await loadImageCORS(plantEl.currentSrc || plantEl.src);
-          ctx.drawImage(plantImg, r.x*multiplier, r.y*multiplier, r.w*multiplier, r.h*multiplier);
-          drewAnyBase = true;
-        } catch {}
-      }
+    let drewBase = false;
+    async function drawDomImage(el) {
+      if (!el) return false;
+      const er = el.getBoundingClientRect();
+      const sr = (stage || el.parentElement).getBoundingClientRect();
+      const rx = (er.left - sr.left) * multiplier;
+      const ry = (er.top  - sr.top ) * multiplier;
+      const rw = (er.width)  * multiplier;
+      const rh = (er.height) * multiplier;
+      const src0 = el.currentSrc || el.src || "";
+      try {
+        const im = await (async () => {
+          try {
+            const im = new Image(); im.crossOrigin = "anonymous";
+            await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = src0; });
+            return im;
+          } catch {
+            const prox = await rehostForCORS(src0);
+            if (!prox) throw new Error("rehost-failed");
+            const im2 = new Image(); im2.crossOrigin = "anonymous";
+            await new Promise((res, rej) => { im2.onload = res; im2.onerror = rej; im2.src = prox; });
+            return im2;
+          }
+        })();
+      ctx.drawImage(im, Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
+      return true;
+      } catch { return false; }
     }
 
-    // Si no pudimos dibujar la base (CORS o no hay stage), prueba con backgroundImage del Fabric
-    if (!drewAnyBase && canvas?.backgroundImage) {
+    if (stage) {
+      const potEl   = selImg(stage, "pot");
+      const plantEl = selImg(stage, "plant");
+      if (await drawDomImage(potEl))   drewBase = true;
+      if (await drawDomImage(plantEl)) drewBase = true;
+    }
+
+    // ---------- Estrategia B: datos (si DOM falló) ----------
+    if (!drewBase && (potUrl || plantUrl)) {
+      const loadCORS = async (u) => {
+        if (!u) return null;
+        try {
+          const im = new Image(); im.crossOrigin = "anonymous";
+          await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = u; });
+          return im;
+        } catch {
+          const prox = await rehostForCORS(u);
+          if (!prox) return null;
+          const im2 = new Image(); im2.crossOrigin = "anonymous";
+          await new Promise((res, rej) => { im2.onload = res; im2.onerror = rej; im2.src = prox; });
+          return im2;
+        }
+      };
+      const [poti, plti] = await Promise.all([loadCORS(potUrl), loadCORS(plantUrl)]);
+      if (poti) { drawContain(ctx, poti, 0, 0, out.width, out.height); drewBase = true; }
+      if (plti) { drawContain(ctx, plti, 0, 0, out.width, out.height); drewBase = true; }
+    }
+
+    // ---------- Estrategia C: backgroundImage de Fabric ----------
+    if (!drewBase && canvas?.backgroundImage) {
       try {
         const bi = canvas.backgroundImage.getElement?.() || canvas.backgroundImage._element;
-        if (bi) {
-          ctx.drawImage(bi, 0, 0, W*multiplier, H*multiplier);
-          drewAnyBase = true;
-        }
+        if (bi) { ctx.drawImage(bi, 0, 0, out.width, out.height); drewBase = true; }
       } catch {}
     }
 
-    // Overlay del Fabric encima
+    // Overlay encima (Fabric)
     if (typeof canvas?.toCanvasElement === "function") {
-      const overlayCanvas = canvas.toCanvasElement(multiplier);
-      if (overlayCanvas) ctx.drawImage(overlayCanvas, 0, 0);
+      const ov = canvas.toCanvasElement(multiplier);
+      if (ov) ctx.drawImage(ov, 0, 0);
     } else if (canvas?.lowerCanvasEl) {
-      ctx.save();
-      ctx.scale(multiplier, multiplier);
+      ctx.save(); ctx.scale(multiplier, multiplier);
       ctx.drawImage(canvas.lowerCanvasEl, 0, 0);
       ctx.restore();
     }
 
     return out.toDataURL("image/png");
   } catch {
-    // Último recurso: devuelve solo overlay
-    return exportOverlayAllLocal(null, { multiplier });
+    return "";
   }
 }
 
@@ -1102,6 +1219,34 @@ async function buyNow() {
 
     // 2) Capturas: PREVIEW INTEGRADO + CAPAS
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+
+// Overlay completo (texto + imágenes juntos, transparente)
+let overlayAll = await (
+  typeof DS.exportPreviewDataURL === "function"
+    ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
+    : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
+) || "";
+
+// Capas separadas (con cache invalidada)
+let layerImg = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
+    : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
+) || "";
+
+let layerTxt = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["text","texto"], { multiplier: 2 })
+    : exportOnlyLocal(["text","texto"], { multiplier: 2 })
+) || "";
+
+// Preview integrado (usa DOM, CORS-proxy, o datos)
+let previewIntegrated = await exportIntegratedPreview({
+  fabricCanvas, multiplier: 2, potUrl, plantUrl
+}) || "";
 
     // Preview integrado (maceta + planta + overlay)
     let preview = await exportIntegratedPreview({ fabricCanvas, multiplier: 2 }) || "";
@@ -1190,6 +1335,34 @@ async function addToCart() {
 
     // 2) Capturas: PREVIEW INTEGRADO + CAPAS
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+
+// Overlay completo (texto + imágenes juntos, transparente)
+let overlayAll = await (
+  typeof DS.exportPreviewDataURL === "function"
+    ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
+    : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
+) || "";
+
+// Capas separadas (con cache invalidada)
+let layerImg = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
+    : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
+) || "";
+
+let layerTxt = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["text","texto"], { multiplier: 2 })
+    : exportOnlyLocal(["text","texto"], { multiplier: 2 })
+) || "";
+
+// Preview integrado (usa DOM, CORS-proxy, o datos)
+let previewIntegrated = await exportIntegratedPreview({
+  fabricCanvas, multiplier: 2, potUrl, plantUrl
+}) || "";
 
     let preview = await exportIntegratedPreview({ fabricCanvas, multiplier: 2 }) || "";
 
