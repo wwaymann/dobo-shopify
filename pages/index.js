@@ -1333,15 +1333,8 @@ async function buyNow() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
 // 2) dentro de buyNow / addToCart, justo antes de sendEmailNow(...)
-const emailAttrs = buildEmailAttrs(attrs, {
-  previewIntegrated,
-  overlayAll,
-  layerImg,
-  layerTxt
-});
-
 sendEmailNow({
-  subject: (doNum || noNum) ? `DO ${doNum} · NO ${noNum}` : undefined,
+  subject: makeEmailSubject({ doNum, noNum }),
   attrs: emailAttrs,
   meta: { Descripcion: shortDescription, Precio: basePrice },
   links: { Storefront: location.origin },
@@ -1461,16 +1454,8 @@ async function addToCart() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
     // 2) dentro de buyNow / addToCart, justo antes de sendEmailNow(...)
-const emailAttrs = buildEmailAttrs(attrs, {
-  previewIntegrated,
-  overlayAll,
-  layerImg,
-  layerTxt
-});
-
-
 sendEmailNow({
-  subject: (doNum || noNum) ? `DO ${doNum} · NO ${noNum}` : undefined,
+  subject: makeEmailSubject({ doNum, noNum }),
   attrs: emailAttrs,
   meta: { Descripcion: shortDescription, Precio: basePrice },
   links: { Storefront: location.origin },
