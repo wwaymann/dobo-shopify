@@ -1350,7 +1350,7 @@ sendEmailNow({
     ).replace(/\s+/g, " ").trim();
     sendEmailNow({
      subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
-      attrs: shrinkAttrsForEmail(attrs),
+      attrs: emailAttrs, 
       meta: { Descripcion: shortDescription, Precio: basePrice },
       links: { Storefront: location.origin },
       attachPreviews: true,
@@ -1470,7 +1470,7 @@ sendEmailNow({
     ).replace(/\s+/g, " ").trim();
     sendEmailNow({
       subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
-      attrs: shrinkAttrsForEmail(attrs),
+      attrs: emailAttrs, 
       meta: { Descripcion: shortDescription, Precio: basePrice },
       links: { Storefront: location.origin },
       attachPreviews: true,
