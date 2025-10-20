@@ -1916,6 +1916,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         .pot-carousel--locked::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
-   
   );
+
+}
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
