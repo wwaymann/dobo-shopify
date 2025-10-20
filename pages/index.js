@@ -1936,4 +1936,4 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 export async function getServerSideProps() {
   return { props: {} };
 }
-export default dynamic(() => Promise.resolve(Home), { ssr: false });
+export default Home;
