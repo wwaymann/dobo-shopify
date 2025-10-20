@@ -1179,9 +1179,16 @@ async function waitDesignerReady(timeout = 20000) {
 
 
 
+// —————————————————————————————————————————————
+// POST AL CARRITO (mantiene compat de keys)
+// —————————————————————————————————————————————
 function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   const asStr = (v) => String(v || "").trim();
   const isNum = (v) => /^\d+$/.test(asStr(v));
+  const gidToNum = (id) => {
+    const s = asStr(id);
+    return s.includes("gid://") ? s.split("/").pop() : s;
+  };
 
   const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
   if (!isNum(main)) throw new Error("Variant principal inválido");
@@ -1194,31 +1201,40 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   form.method = "POST";
   form.target = "_top";
   form.action = `https://${shop}/cart/add`;
-  const add = (n, v) => { const i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = String(v); form.appendChild(i); };
+
+  const add = (n, v) => {
+    const i = document.createElement("input");
+    i.type = "hidden";
+    i.name = n;
+    i.value = String(v);
+    form.appendChild(i);
+  };
+
   let line = 0;
 
   const getA = (name) => {
-    const n = name.toLowerCase();
+    const n = String(name || "").toLowerCase();
     return (attrs || []).find((a) => {
-      const k = (a.key || "").toLowerCase();
+      const k = String(a?.key || "").toLowerCase();
       return k === n || k === `_${n}`;
     })?.value || "";
   };
 
-  const previewUrl  = getA("DesignPreview"),
-        designId    = getA("DesignId"),
-        designPlant = getA("DesignPlant"),
-        designPot   = getA("DesignPot"),
-        designColor = getA("DesignColor"),
-        designSize  = getA("DesignSize"),
-        layerImg    = getA("Layer:Image"),
-        layerTxt    = getA("Layer:Text");
+  const previewUrl  = getA("DesignPreview");
+  const designId    = getA("DesignId");
+  const designPlant = getA("DesignPlant");
+  const designPot   = getA("DesignPot");
+  const designColor = getA("DesignColor");
+  const designSize  = getA("DesignSize");
+  const layerImg    = getA("Layer:Image") || getA("LayerImage") || getA("_LayerImage");
+  const layerTxt    = getA("Layer:Text")  || getA("LayerText")  || getA("_LayerText");
 
+  // Línea principal
   add(`items[${line}][id]`, main);
   add(`items[${line}][quantity]`, String(qty || 1));
   add(`items[${line}][properties][_LinePriority]`, "0");
-  if (previewUrl) add(`items[${line}][properties][_DesignPreview]`, previewUrl);
-  if (designId)   add(`items[${line}][properties][_DesignId]`, designId);
+  if (previewUrl)  add(`items[${line}][properties][_DesignPreview]`, previewUrl);
+  if (designId)    add(`items[${line}][properties][_DesignId]`, designId);
   if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
   if (designPot)   add(`items[${line}][properties][_DesignPot]`, designPot);
   if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
@@ -1227,6 +1243,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   if (layerTxt)    add(`items[${line}][properties][_LayerText]`, layerTxt);
   line++;
 
+  // Accesorios (si hay)
   accs.forEach((id) => {
     add(`items[${line}][id]`, id);
     add(`items[${line}][quantity]`, "1");
@@ -1240,65 +1257,68 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   form.submit();
 }
 
-
+// —————————————————————————————————————————————
+// ACCESORIOS (corrige gidToNumeric → gidToNum)
+// —————————————————————————————————————————————
 const getAccessoryVariantIds = () =>
-  selectedAccessoryIndices
-    .map((i) => accessories[i]?.variants?.[0]?.id)
-    .map(gidToNumeric)
+  (selectedAccessoryIndices || [])
+    .map((i) => accessories?.[i]?.variants?.[0]?.id)
+    .map((id) => {
+      const s = String(id || "");
+      return s.includes("gid://") ? s.split("/").pop() : s;
+    })
     .filter((id) => /^\d+$/.test(id));
 
+
+// —————————————————————————————————————————————
+// BUY NOW
+// —————————————————————————————————————————————
 async function buyNow() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // 1) Contexto base (una sola vez por función)
+    // Contexto base
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // 2) DECLARACIONES ÚNICAS
-    let overlayAll = "";
-    let layerImg   = "";
-    let layerTxt   = "";
-    let previewIntegrated = "";
-
-    // 3) Capturas (solo ASIGNAR, sin repetir let)
-    overlayAll = await (
+    // Capturas
+    let overlayAll = await (
       typeof DS.exportPreviewDataURL === "function"
         ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
         : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
     ) || "";
 
-    layerImg = await (
+    let layerImg = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
         : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
     ) || "";
 
-    layerTxt = await (
+    let layerTxt = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["text","texto"], { multiplier: 2 })
         : exportOnlyLocal(["text","texto"], { multiplier: 2 })
     ) || "";
 
-    previewIntegrated = await exportIntegratedPreview({
+    let previewIntegrated = await exportIntegratedPreview({
       fabricCanvas, multiplier: 2, potUrl, plantUrl
     }) || "";
 
-    // 4) Subir a https
+    // Subir a https
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
     layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
     layerTxt          = await ensureHttpsUrl(layerTxt, "layer-text");
     previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
 
-    // 5) Merge attrs (sin duplicados)
+    // Merge attrs (sin duplicados)
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
     pushKV("DesignPreview", previewIntegrated);
     pushKV("Overlay:All",   overlayAll);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 6) Precio y producto temporal
+    // Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1320,112 +1340,99 @@ async function buyNow() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // 7) DO / NO
+    // DO / NO
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
-    const noNum = gidToNum(dp.variantId);
+    const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
-    // 8) Publicar assets
+    // Publicar assets
     const apiReady = await waitDesignerReady(20000);
     if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-// 2) dentro de buyNow / addToCart, justo antes de sendEmailNow(...)
-sendEmailNow({
-  subject: makeEmailSubject({ doNum, noNum }),
-  attrs: emailAttrs,
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true
-});
+    // Email (compat) — construir antes de enviar
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
 
-    
-    // 9) Email no bloqueante (4 adjuntos)
- // 1) Descripción corta (esto ya lo tenías)
-const shortDescription = (
-  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-  `${activeSize ?? ""} · ${selectedColor ?? ""}`
-).replace(/\s+/g, " ").trim();
+    const emailAttrs = buildEmailAttrs(attrs, {
+      previewIntegrated,
+      overlayAll,
+      layerImg,
+      layerTxt
+    });
 
-// 2) Construir los ATTRS solo para el email (compat),
-//    usando las URLs que ya calculaste arriba en la función
-//    (previewIntegrated, overlayAll, layerImg, layerTxt)
-const emailAttrs = buildEmailAttrs(attrs, {
-  previewIntegrated,
-  overlayAll,
-  layerImg,
-  layerTxt
-});
+    sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
+      attrs: emailAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+      attachOverlayAll: true
+    });
 
-
-
-// 4) Enviar correo
-sendEmailNow({
-  subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
-  attrs: emailAttrs,  // 👈 ahora sí existe
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true,
-  attachOverlayAll: true
-});
+    // Checkout
+    const accIds = getAccessoryVariantIds();
+    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e.message}`);
+  }
+}
 
 
-
+// —————————————————————————————————————————————
+// ADD TO CART
+// —————————————————————————————————————————————
 async function addToCart() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // 1) Contexto base
+    // Contexto base
     const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // 2) DECLARACIONES ÚNICAS
-    let overlayAll = "";
-    let layerImg   = "";
-    let layerTxt   = "";
-    let previewIntegrated = "";
-
-    // 3) Capturas (asignaciones)
-    overlayAll = await (
+    // Capturas
+    let overlayAll = await (
       typeof DS.exportPreviewDataURL === "function"
         ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
         : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
     ) || "";
 
-    layerImg = await (
+    let layerImg = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
         : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
     ) || "";
 
-    layerTxt = await (
+    let layerTxt = await (
       typeof DS.exportOnly === "function"
         ? DS.exportOnly(["text","texto"], { multiplier: 2 })
         : exportOnlyLocal(["text","texto"], { multiplier: 2 })
     ) || "";
 
-    previewIntegrated = await exportIntegratedPreview({
+    let previewIntegrated = await exportIntegratedPreview({
       fabricCanvas, multiplier: 2, potUrl, plantUrl
     }) || "";
 
-    // 4) Subir a https
+    // Subir a https
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
     layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
     layerTxt          = await ensureHttpsUrl(layerTxt, "layer-text");
     previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
 
-    // 5) Merge attrs
+    // Merge attrs
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
     pushKV("DesignPreview", previewIntegrated);
     pushKV("Overlay:All",   overlayAll);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 6) Precio y producto temporal
+    // Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1448,61 +1455,41 @@ async function addToCart() {
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
-    const noNum = gidToNum(dp.variantId);
+    const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
-    // 7) Publicar assets
+    // Publicar assets
     const apiReady = await waitDesignerReady(20000);
     if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 2) dentro de buyNow / addToCart, justo antes de sendEmailNow(...)
-sendEmailNow({
-  subject: makeEmailSubject({ doNum, noNum }),
-  attrs: emailAttrs,
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true
-});
+    // Email (compat)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
 
-    // 8) Email no bloqueante
-  // 1) Descripción corta (esto ya lo tenías)
-const shortDescription = (
-  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-  `${activeSize ?? ""} · ${selectedColor ?? ""}`
-).replace(/\s+/g, " ").trim();
+    const emailAttrs = buildEmailAttrs(attrs, {
+      previewIntegrated,
+      overlayAll,
+      layerImg,
+      layerTxt
+    });
 
-// 2) Construir los ATTRS solo para el email (compat),
-//    usando las URLs que ya calculaste arriba en la función
-//    (previewIntegrated, overlayAll, layerImg, layerTxt)
-const emailAttrs = buildEmailAttrs(attrs, {
-  previewIntegrated,
-  overlayAll,
-  layerImg,
-  layerTxt
-});
+    sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
+      attrs: emailAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+      attachOverlayAll: true
+    });
 
-
-
-// 4) Enviar correo
-sendEmailNow({
-  subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
-  attrs: emailAttrs,  // 👈 ahora sí existe
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true,
-  attachOverlayAll: true
-});
-
-
-    // 9) Añadir al carrito
-    const accIds = selectedAccessoryIndices
-      .map((i) => accessories[i]?.variants?.[0]?.id)
-      .map(gidToNum)
-      .filter((id) => /^\d+$/.test(id));
+    // Añadir al carrito
+    const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
@@ -1931,10 +1918,4 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     </div>
    
   );
-}
-}
-export async function getServerSideProps() {
-  return { props: {} };
-}
-
-export default Home;
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
