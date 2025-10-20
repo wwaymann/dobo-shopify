@@ -1343,30 +1343,38 @@ sendEmailNow({
 
     
     // 9) Email no bloqueante (4 adjuntos)
-    const shortDescription = (
-      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-      `${activeSize ?? ""} · ${selectedColor ?? ""}`
-    ).replace(/\s+/g, " ").trim();
-    sendEmailNow({
-     subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
-      attrs: emailAttrs, 
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+ // 1) Descripción corta (esto ya lo tenías)
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
 
-    // 10) Checkout
-    const accIds = selectedAccessoryIndices
-      .map((i) => accessories[i]?.variants?.[0]?.id)
-      .map(gidToNum)
-      .filter((id) => /^\d+$/.test(id));
-    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
-  } catch (e) {
-    alert(`No se pudo iniciar el checkout: ${e.message}`);
-  }
-}
+// 2) Construir los ATTRS solo para el email (compat),
+//    usando las URLs que ya calculaste arriba en la función
+//    (previewIntegrated, overlayAll, layerImg, layerTxt)
+const emailAttrs = buildEmailAttrs(attrs, {
+  previewIntegrated,
+  overlayAll,
+  layerImg,
+  layerTxt
+});
+
+// 3) DO / NO para el asunto
+//    Usa los que ya calculaste arriba (doNum/noNum), o define alias *_Email
+const doNumEmail = (attrs.find(a => a.key === "_DO")?.value) || doNum || "";
+const noNumEmail = (attrs.find(a => a.key === "_NO")?.value) || noNum || "";
+
+// 4) Enviar correo
+sendEmailNow({
+  subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
+  attrs: emailAttrs,  // 👈 ahora sí existe
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attachOverlayAll: true
+});
+
 
 
 async function addToCart() {
@@ -1463,19 +1471,38 @@ sendEmailNow({
 });
 
     // 8) Email no bloqueante
-    const shortDescription = (
-      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-      `${activeSize ?? ""} · ${selectedColor ?? ""}`
-    ).replace(/\s+/g, " ").trim();
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
-      attrs: emailAttrs, 
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+  // 1) Descripción corta (esto ya lo tenías)
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
+
+// 2) Construir los ATTRS solo para el email (compat),
+//    usando las URLs que ya calculaste arriba en la función
+//    (previewIntegrated, overlayAll, layerImg, layerTxt)
+const emailAttrs = buildEmailAttrs(attrs, {
+  previewIntegrated,
+  overlayAll,
+  layerImg,
+  layerTxt
+});
+
+// 3) DO / NO para el asunto
+//    Usa los que ya calculaste arriba (doNum/noNum), o define alias *_Email
+const doNumEmail = (attrs.find(a => a.key === "_DO")?.value) || doNum || "";
+const noNumEmail = (attrs.find(a => a.key === "_NO")?.value) || noNum || "";
+
+// 4) Enviar correo
+sendEmailNow({
+  subject: makeEmailSubject({ doNum: doNumEmail, noNum: noNumEmail }),
+  attrs: emailAttrs,  // 👈 ahora sí existe
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attachOverlayAll: true
+});
+
 
     // 9) Añadir al carrito
     const accIds = selectedAccessoryIndices
