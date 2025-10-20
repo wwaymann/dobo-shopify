@@ -1490,7 +1490,7 @@ async function addToCart() {
 
     // Añadir al carrito
     const accIds = getAccessoryVariantIds();
-    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
   }
