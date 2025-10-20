@@ -1360,10 +1360,7 @@ const emailAttrs = buildEmailAttrs(attrs, {
   layerTxt
 });
 
-// 3) DO / NO para el asunto
-//    Usa los que ya calculaste arriba (doNum/noNum), o define alias *_Email
-const doNumEmail = (attrs.find(a => a.key === "_DO")?.value) || doNum || "";
-const noNumEmail = (attrs.find(a => a.key === "_NO")?.value) || noNum || "";
+
 
 // 4) Enviar correo
 sendEmailNow({
@@ -1488,10 +1485,7 @@ const emailAttrs = buildEmailAttrs(attrs, {
   layerTxt
 });
 
-// 3) DO / NO para el asunto
-//    Usa los que ya calculaste arriba (doNum/noNum), o define alias *_Email
-const doNumEmail = (attrs.find(a => a.key === "_DO")?.value) || doNum || "";
-const noNumEmail = (attrs.find(a => a.key === "_NO")?.value) || noNum || "";
+
 
 // 4) Enviar correo
 sendEmailNow({
