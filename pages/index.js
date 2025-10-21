@@ -1277,33 +1277,45 @@ async function buyNow() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // Contexto base
-    const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
-    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
-    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+// Contexto base: esperar editor y tomar el canvas correcto
+const api = await waitDesignerReady(20000);
+if (!api) throw new Error("designer-not-ready");
+const fabricCanvas = api.getCanvas?.() || window.doboDesignAPI?.getCanvas?.() || null;
 
-    // Capturas
-    let overlayAll = await (
-      typeof DS.exportPreviewDataURL === "function"
-        ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
-        : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
-    ) || "";
+const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    let layerImg = await (
-      typeof DS.exportOnly === "function"
-        ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
-        : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
-    ) || "";
+// Pequeño yield para asegurar flush de render (fonts/imagenes)
+await new Promise(r => setTimeout(r, 50));
 
-    let layerTxt = await (
-      typeof DS.exportOnly === "function"
-        ? DS.exportOnly(["text","texto"], { multiplier: 2 })
-        : exportOnlyLocal(["text","texto"], { multiplier: 2 })
-    ) || "";
+// Capturas (todas contra el MISMO canvas)
+let overlayAll = await (
+  typeof DS.exportPreviewDataURL === "function"
+    ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
+    : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
+) || "";
 
-    let previewIntegrated = await exportIntegratedPreview({
-      fabricCanvas, multiplier: 2, potUrl, plantUrl
-    }) || "";
+let layerImg = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
+    : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
+) || "";
+
+let layerTxt = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["text","texto"], { multiplier: 2 })
+    : exportOnlyLocal(["text","texto"], { multiplier: 2 })
+) || "";
+
+// Preview integrado (maceta + planta + overlay)
+let previewIntegrated = await exportIntegratedPreview({
+  stageEl: selectStageEl(fabricCanvas), // sugerido: pásale el stage si está disponible
+  fabricCanvas,
+  multiplier: 2,
+  potUrl,
+  plantUrl
+}) || "";
+
 
     // Subir a https
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
@@ -1391,33 +1403,45 @@ async function addToCart() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // Contexto base
-    const fabricCanvas = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
-    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
-    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+  // Contexto base: esperar editor y tomar el canvas correcto
+const api = await waitDesignerReady(20000);
+if (!api) throw new Error("designer-not-ready");
+const fabricCanvas = api.getCanvas?.() || window.doboDesignAPI?.getCanvas?.() || null;
 
-    // Capturas
-    let overlayAll = await (
-      typeof DS.exportPreviewDataURL === "function"
-        ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
-        : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
-    ) || "";
+const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    let layerImg = await (
-      typeof DS.exportOnly === "function"
-        ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
-        : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
-    ) || "";
+// Pequeño yield para asegurar flush de render (fonts/imagenes)
+await new Promise(r => setTimeout(r, 50));
 
-    let layerTxt = await (
-      typeof DS.exportOnly === "function"
-        ? DS.exportOnly(["text","texto"], { multiplier: 2 })
-        : exportOnlyLocal(["text","texto"], { multiplier: 2 })
-    ) || "";
+// Capturas (todas contra el MISMO canvas)
+let overlayAll = await (
+  typeof DS.exportPreviewDataURL === "function"
+    ? DS.exportPreviewDataURL(fabricCanvas, { multiplier: 2 })
+    : exportOverlayAllLocal(fabricCanvas, { multiplier: 2 })
+) || "";
 
-    let previewIntegrated = await exportIntegratedPreview({
-      fabricCanvas, multiplier: 2, potUrl, plantUrl
-    }) || "";
+let layerImg = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["image","imagen","plant","planta"], { multiplier: 2 })
+    : exportOnlyLocal(["image","imagen","plant","planta"], { multiplier: 2 })
+) || "";
+
+let layerTxt = await (
+  typeof DS.exportOnly === "function"
+    ? DS.exportOnly(["text","texto"], { multiplier: 2 })
+    : exportOnlyLocal(["text","texto"], { multiplier: 2 })
+) || "";
+
+// Preview integrado (maceta + planta + overlay)
+let previewIntegrated = await exportIntegratedPreview({
+  stageEl: selectStageEl(fabricCanvas), // sugerido: pásale el stage si está disponible
+  fabricCanvas,
+  multiplier: 2,
+  potUrl,
+  plantUrl
+}) || "";
+
 
     // Subir a https
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
