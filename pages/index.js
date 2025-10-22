@@ -1311,57 +1311,140 @@ const getAccessoryVariantIds = () =>
 // —————————————————————————————————————————————
 // BUY NOW
 // —————————————————————————————————————————————
+// —————————————————————————————————————————————
+// BUY NOW
+// —————————————————————————————————————————————
 async function buyNow() {
   try {
     let attrs = await prepareDesignAttributes();
 
+    // 1) Esperar editor y tomar el canvas correcto
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
-    const canvas = window.doboDesignAPI?.getCanvas?.() || null;
-    if (!canvas) throw new Error("canvas-missing");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!fabricCanvas) throw new Error("canvas-missing");
 
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // — Capturas existentes (tú ya las tienes) —
-    // overlayAll, layerImg, layerTxt, previewIntegrated
-    // Asegúrate de tenerlas en variables con esos nombres.
-    // (omito la parte de extracción para no duplicar tu código)
+    // ===== Helpers locales =====
+    const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
+    const size  = (s)=> (s || "").length;
+    const tooSmall = (d) => size(d) < 2000;
 
-    // === NUEVO: Componer la “full” (pot + plant + overlay) ===
-    // Puedes componerla desde el dataURL de overlayAll ANTES de subirlo,
-    // o desde su URL https LUEGO de subirlo. Aquí la hacemos ANTES:
+    const isTextLike = (o) =>
+      !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+
+    const hasTextDeep = (o) =>
+      !!o && (isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(hasTextDeep)));
+
+    const isBaseLike = (o) => {
+      if (!o) return false;
+      const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
+      // Heurística para “base” (maceta/planta/fondo)
+      return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
+    };
+
+    const hasBaseDeep = (o) =>
+      !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
+
+    const hidden = [];
+    const hideIf = (pred) => {
+      const walk = (o) => {
+        if (!o) return;
+        if (pred(o)) { hidden.push(o); o.__vis = o.visible; o.visible = false; }
+        if (Array.isArray(o._objects)) o._objects.forEach(walk);
+      };
+      (fabricCanvas.getObjects?.() || []).forEach(walk);
+      if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
+        const bg = fabricCanvas.backgroundImage;
+        hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
+      }
+      fabricCanvas.requestRenderAll?.();
+    };
+    const restoreAll = () => {
+      hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
+      hidden.length = 0;
+      fabricCanvas.requestRenderAll?.();
+    };
+
+    const snap = (mult = 2) =>
+      fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+
+    // Componer “full” = pot+plant+overlay en un canvas offscreen
+    const loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+    const composeIntegratedPreview = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        loadImage(overlayAllUrl),
+        potUrl ? loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const ctx = off.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return off.toDataURL("image/png");
+    };
+
+    // ===== Capturas =====
+    await delay(50); // dar tiempo a fuentes/imagenes
+
+    // 1) Overlay completo (sin base)
+    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    let overlayAll = snap(2);
+
+    // 2) Solo TEXTO (sin base)
+    restoreAll();
+    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    hideIf((o) => !hasTextDeep(o)); // oculta todo lo que NO sea (o contenga) texto
+    let layerTxt = snap(2);
+
+    // 3) Solo IMAGEN (sin base ni texto)
+    restoreAll();
+    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    hideIf((o) => hasTextDeep(o)); // oculta texto
+    let layerImg = snap(2);
+
+    // 4) “Full” integrado = pot + plant + overlayAll (no dependemos del canvas para la base)
+    restoreAll(); // dejar todo visible para no afectar futuras operaciones
     let previewFull = "";
     try {
-      previewFull = await composeIntegratedPreview({
-        overlayAllUrl: overlayAll, // dataURL base64 que ya tienes
-        potUrl,
-        plantUrl
-      });
+      previewFull = await composeIntegratedPreview({ overlayAllUrl: overlayAll, potUrl, plantUrl });
     } catch {
-      // fallback: si algo falla, usa previewIntegrated o overlayAll
-      previewFull = previewIntegrated || overlayAll || "";
+      previewFull = snap(2); // último recurso: snapshot del canvas
     }
 
-    // Subir a https (nombres claros)
-    const overlayAllHttps        = await ensureHttpsUrl(overlayAll, "overlay");
-    const layerImgHttps          = await ensureHttpsUrl(layerImg, "layer-image");
-    const layerTxtHttps          = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewIntegratedHttps = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
-    const previewFullHttps       = await ensureHttpsUrl(previewFull, "preview-full"); // 👈 NUEVO
+    // Fallbacks contra PNGs “vacíos”
+    if (tooSmall(layerTxt)) layerTxt = "";
+    if (tooSmall(layerImg) && !tooSmall(overlayAll)) layerImg = overlayAll;
+    if (tooSmall(previewFull) && !tooSmall(overlayAll)) previewFull = overlayAll;
 
-    // Merge attrs (sin duplicados)
+    // 5) Subir a https
+    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
+    // 6) Merge attrs (sin duplicados)
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview",  previewIntegratedHttps); // lo que ya usas
-    pushKV("Overlay:All",    overlayAllHttps);
-    pushKV("Layer:Image",    layerImgHttps);
-    pushKV("Layer:Text",     layerTxtHttps);
-    pushKV("Preview:Full",   previewFullHttps);      // 👈 NUEVO (la cuarta imagen pedida)
-    // Aliases opcionales (por compatibilidad)
-    pushKV("_DesignPreviewFull", previewFullHttps);
-    pushKV("DesignPreviewFull",  previewFullHttps);
+    pushKV("DesignPreview",  previewFullHttps); // 👈 tu preview principal ahora es el integrado completo
+    pushKV("Overlay:All",    overlayAll);
+    pushKV("Layer:Image",    layerImg);
+    pushKV("Layer:Text",     layerTxt);
+    pushKV("Preview:Full",   previewFullHttps); // alias útil/4ta imagen
 
-    // Precios y producto temporal (sin cambios)
+    // 7) Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1371,7 +1454,7 @@ async function buyNow() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewIntegratedHttps || overlayAllHttps, // tu flujo actual
+        previewUrl: previewFullHttps || overlayAll, // usa el integrado completo
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1383,29 +1466,32 @@ async function buyNow() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
+    // 8) DO / NO
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
+    // 9) Publicar assets (si aplica)
     const again = await waitDesignerReady(20000);
     if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
+    // 10) Email (compat)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    // — Email: incluye también Preview:Full —
+    // Le pasamos la versión integrada como “previewIntegrated” para mantener compat
     const emailAttrs = buildEmailAttrs(attrs, {
-      previewIntegrated: previewIntegratedHttps,
-      overlayAll:        overlayAllHttps,
-      layerImg:          layerImgHttps,
-      layerTxt:          layerTxtHttps,
-      previewFull:       previewFullHttps    // 👈 NUEVO
+      previewIntegrated: previewFullHttps,
+      overlayAll,
+      layerImg,
+      layerTxt,
+      previewFull: previewFullHttps
     });
 
     sendEmailNow({
@@ -1415,9 +1501,9 @@ async function buyNow() {
       links: { Storefront: location.origin },
       attachPreviews: true,
       attachOverlayAll: true
-      // si tu emailer permite flags, podrías añadir attachPreviewFull: true
     });
 
+    // 11) Checkout
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
@@ -1433,47 +1519,124 @@ async function addToCart() {
   try {
     let attrs = await prepareDesignAttributes();
 
+    // 1) Esperar editor y tomar el canvas correcto
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
-    const canvas = window.doboDesignAPI?.getCanvas?.() || null;
-    if (!canvas) throw new Error("canvas-missing");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!fabricCanvas) throw new Error("canvas-missing");
 
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // — Capturas existentes (ya las tienes) —
-    // overlayAll, layerImg, layerTxt, previewIntegrated
+    // ===== Helpers (mismos que arriba) =====
+    const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
+    const size  = (s)=> (s || "").length;
+    const tooSmall = (d) => size(d) < 2000;
 
-    // === NUEVO: Componer la “full” (pot + plant + overlay) ===
+    const isTextLike = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+    const hasTextDeep = (o) => !!o && (isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(hasTextDeep)));
+    const isBaseLike = (o) => {
+      if (!o) return false;
+      const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
+      return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
+    };
+    const hasBaseDeep = (o) => !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
+
+    const hidden = [];
+    const hideIf = (pred) => {
+      const walk = (o) => {
+        if (!o) return;
+        if (pred(o)) { hidden.push(o); o.__vis = o.visible; o.visible = false; }
+        if (Array.isArray(o._objects)) o._objects.forEach(walk);
+      };
+      (fabricCanvas.getObjects?.() || []).forEach(walk);
+      if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
+        const bg = fabricCanvas.backgroundImage;
+        hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
+      }
+      fabricCanvas.requestRenderAll?.();
+    };
+    const restoreAll = () => {
+      hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
+      hidden.length = 0;
+      fabricCanvas.requestRenderAll?.();
+    };
+    const snap = (mult = 2) =>
+      fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+
+    const loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+    const composeIntegratedPreview = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        loadImage(overlayAllUrl),
+        potUrl ? loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const ctx = off.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return off.toDataURL("image/png");
+    };
+
+    // ===== Capturas =====
+    await delay(50);
+
+    // 1) Overlay completo (sin base)
+    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    let overlayAll = snap(2);
+
+    // 2) Solo TEXTO (sin base)
+    restoreAll();
+    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    hideIf((o) => !hasTextDeep(o));
+    let layerTxt = snap(2);
+
+    // 3) Solo IMAGEN (sin base ni texto)
+    restoreAll();
+    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    hideIf((o) => hasTextDeep(o));
+    let layerImg = snap(2);
+
+    // 4) “Full” integrado = pot + plant + overlayAll
+    restoreAll();
     let previewFull = "";
     try {
-      previewFull = await composeIntegratedPreview({
-        overlayAllUrl: overlayAll,
-        potUrl,
-        plantUrl
-      });
+      previewFull = await composeIntegratedPreview({ overlayAllUrl: overlayAll, potUrl, plantUrl });
     } catch {
-      previewFull = previewIntegrated || overlayAll || "";
+      previewFull = snap(2);
     }
 
-    // Subir a https
-    const overlayAllHttps        = await ensureHttpsUrl(overlayAll, "overlay");
-    const layerImgHttps          = await ensureHttpsUrl(layerImg, "layer-image");
-    const layerTxtHttps          = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewIntegratedHttps = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
-    const previewFullHttps       = await ensureHttpsUrl(previewFull, "preview-full"); // 👈 NUEVO
+    // Fallbacks
+    if (tooSmall(layerTxt)) layerTxt = "";
+    if (tooSmall(layerImg) && !tooSmall(overlayAll)) layerImg = overlayAll;
+    if (tooSmall(previewFull) && !tooSmall(overlayAll)) previewFull = overlayAll;
 
-    // Merge attrs
+    // 5) Subir a https
+    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
+    // 6) Merge attrs
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview",  previewIntegratedHttps);
-    pushKV("Overlay:All",    overlayAllHttps);
-    pushKV("Layer:Image",    layerImgHttps);
-    pushKV("Layer:Text",     layerTxtHttps);
-    pushKV("Preview:Full",   previewFullHttps);      // 👈 NUEVO
-    pushKV("_DesignPreviewFull", previewFullHttps);
-    pushKV("DesignPreviewFull",  previewFullHttps);
+    pushKV("DesignPreview",  previewFullHttps);
+    pushKV("Overlay:All",    overlayAll);
+    pushKV("Layer:Image",    layerImg);
+    pushKV("Layer:Text",     layerTxt);
+    pushKV("Preview:Full",   previewFullHttps);
 
-    // Precios y producto temporal
+    // 7) Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1483,7 +1646,7 @@ async function addToCart() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewIntegratedHttps || overlayAllHttps,
+        previewUrl: previewFullHttps || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1500,11 +1663,13 @@ async function addToCart() {
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
+    // 8) Publicar assets (si aplica)
     const again = await waitDesignerReady(20000);
     if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
+    // 9) Email (compat)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1512,11 +1677,11 @@ async function addToCart() {
     ).replace(/\s+/g, " ").trim();
 
     const emailAttrs = buildEmailAttrs(attrs, {
-      previewIntegrated: previewIntegratedHttps,
-      overlayAll:        overlayAllHttps,
-      layerImg:          layerImgHttps,
-      layerTxt:          layerTxtHttps,
-      previewFull:       previewFullHttps   // 👈 NUEVO
+      previewIntegrated: previewFullHttps,
+      overlayAll,
+      layerImg,
+      layerTxt,
+      previewFull: previewFullHttps
     });
 
     sendEmailNow({
@@ -1528,12 +1693,14 @@ async function addToCart() {
       attachOverlayAll: true
     });
 
+    // 10) Añadir al carrito (mantenerse en /cart)
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
+
 
 
 
