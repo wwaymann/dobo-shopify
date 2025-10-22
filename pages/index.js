@@ -1317,6 +1317,7 @@ let previewIntegrated = await exportIntegratedPreview({
 }) || "";
 
 
+
     // Subir a https
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
     layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
@@ -1403,7 +1404,7 @@ async function addToCart() {
   try {
     let attrs = await prepareDesignAttributes();
 
-  // Contexto base: esperar editor y tomar el canvas correcto
+// Contexto base: esperar editor y tomar el canvas correcto
 const api = await waitDesignerReady(20000);
 if (!api) throw new Error("designer-not-ready");
 const fabricCanvas = api.getCanvas?.() || window.doboDesignAPI?.getCanvas?.() || null;
@@ -1441,6 +1442,7 @@ let previewIntegrated = await exportIntegratedPreview({
   potUrl,
   plantUrl
 }) || "";
+
 
 
     // Subir a https
