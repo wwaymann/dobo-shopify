@@ -1307,6 +1307,27 @@ const getAccessoryVariantIds = () =>
     })
     .filter((id) => /^\d+$/.test(id));
 
+// Helper "a prueba de balas": no depende de variables globales
+function buildEmailAttrsSafe(baseAttrs, imgsObj) {
+  const out = Array.isArray(baseAttrs) ? baseAttrs.slice() : [];
+  const put = (k, v) => { if (v) out.push({ key: k, value: v }); };
+
+  // Mantén compat: DesignPreview apunta al integrado (o al full)
+  put("DesignPreview",  imgsObj.previewIntegrated || imgsObj.previewFull);
+
+  // Capas
+  put("Overlay:All",    imgsObj.overlayAll);
+  put("Layer:Image",    imgsObj.layerImg);
+  if (imgsObj.layerTxt) put("Layer:Text", imgsObj.layerTxt);
+
+  // La cuarta imagen integrada completa (si la envías)
+  if (imgsObj.previewFull) {
+    put("Preview:Full",       imgsObj.previewFull);
+    put("_DesignPreviewFull", imgsObj.previewFull); // alias opcional
+  }
+
+  return out;
+}
 
 // —————————————————————————————————————————————
 // BUY NOW
@@ -1479,28 +1500,40 @@ async function buyNow() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
     // 10) Email (compat)
-    const shortDescription = (
-      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-      `${activeSize ?? ""} · ${selectedColor ?? ""}`
-    ).replace(/\s+/g, " ").trim();
+// ----- EMAIL (reemplaza tu bloque actual de email por este) -----
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
 
-    // Le pasamos la versión integrada como “previewIntegrated” para mantener compat
-    const emailAttrs = buildEmailAttrs(attrs, {
-      previewIntegrated: previewFullHttps,
-      overlayAll,
-      layerImg,
-      layerTxt,
-      previewFull: previewFullHttps
-    });
+// construye el objeto de imágenes de forma explícita (NO global)
+const emailImgs = {
+  // usa el integrado que definiste en tu función:
+//  - si usas "previewFullHttps" como integrado completo:
+  previewFull:       typeof previewFullHttps !== "undefined" ? previewFullHttps : "",
+  //  - si tu integrado “de siempre” es "previewIntegratedHttps", cámbialo aquí:
+  previewIntegrated: typeof previewIntegratedHttps !== "undefined" ? previewIntegratedHttps : "",
 
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum, noNum }),
-      attrs: emailAttrs,
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
+  overlayAll,        // ya son https en tu código
+  layerImg,
+  layerTxt
+};
+
+// usa tu buildEmailAttrs si existe; si no, el Safe
+const emailAttrs = (typeof buildEmailAttrs === "function")
+  ? buildEmailAttrs(attrs, emailImgs)        // <-- asegúrate de que tu buildEmailAttrs ACEPTE el 2º parámetro
+  : buildEmailAttrsSafe(attrs, emailImgs);   // fallback seguro
+
+sendEmailNow({
+  subject: makeEmailSubject({ doNum, noNum }),
+  attrs: emailAttrs,
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attachOverlayAll: true
+});
+chOverlayAll: true
     });
 
     // 11) Checkout
@@ -1670,28 +1703,34 @@ async function addToCart() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
     // 9) Email (compat)
-    const shortDescription = (
-      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-      `${activeSize ?? ""} · ${selectedColor ?? ""}`
-    ).replace(/\s+/g, " ").trim();
+  // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
 
-    const emailAttrs = buildEmailAttrs(attrs, {
-      previewIntegrated: previewFullHttps,
-      overlayAll,
-      layerImg,
-      layerTxt,
-      previewFull: previewFullHttps
-    });
+const emailImgs = {
+  previewFull:       typeof previewFullHttps !== "undefined" ? previewFullHttps : "",
+  previewIntegrated: typeof previewIntegratedHttps !== "undefined" ? previewIntegratedHttps : "",
+  overlayAll,
+  layerImg,
+  layerTxt
+};
 
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum, noNum }),
-      attrs: emailAttrs,
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+const emailAttrs = (typeof buildEmailAttrs === "function")
+  ? buildEmailAttrs(attrs, emailImgs)
+  : buildEmailAttrsSafe(attrs, emailImgs);
+
+sendEmailNow({
+  subject: makeEmailSubject({ doNum, noNum }),
+  attrs: emailAttrs,
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attachOverlayAll: true
+});
+
 
     // 10) Añadir al carrito (mantenerse en /cart)
     const accIds = getAccessoryVariantIds();
