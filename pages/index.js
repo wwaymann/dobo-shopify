@@ -685,6 +685,12 @@ const designMetaRef = useRef(null);
     return '#ccc';
   };
 
+ useEffect(() => {
+    if (typeof window !== "undefined" && window.fabric?.Image) {
+      window.fabric.Image.prototype.crossOrigin = "anonymous";
+    }
+  }, []);
+  
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
@@ -1316,6 +1322,18 @@ let previewIntegrated = await exportIntegratedPreview({
   plantUrl
 }) || "";
 
+// ...después de calcular overlayAll/layerImg/layerTxt/previewIntegrated
+const logPNG = (label, dataUrl) => {
+  const bytes = (dataUrl || "").length;
+  console.log(`[DOBO] ${label}`, { bytes });
+};
+
+logPNG("overlayAll", overlayAll);
+logPNG("layerImg", layerImg);
+logPNG("layerTxt", layerTxt);
+logPNG("previewIntegrated", previewIntegrated);
+
+// si prefieres, también después de ensureHttpsUrl(...) para ver si cambió algo
 
 
     // Subir a https
@@ -1443,6 +1461,18 @@ let previewIntegrated = await exportIntegratedPreview({
   plantUrl
 }) || "";
 
+// ...después de calcular overlayAll/layerImg/layerTxt/previewIntegrated
+const logPNG = (label, dataUrl) => {
+  const bytes = (dataUrl || "").length;
+  console.log(`[DOBO] ${label}`, { bytes });
+};
+
+logPNG("overlayAll", overlayAll);
+logPNG("layerImg", layerImg);
+logPNG("layerTxt", layerTxt);
+logPNG("previewIntegrated", previewIntegrated);
+
+// si prefieres, también después de ensureHttpsUrl(...) para ver si cambió algo
 
 
     // Subir a https
