@@ -6,16 +6,7 @@ import HistoryManager from '../lib/history';
 import { applyRelief2DFromURLs } from "../lib/relief2d";
 // 1) fondo (maceta/planta) como backgroundImage
 
-canvas.setBackgroundImage(urlFondo, canvas.renderAll.bind(canvas), {
-  crossOrigin: "anonymous",   // ← IMPORTANTE
-  // ...tus otras opciones (left, top, scaleX, scaleY, etc.)
-});
 
-// 2) cualquier imagen del overlay
-fabric.Image.fromURL(url, (img) => {
-  // ...ajustes de posición/escala
-  canvas.add(img);
-}, { crossOrigin: "anonymous" });     // ← IMPORTANTE
 
 
 // props: { canvas, stageRef, zoomRef }
