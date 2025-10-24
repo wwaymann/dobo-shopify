@@ -1500,6 +1500,7 @@ async function buyNow() {
     // 10) Email (compat)
  // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
+// ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 const shortDescription = (
   `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
   `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1532,6 +1533,7 @@ sendEmailNow({
   attachPreviews: true,
   attachOverlayAll: true
 });
+
 
 
     // 11) Checkout
@@ -1702,29 +1704,24 @@ async function addToCart() {
 
     // 9) Email (compat)
    // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
+// ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 const shortDescription = (
   `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
   `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
   `${activeSize ?? ""} · ${selectedColor ?? ""}`
 ).replace(/\s+/g, " ").trim();
 
-// construye el objeto de imágenes de forma explícita (NO global)
 const emailImgs = {
-  // usa el integrado que definiste en tu función:
-//  - si usas "previewFullHttps" como integrado completo:
   previewFull:       typeof previewFullHttps !== "undefined" ? previewFullHttps : "",
-  //  - si tu integrado “de siempre” es "previewIntegratedHttps", cámbialo aquí:
   previewIntegrated: typeof previewIntegratedHttps !== "undefined" ? previewIntegratedHttps : "",
-
-  overlayAll,        // ya son https en tu código
+  overlayAll,
   layerImg,
   layerTxt
 };
 
-// usa tu buildEmailAttrs si existe; si no, el Safe
 const emailAttrs = (typeof buildEmailAttrs === "function")
-  ? buildEmailAttrs(attrs, emailImgs)        // <-- asegúrate de que tu buildEmailAttrs ACEPTE el 2º parámetro
-  : buildEmailAttrsSafe(attrs, emailImgs);   // fallback seguro
+  ? buildEmailAttrs(attrs, emailImgs)
+  : buildEmailAttrsSafe(attrs, emailImgs);
 
 sendEmailNow({
   subject: makeEmailSubject({ doNum, noNum }),
@@ -1734,6 +1731,8 @@ sendEmailNow({
   attachPreviews: true,
   attachOverlayAll: true
 });
+
+    
 
 
     // 10) Añadir al carrito (mantenerse en /cart)
