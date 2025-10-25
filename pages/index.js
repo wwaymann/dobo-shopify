@@ -1330,6 +1330,7 @@ function buildEmailAttrsSafe(baseAttrs, imgsObj) {
 }
 
 
+
 // —————————————————————————————————————————————
 // BUY NOW
 // —————————————————————————————————————————————
@@ -1498,8 +1499,6 @@ async function buyNow() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
     // 10) Email (compat)
- // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
-// ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 const shortDescription = (
   `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
@@ -1533,6 +1532,7 @@ sendEmailNow({
   attachPreviews: true,
   attachOverlayAll: true
 });
+
 
 
 
@@ -1703,7 +1703,6 @@ async function addToCart() {
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
     // 9) Email (compat)
-   // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 // ----- EMAIL (reemplaza tu bloque actual de email por este) -----
 const shortDescription = (
   `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
