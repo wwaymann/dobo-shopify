@@ -1341,32 +1341,40 @@ async function buyNow() {
     // 1) Esperar editor y tomar el canvas correcto
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
-    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
-    if (!fabricCanvas) throw new Error("canvas-missing");
+    const canvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!canvas) throw new Error("canvas-missing");
 
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // ===== Helpers locales =====
+    // Helpers
     const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const size  = (s)=> (s || "").length;
-    const tooSmall = (d) => size(d) < 2000;
 
     const isTextLike = (o) =>
-      !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+      !!o && (
+        /text/i.test(o.type || "") ||
+        typeof o.text === "string"
+      );
 
     const hasTextDeep = (o) =>
-      !!o && (isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(hasTextDeep)));
+      !!o && (
+        isTextLike(o) ||
+        (Array.isArray(o._objects) && o._objects.some(hasTextDeep))
+      );
 
     const isBaseLike = (o) => {
       if (!o) return false;
       const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
-      // Heurística para “base” (maceta/planta/fondo)
-      return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
+      if (/(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag)) return true;
+      return false;
     };
 
     const hasBaseDeep = (o) =>
-      !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
+      !!o && (
+        isBaseLike(o) ||
+        (Array.isArray(o._objects) && o._objects.some(hasBaseDeep))
+      );
 
     const hidden = [];
     const hideIf = (pred) => {
@@ -1375,23 +1383,24 @@ async function buyNow() {
         if (pred(o)) { hidden.push(o); o.__vis = o.visible; o.visible = false; }
         if (Array.isArray(o._objects)) o._objects.forEach(walk);
       };
-      (fabricCanvas.getObjects?.() || []).forEach(walk);
-      if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
-        const bg = fabricCanvas.backgroundImage;
+      // objetos normales
+      (canvas.getObjects?.() || []).forEach(walk);
+      // backgroundImage tratado aparte
+      if (canvas.backgroundImage && pred(canvas.backgroundImage)) {
+        const bg = canvas.backgroundImage;
         hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
       }
-      fabricCanvas.requestRenderAll?.();
+      canvas.requestRenderAll?.();
     };
     const restoreAll = () => {
       hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
       hidden.length = 0;
-      fabricCanvas.requestRenderAll?.();
+      canvas.requestRenderAll?.();
     };
 
     const snap = (mult = 2) =>
-      fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+      canvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
-    // Componer “full” = pot+plant+overlay en un canvas offscreen
     const loadImage = (url) => new Promise((res, rej) => {
       if (!url) return rej(new Error("no-url"));
       const img = new Image();
@@ -1400,6 +1409,7 @@ async function buyNow() {
       img.onerror = (e) => rej(e);
       img.src = url;
     });
+
     const composeIntegratedPreview = async ({ overlayAllUrl, potUrl, plantUrl }) => {
       const [overlayImg, potImg, plantImg] = await Promise.all([
         loadImage(overlayAllUrl),
@@ -1417,54 +1427,58 @@ async function buyNow() {
       return off.toDataURL("image/png");
     };
 
-    // ===== Capturas =====
     await delay(50); // dar tiempo a fuentes/imagenes
 
-    // 1) Overlay completo (sin base)
-    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    // 2) CAPTURAS
+
+    // 2.1 Overlay completo (sin base)
+    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
     let overlayAll = snap(2);
 
-    // 2) Solo TEXTO (sin base)
+    // 2.2 Solo TEXTO (sin base)
     restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    hideIf((o) => !hasTextDeep(o)); // oculta todo lo que NO sea (o contenga) texto
+    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
+    hideIf((o) => !hasTextDeep(o)); // ocultar todo lo que NO sea texto (o no contenga texto)
     let layerTxt = snap(2);
 
-    // 3) Solo IMAGEN (sin base ni texto)
+    // 2.3 Solo IMAGEN (sin base, sin texto)
     restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    hideIf((o) => hasTextDeep(o)); // oculta texto
+    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
+    hideIf((o) => hasTextDeep(o)); // ocultar texto
     let layerImg = snap(2);
 
-    // 4) “Full” integrado = pot + plant + overlayAll (no dependemos del canvas para la base)
-    restoreAll(); // dejar todo visible para no afectar futuras operaciones
-    let previewFull = "";
-    try {
-      previewFull = await composeIntegratedPreview({ overlayAllUrl: overlayAll, potUrl, plantUrl });
-    } catch {
-      previewFull = snap(2); // último recurso: snapshot del canvas
+    // 2.4 Preview integrado (con base + overlay completo)
+    restoreAll();
+    let previewIntegrated = snap(2);
+
+    // 3) Fallbacks (evitar PNGs transparentes)
+    const tooSmall = (d) => size(d) < 2000;
+    if (tooSmall(previewIntegrated) && !tooSmall(overlayAll)) {
+      try {
+        previewIntegrated = await composeIntegratedPreview({ overlayAllUrl: overlayAll, potUrl, plantUrl });
+      } catch { previewIntegrated = overlayAll; }
+    }
+    if (tooSmall(layerImg) && !tooSmall(overlayAll)) {
+      layerImg = overlayAll; // mejor que vacío
+    }
+    if (tooSmall(layerTxt)) {
+      layerTxt = ""; // no subimos “vacío”
     }
 
-    // Fallbacks contra PNGs “vacíos”
-    if (tooSmall(layerTxt)) layerTxt = "";
-    if (tooSmall(layerImg) && !tooSmall(overlayAll)) layerImg = overlayAll;
-    if (tooSmall(previewFull) && !tooSmall(overlayAll)) previewFull = overlayAll;
+    // 4) Subir a https
+    overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt          = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
 
-    // 5) Subir a https
-    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
-    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
-    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
-
-    // 6) Merge attrs (sin duplicados)
+    // 5) Merge attrs
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview",  previewFullHttps); // 👈 tu preview principal ahora es el integrado completo
-    pushKV("Overlay:All",    overlayAll);
-    pushKV("Layer:Image",    layerImg);
-    pushKV("Layer:Text",     layerTxt);
-    pushKV("Preview:Full",   previewFullHttps); // alias útil/4ta imagen
+    pushKV("DesignPreview", previewIntegrated);
+    pushKV("Overlay:All",   overlayAll);
+    pushKV("Layer:Image",   layerImg);
+    pushKV("Layer:Text",    layerTxt);
 
-    // 7) Precios y producto temporal
+    // 6) Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1474,7 +1488,7 @@ async function buyNow() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps || overlayAll, // usa el integrado completo
+        previewUrl: previewIntegrated || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1486,57 +1500,37 @@ async function buyNow() {
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // 8) DO / NO
+    // 7) DO / NO
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
-    // 9) Publicar assets (si aplica)
+    // 8) Publicar assets (si aplica)
     const again = await waitDesignerReady(20000);
     if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 10) Email (compat)
-// ----- EMAIL (reemplaza tu bloque actual de email por este) -----
-const shortDescription = (
-  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-  `${activeSize ?? ""} · ${selectedColor ?? ""}`
-).replace(/\s+/g, " ").trim();
+    // 9) Email (compat)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
 
-// construye el objeto de imágenes de forma explícita (NO global)
-const emailImgs = {
-  // usa el integrado que definiste en tu función:
-//  - si usas "previewFullHttps" como integrado completo:
-  previewFull:       typeof previewFullHttps !== "undefined" ? previewFullHttps : "",
-  //  - si tu integrado “de siempre” es "previewIntegratedHttps", cámbialo aquí:
-  previewIntegrated: typeof previewIntegratedHttps !== "undefined" ? previewIntegratedHttps : "",
+    const emailAttrs = buildEmailAttrs(attrs, { previewIntegrated, overlayAll, layerImg, layerTxt });
 
-  overlayAll,        // ya son https en tu código
-  layerImg,
-  layerTxt
-};
+    sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
+      attrs: emailAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+      attachOverlayAll: true
+    });
 
-// usa tu buildEmailAttrs si existe; si no, el Safe
-const emailAttrs = (typeof buildEmailAttrs === "function")
-  ? buildEmailAttrs(attrs, emailImgs)        // <-- asegúrate de que tu buildEmailAttrs ACEPTE el 2º parámetro
-  : buildEmailAttrsSafe(attrs, emailImgs);   // fallback seguro
-
-sendEmailNow({
-  subject: makeEmailSubject({ doNum, noNum }),
-  attrs: emailAttrs,
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true,
-  attachOverlayAll: true
-});
-
-
-
-
-    // 11) Checkout
+    // 10) Checkout
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
@@ -1555,22 +1549,19 @@ async function addToCart() {
     // 1) Esperar editor y tomar el canvas correcto
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
-    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
-    if (!fabricCanvas) throw new Error("canvas-missing");
+    const canvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!canvas) throw new Error("canvas-missing");
 
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // ===== Helpers (mismos que arriba) =====
+    // Helpers (mismos que arriba)
     const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const size  = (s)=> (s || "").length;
-    const tooSmall = (d) => size(d) < 2000;
-
     const isTextLike = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
     const hasTextDeep = (o) => !!o && (isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(hasTextDeep)));
     const isBaseLike = (o) => {
-      if (!o) return false;
-      const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
+      const tag = (o?.name || o?.id || o?.doboKind || o?.role || "").toLowerCase();
       return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
     const hasBaseDeep = (o) => !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
@@ -1582,94 +1573,66 @@ async function addToCart() {
         if (pred(o)) { hidden.push(o); o.__vis = o.visible; o.visible = false; }
         if (Array.isArray(o._objects)) o._objects.forEach(walk);
       };
-      (fabricCanvas.getObjects?.() || []).forEach(walk);
-      if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
-        const bg = fabricCanvas.backgroundImage;
+      (canvas.getObjects?.() || []).forEach(walk);
+      if (canvas.backgroundImage && pred(canvas.backgroundImage)) {
+        const bg = canvas.backgroundImage;
         hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
       }
-      fabricCanvas.requestRenderAll?.();
+      canvas.requestRenderAll?.();
     };
     const restoreAll = () => {
       hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
       hidden.length = 0;
-      fabricCanvas.requestRenderAll?.();
+      canvas.requestRenderAll?.();
     };
-    const snap = (mult = 2) =>
-      fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+    const snap = (mult = 2) => canvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
-    const loadImage = (url) => new Promise((res, rej) => {
-      if (!url) return rej(new Error("no-url"));
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => res(img);
-      img.onerror = (e) => rej(e);
-      img.src = url;
-    });
-    const composeIntegratedPreview = async ({ overlayAllUrl, potUrl, plantUrl }) => {
-      const [overlayImg, potImg, plantImg] = await Promise.all([
-        loadImage(overlayAllUrl),
-        potUrl ? loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
-        plantUrl ? loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
-      ]);
-      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
-      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
-      const off = document.createElement("canvas");
-      off.width = W; off.height = H;
-      const ctx = off.getContext("2d");
-      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
-      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
-      ctx.drawImage(overlayImg, 0, 0, W, H);
-      return off.toDataURL("image/png");
-    };
-
-    // ===== Capturas =====
     await delay(50);
 
-    // 1) Overlay completo (sin base)
-    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    // 2) CAPTURAS
+    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
     let overlayAll = snap(2);
 
-    // 2) Solo TEXTO (sin base)
     restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
     hideIf((o) => !hasTextDeep(o));
     let layerTxt = snap(2);
 
-    // 3) Solo IMAGEN (sin base ni texto)
     restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
     hideIf((o) => hasTextDeep(o));
     let layerImg = snap(2);
 
-    // 4) “Full” integrado = pot + plant + overlayAll
     restoreAll();
-    let previewFull = "";
-    try {
-      previewFull = await composeIntegratedPreview({ overlayAllUrl: overlayAll, potUrl, plantUrl });
-    } catch {
-      previewFull = snap(2);
+    let previewIntegrated = snap(2);
+
+    const tooSmall = (d) => size(d) < 2000;
+    if (tooSmall(previewIntegrated) && !tooSmall(overlayAll)) {
+      try {
+        previewIntegrated = await (async () => {
+          // Reuso rápido del compositor definido arriba si lo tienes en scope;
+          // si no, confórmate con overlayAll:
+          return overlayAll;
+        })();
+      } catch { previewIntegrated = overlayAll; }
     }
-
-    // Fallbacks
-    if (tooSmall(layerTxt)) layerTxt = "";
     if (tooSmall(layerImg) && !tooSmall(overlayAll)) layerImg = overlayAll;
-    if (tooSmall(previewFull) && !tooSmall(overlayAll)) previewFull = overlayAll;
+    if (tooSmall(layerTxt)) layerTxt = "";
 
-    // 5) Subir a https
-    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
-    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
-    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+    // 3) Subir a https
+    overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt          = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
 
-    // 6) Merge attrs
+    // 4) Merge attrs
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview",  previewFullHttps);
-    pushKV("Overlay:All",    overlayAll);
-    pushKV("Layer:Image",    layerImg);
-    pushKV("Layer:Text",     layerTxt);
-    pushKV("Preview:Full",   previewFullHttps);
+    pushKV("DesignPreview", previewIntegrated);
+    pushKV("Overlay:All",   overlayAll);
+    pushKV("Layer:Image",   layerImg);
+    pushKV("Layer:Text",    layerTxt);
 
-    // 7) Precios y producto temporal
+    // 5) Precios y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1679,7 +1642,7 @@ async function addToCart() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps || overlayAll,
+        previewUrl: previewIntegrated || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1696,45 +1659,31 @@ async function addToCart() {
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
-    // 8) Publicar assets (si aplica)
+    // 6) Publicar assets (si aplica)
     const again = await waitDesignerReady(20000);
     if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 9) Email (compat)
-// ----- EMAIL (reemplaza tu bloque actual de email por este) -----
-const shortDescription = (
-  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-  `${activeSize ?? ""} · ${selectedColor ?? ""}`
-).replace(/\s+/g, " ").trim();
+    // 7) Email (compat)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
 
-const emailImgs = {
-  previewFull:       typeof previewFullHttps !== "undefined" ? previewFullHttps : "",
-  previewIntegrated: typeof previewIntegratedHttps !== "undefined" ? previewIntegratedHttps : "",
-  overlayAll,
-  layerImg,
-  layerTxt
-};
+    const emailAttrs = buildEmailAttrs(attrs, { previewIntegrated, overlayAll, layerImg, layerTxt });
 
-const emailAttrs = (typeof buildEmailAttrs === "function")
-  ? buildEmailAttrs(attrs, emailImgs)
-  : buildEmailAttrsSafe(attrs, emailImgs);
+    sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
+      attrs: emailAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+      attachOverlayAll: true
+    });
 
-sendEmailNow({
-  subject: makeEmailSubject({ doNum, noNum }),
-  attrs: emailAttrs,
-  meta: { Descripcion: shortDescription, Precio: basePrice },
-  links: { Storefront: location.origin },
-  attachPreviews: true,
-  attachOverlayAll: true
-});
-
-    
-
-
-    // 10) Añadir al carrito (mantenerse en /cart)
+    // 8) Añadir al carrito
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
