@@ -1341,65 +1341,22 @@ async function buyNow() {
     // 1) Esperar editor y tomar el canvas correcto
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
-    const canvas = window.doboDesignAPI?.getCanvas?.() || null;
-    if (!canvas) throw new Error("canvas-missing");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!fabricCanvas) throw new Error("canvas-missing");
 
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // Helpers
+    // Helpers locales (no contaminan global)
     const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const size  = (s)=> (s || "").length;
+    const isText = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text" || typeof o.text === "string");
 
-    const isTextLike = (o) =>
-      !!o && (
-        /text/i.test(o.type || "") ||
-        typeof o.text === "string"
-      );
+    const hideStack = [];
+    const hide = (o) => { if (!o) return; hideStack.push(o); o.__vis = o.visible; o.visible = false; };
+    const restore = () => { hideStack.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; }); hideStack.length = 0; fabricCanvas.requestRenderAll?.(); };
 
-    const hasTextDeep = (o) =>
-      !!o && (
-        isTextLike(o) ||
-        (Array.isArray(o._objects) && o._objects.some(hasTextDeep))
-      );
-
-    const isBaseLike = (o) => {
-      if (!o) return false;
-      const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
-      if (/(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag)) return true;
-      return false;
-    };
-
-    const hasBaseDeep = (o) =>
-      !!o && (
-        isBaseLike(o) ||
-        (Array.isArray(o._objects) && o._objects.some(hasBaseDeep))
-      );
-
-    const hidden = [];
-    const hideIf = (pred) => {
-      const walk = (o) => {
-        if (!o) return;
-        if (pred(o)) { hidden.push(o); o.__vis = o.visible; o.visible = false; }
-        if (Array.isArray(o._objects)) o._objects.forEach(walk);
-      };
-      // objetos normales
-      (canvas.getObjects?.() || []).forEach(walk);
-      // backgroundImage tratado aparte
-      if (canvas.backgroundImage && pred(canvas.backgroundImage)) {
-        const bg = canvas.backgroundImage;
-        hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
-      }
-      canvas.requestRenderAll?.();
-    };
-    const restoreAll = () => {
-      hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
-      hidden.length = 0;
-      canvas.requestRenderAll?.();
-    };
-
-    const snap = (mult = 2) =>
-      canvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+    const snap = (mult = 2) => fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
     const loadImage = (url) => new Promise((res, rej) => {
       if (!url) return rej(new Error("no-url"));
@@ -1418,40 +1375,42 @@ async function buyNow() {
       ]);
       const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
       const H = overlayImg.naturalHeight || overlayImg.height || 1024;
-      const off = document.createElement("canvas");
-      off.width = W; off.height = H;
-      const ctx = off.getContext("2d");
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
       if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
       if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
       ctx.drawImage(overlayImg, 0, 0, W, H);
-      return off.toDataURL("image/png");
+      return canvas.toDataURL("image/png");
     };
 
-    await delay(50); // dar tiempo a fuentes/imagenes
+    // Pequeño yield para asegurar render (fuentes/imagenes)
+    await delay(50);
 
-    // 2) CAPTURAS
-
-    // 2.1 Overlay completo (sin base)
-    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
+    // 2) Capturas — usar SIEMPRE el mismo canvas
+    // 2.1 Overlay completo (sin fondo)
+    if (fabricCanvas.backgroundImage && fabricCanvas.backgroundImage.visible !== false) {
+      hide(fabricCanvas.backgroundImage);
+    }
     let overlayAll = snap(2);
 
-    // 2.2 Solo TEXTO (sin base)
-    restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
-    hideIf((o) => !hasTextDeep(o)); // ocultar todo lo que NO sea texto (o no contenga texto)
+    // 2.2 Solo TEXTO
+    restore();
+    if (fabricCanvas.backgroundImage && fabricCanvas.backgroundImage.visible !== false) hide(fabricCanvas.backgroundImage);
+    fabricCanvas.getObjects().forEach(o => { if (!isText(o)) hide(o); });
     let layerTxt = snap(2);
 
-    // 2.3 Solo IMAGEN (sin base, sin texto)
-    restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
-    hideIf((o) => hasTextDeep(o)); // ocultar texto
+    // 2.3 Solo IMAGEN (no texto)
+    restore();
+    if (fabricCanvas.backgroundImage && fabricCanvas.backgroundImage.visible !== false) hide(fabricCanvas.backgroundImage);
+    fabricCanvas.getObjects().forEach(o => { if (isText(o)) hide(o); });
     let layerImg = snap(2);
 
-    // 2.4 Preview integrado (con base + overlay completo)
-    restoreAll();
+    // 2.4 Preview integrado (con fondo + todo)
+    restore(); // nada oculto
     let previewIntegrated = snap(2);
 
-    // 3) Fallbacks (evitar PNGs transparentes)
+    // 3) Fallbacks (evita PNGs transparentes)
     const tooSmall = (d) => size(d) < 2000;
     if (tooSmall(previewIntegrated) && !tooSmall(overlayAll)) {
       try {
@@ -1459,26 +1418,27 @@ async function buyNow() {
       } catch { previewIntegrated = overlayAll; }
     }
     if (tooSmall(layerImg) && !tooSmall(overlayAll)) {
-      layerImg = overlayAll; // mejor que vacío
+      // mejor overlay que vacío
+      layerImg = overlayAll;
     }
     if (tooSmall(layerTxt)) {
-      layerTxt = ""; // no subimos “vacío”
+      layerTxt = ""; // si no hay texto real, no subimos “vacío”
     }
 
-    // 4) Subir a https
+    // 4) Subir a https (Cloudinary u otro)
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
     layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
     layerTxt          = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
     previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
 
-    // 5) Merge attrs
+    // 5) Merge attrs (sin duplicados)
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
     pushKV("DesignPreview", previewIntegrated);
     pushKV("Overlay:All",   overlayAll);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 6) Precios y producto temporal
+    // 6) Precio y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1507,8 +1467,8 @@ async function buyNow() {
     pushKV("_NO", noNum);
 
     // 8) Publicar assets (si aplica)
-    const again = await waitDesignerReady(20000);
-    if (!again) throw new Error("designer-not-ready");
+    const apiReady = await waitDesignerReady(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
@@ -1549,90 +1509,95 @@ async function addToCart() {
     // 1) Esperar editor y tomar el canvas correcto
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
-    const canvas = window.doboDesignAPI?.getCanvas?.() || null;
-    if (!canvas) throw new Error("canvas-missing");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!fabricCanvas) throw new Error("canvas-missing");
 
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // Helpers (mismos que arriba)
     const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const size  = (s)=> (s || "").length;
-    const isTextLike = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
-    const hasTextDeep = (o) => !!o && (isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(hasTextDeep)));
-    const isBaseLike = (o) => {
-      const tag = (o?.name || o?.id || o?.doboKind || o?.role || "").toLowerCase();
-      return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
-    };
-    const hasBaseDeep = (o) => !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
+    const isText = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text" || typeof o.text === "string");
 
-    const hidden = [];
-    const hideIf = (pred) => {
-      const walk = (o) => {
-        if (!o) return;
-        if (pred(o)) { hidden.push(o); o.__vis = o.visible; o.visible = false; }
-        if (Array.isArray(o._objects)) o._objects.forEach(walk);
-      };
-      (canvas.getObjects?.() || []).forEach(walk);
-      if (canvas.backgroundImage && pred(canvas.backgroundImage)) {
-        const bg = canvas.backgroundImage;
-        hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
-      }
-      canvas.requestRenderAll?.();
+    const hideStack = [];
+    const hide = (o) => { if (!o) return; hideStack.push(o); o.__vis = o.visible; o.visible = false; };
+    const restore = () => { hideStack.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; }); hideStack.length = 0; fabricCanvas.requestRenderAll?.(); };
+
+    const snap = (mult = 2) => fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+
+    const loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+
+    const composeIntegratedPreview = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        loadImage(overlayAllUrl),
+        potUrl ? loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return canvas.toDataURL("image/png");
     };
-    const restoreAll = () => {
-      hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
-      hidden.length = 0;
-      canvas.requestRenderAll?.();
-    };
-    const snap = (mult = 2) => canvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
     await delay(50);
 
-    // 2) CAPTURAS
-    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
+    // 2) Capturas
+    if (fabricCanvas.backgroundImage && fabricCanvas.backgroundImage.visible !== false) hide(fabricCanvas.backgroundImage);
     let overlayAll = snap(2);
 
-    restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
-    hideIf((o) => !hasTextDeep(o));
+    restore();
+    if (fabricCanvas.backgroundImage && fabricCanvas.backgroundImage.visible !== false) hide(fabricCanvas.backgroundImage);
+    fabricCanvas.getObjects().forEach(o => { if (!isText(o)) hide(o); });
     let layerTxt = snap(2);
 
-    restoreAll();
-    hideIf((o) => hasBaseDeep(o) || o === canvas.backgroundImage);
-    hideIf((o) => hasTextDeep(o));
+    restore();
+    if (fabricCanvas.backgroundImage && fabricCanvas.backgroundImage.visible !== false) hide(fabricCanvas.backgroundImage);
+    fabricCanvas.getObjects().forEach(o => { if (isText(o)) hide(o); });
     let layerImg = snap(2);
 
-    restoreAll();
+    restore();
     let previewIntegrated = snap(2);
 
+    // 3) Fallbacks
     const tooSmall = (d) => size(d) < 2000;
     if (tooSmall(previewIntegrated) && !tooSmall(overlayAll)) {
       try {
-        previewIntegrated = await (async () => {
-          // Reuso rápido del compositor definido arriba si lo tienes en scope;
-          // si no, confórmate con overlayAll:
-          return overlayAll;
-        })();
+        previewIntegrated = await composeIntegratedPreview({ overlayAllUrl: overlayAll, potUrl, plantUrl });
       } catch { previewIntegrated = overlayAll; }
     }
-    if (tooSmall(layerImg) && !tooSmall(overlayAll)) layerImg = overlayAll;
-    if (tooSmall(layerTxt)) layerTxt = "";
+    if (tooSmall(layerImg) && !tooSmall(overlayAll)) {
+      layerImg = overlayAll;
+    }
+    if (tooSmall(layerTxt)) {
+      layerTxt = "";
+    }
 
-    // 3) Subir a https
+    // 4) Subir a https
     overlayAll        = await ensureHttpsUrl(overlayAll, "overlay");
     layerImg          = await ensureHttpsUrl(layerImg, "layer-image");
     layerTxt          = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
     previewIntegrated = await ensureHttpsUrl(previewIntegrated, "preview-integrated");
 
-    // 4) Merge attrs
+    // 5) Merge attrs
     const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
     pushKV("DesignPreview", previewIntegrated);
     pushKV("Overlay:All",   overlayAll);
     pushKV("Layer:Image",   layerImg);
     pushKV("Layer:Text",    layerTxt);
 
-    // 5) Precios y producto temporal
+    // 6) Precio y producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1659,13 +1624,13 @@ async function addToCart() {
     pushKV("_DO", doNum);
     pushKV("_NO", noNum);
 
-    // 6) Publicar assets (si aplica)
-    const again = await waitDesignerReady(20000);
-    if (!again) throw new Error("designer-not-ready");
+    // 7) Publicar assets (si aplica)
+    const apiReady = await waitDesignerReady(20000);
+    if (!apiReady) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 7) Email (compat)
+    // 8) Email (compat)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1683,7 +1648,7 @@ async function addToCart() {
       attachOverlayAll: true
     });
 
-    // 8) Añadir al carrito
+    // 9) Añadir al carrito (quedarse en /cart)
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
