@@ -1494,6 +1494,41 @@ async function buyNow() {
     const potDataURL   = await fetchDataURLViaBinaryProxy(potUrl);
     const plantDataURL = await fetchDataURLViaBinaryProxy(plantUrl);
 
+// Reemplaza la definición de __loadImage en buyNow y también en addToCart
+const __loadImage = async (url) => {
+  if (!url) throw new Error("no-url");
+  // intento directo
+  try {
+    await new Promise((res, rej) => {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = res;
+      im.onerror = rej;
+      im.src = url;
+    });
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.src = url;
+    return im;
+  } catch (e1) {
+    // fallback: rehost para CORS
+    const prox = await rehostForCORS(url);
+    if (!prox) throw new Error("rehost-failed");
+    await new Promise((res, rej) => {
+      const im2 = new Image();
+      im2.crossOrigin = "anonymous";
+      im2.onload = res;
+      im2.onerror = rej;
+      im2.src = prox;
+    });
+    const im2 = new Image();
+    im2.crossOrigin = "anonymous";
+    im2.src = prox;
+    return im2;
+  }
+};
+
+    
     // Componer FULL (maceta + planta + overlay)
     let previewFull;
     try {
@@ -1708,6 +1743,40 @@ async function addToCart() {
     } catch {
       previewFull = overlayAll;
     }
+
+    // Reemplaza la definición de __loadImage en buyNow y también en addToCart
+const __loadImage = async (url) => {
+  if (!url) throw new Error("no-url");
+  // intento directo
+  try {
+    await new Promise((res, rej) => {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = res;
+      im.onerror = rej;
+      im.src = url;
+    });
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.src = url;
+    return im;
+  } catch (e1) {
+    // fallback: rehost para CORS
+    const prox = await rehostForCORS(url);
+    if (!prox) throw new Error("rehost-failed");
+    await new Promise((res, rej) => {
+      const im2 = new Image();
+      im2.crossOrigin = "anonymous";
+      im2.onload = res;
+      im2.onerror = rej;
+      im2.src = prox;
+    });
+    const im2 = new Image();
+    im2.crossOrigin = "anonymous";
+    im2.src = prox;
+    return im2;
+  }
+};
 
    const { overlayAllHttps, layerImgHttps, layerTxtHttps, previewFullHttps } =
   await __toHttpsSet({ overlayAll, layerImg, layerTxt, previewFull });
