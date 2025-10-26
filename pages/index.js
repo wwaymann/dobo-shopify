@@ -8,30 +8,38 @@ import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
-// Inserta/actualiza una pareja key/value dentro de attrs (sin duplicar claves)
-function __putKV(attrs, k, v) {
-  if (!v) return attrs;
-  const kLow = String(k).toLowerCase();
-  return [...attrs.filter(a => {
-    const kk = String(a.key || "").toLowerCase();
-    return kk !== kLow && kk !== `_${kLow}`;
-  }), { key: k, value: v }];
+// ===== Helpers idempotentes (ponlos una sola vez, arriba del archivo) =====
+
+// Inserta/actualiza una clave (case-insensitive), evitando duplicados.
+var __putKV;
+if (typeof __putKV !== "function") {
+  __putKV = function (arr, key, value) {
+    if (!value) return arr;
+    const low = String(key).toLowerCase();
+    return [
+      ...arr.filter((a) => {
+        const kk = String(a.key || "").toLowerCase();
+        return kk !== low && kk !== `_${low}`;
+      }),
+      { key, value },
+    ];
+  };
 }
 
-// Escribe TODAS las variantes que el email/Shopify suelen leer.
-// Ej: base="Overlay:All" -> ["Overlay:All", "OverlayAll", "_OverlayAll"]
-function __putAllAliases(attrs, baseKey, value) {
-  if (!value) return attrs;
-  const noColon = baseKey.replace(/:/g, "");
-  const variants = [
-    baseKey,            // "Overlay:All" | "Layer:Image" | "Layer:Text" | "DesignPreview"
-    noColon,            // "OverlayAll"  | "LayerImage"  | "LayerText"  | "DesignPreview"
-    `_${noColon}`       // "_OverlayAll" | "_LayerImage" | "_LayerText" | "_DesignPreview"
-  ];
-  let out = attrs;
-  for (const k of variants) out = __putKV(out, k, value);
-  return out;
+// Escribe todas las variantes que puede leer tu backend/email
+//  baseKey="Overlay:All" -> "Overlay:All", "OverlayAll", "_OverlayAll"
+var __putAllAliases;
+if (typeof __putAllAliases !== "function") {
+  __putAllAliases = function (attrs, baseKey, value) {
+    if (!value) return attrs;
+    const noColon = baseKey.replace(/:/g, "");
+    const variants = [baseKey, noColon, `_${noColon}`];
+    let out = attrs;
+    for (const k of variants) out = __putKV(out, k, value);
+    return out;
+  };
 }
+
 
 // Quita duplicados por clave (case-insensitive)
 function __dedupByKey(list) {
