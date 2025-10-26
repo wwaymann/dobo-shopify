@@ -8,6 +8,69 @@ import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
+// Quita duplicados por clave (case-insensitive)
+function __dedupByKey(list) {
+  const seen = new Set();
+  const out = [];
+  for (const a of list || []) {
+    const k = String(a?.key || "").toLowerCase();
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(a);
+  }
+  return out;
+}
+
+// Inserta/actualiza una clave (case-insensitive), y permite aliasar sin duplicar
+function __putKV(arr, key, value) {
+  if (!value) return arr;
+  const low = key.toLowerCase();
+  const filtered = (arr || []).filter(a => {
+    const k = String(a?.key || "").toLowerCase();
+    return k !== low;
+  });
+  return [...filtered, { key, value }];
+}
+
+// Construye attrs compatibles para el EMAIL duplicando las claves en todos los alias comunes
+function makeCompatEmailAttrs(baseAttrs, urls) {
+  let out = Array.isArray(baseAttrs) ? [...baseAttrs] : [];
+  const {
+    previewFullHttps, // integrado: maceta + planta + overlay
+    overlayAllHttps,
+    layerImgHttps,
+    layerTxtHttps
+  } = urls;
+
+  // DesignPreview (todas las variantes)
+  out = __putKV(out, "DesignPreview", previewFullHttps);
+  out = __putKV(out, "_DesignPreview", previewFullHttps);
+  out = __putKV(out, "Preview:Full", previewFullHttps);
+  out = __putKV(out, "PreviewFull", previewFullHttps);
+
+  // OverlayAll (todas las variantes)
+  if (overlayAllHttps) {
+    out = __putKV(out, "Overlay:All", overlayAllHttps);
+    out = __putKV(out, "OverlayAll", overlayAllHttps);
+    out = __putKV(out, "_OverlayAll", overlayAllHttps);
+  }
+
+  // LayerImage (todas las variantes)
+  if (layerImgHttps) {
+    out = __putKV(out, "Layer:Image", layerImgHttps);
+    out = __putKV(out, "LayerImage", layerImgHttps);
+    out = __putKV(out, "_LayerImage", layerImgHttps);
+  }
+
+  // LayerText (todas las variantes)
+  if (layerTxtHttps) {
+    out = __putKV(out, "Layer:Text", layerTxtHttps);
+    out = __putKV(out, "LayerText", layerTxtHttps);
+    out = __putKV(out, "_LayerText", layerTxtHttps);
+  }
+
+  return __dedupByKey(out);
+}
 
 // Convierte un Blob en dataURL (para dibujar en canvas sin CORS)
 const blobToDataURL = (blob) =>
@@ -1459,20 +1522,40 @@ async function buyNow() {
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    const shortDescription = (
-      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-      `${activeSize ?? ""} · ${selectedColor ?? ""}`
-    ).replace(/\s+/g, " ").trim();
+ // —— Compatibilidad de claves para el correo ——
+// Construimos un set de attrs que incluye TODAS las variantes de nombres
+const emailAttrs = makeCompatEmailAttrs(attrs, {
+  previewFullHttps,
+  overlayAllHttps,
+  layerImgHttps,
+  layerTxtHttps
+});
 
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum, noNum }),
-      attrs: attrs.slice(),
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+// Opcional: log corto para verificar tamaños (0 => vacío)
+console.log("[DOBO][EMAIL buyNow] sizes:", {
+  preview: (previewFullHttps || "").length,
+  overlay: (overlayAllHttps  || "").length,
+  layerImg: (layerImgHttps   || "").length,
+  layerTxt: (layerTxtHttps   || "").length
+});
+
+// Descripción/subject como ya lo tenías
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
+
+// Enviar correo usando los attrs compatibles
+sendEmailNow({
+  subject: makeEmailSubject({ doNum, noNum }),
+  attrs: emailAttrs,                 // ← ahora con todas las claves “legacy” y nuevas
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attachOverlayAll: true
+});
+
 
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
@@ -1615,20 +1698,35 @@ async function addToCart() {
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    const shortDescription = (
-      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
-      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
-      `${activeSize ?? ""} · ${selectedColor ?? ""}`
-    ).replace(/\s+/g, " ").trim();
+const emailAttrs = makeCompatEmailAttrs(attrs, {
+  previewFullHttps,
+  overlayAllHttps,
+  layerImgHttps,
+  layerTxtHttps
+});
 
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum, noNum }),
-      attrs: attrs.slice(),
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+console.log("[DOBO][EMAIL addToCart] sizes:", {
+  preview: (previewFullHttps || "").length,
+  overlay: (overlayAllHttps  || "").length,
+  layerImg: (layerImgHttps   || "").length,
+  layerTxt: (layerTxtHttps   || "").length
+});
+
+const shortDescription = (
+  `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+  `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+  `${activeSize ?? ""} · ${selectedColor ?? ""}`
+).replace(/\s+/g, " ").trim();
+
+sendEmailNow({
+  subject: makeEmailSubject({ doNum, noNum }),
+  attrs: emailAttrs,
+  meta: { Descripcion: shortDescription, Precio: basePrice },
+  links: { Storefront: location.origin },
+  attachPreviews: true,
+  attachOverlayAll: true
+});
+
 
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
