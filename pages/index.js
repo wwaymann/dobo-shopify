@@ -40,7 +40,7 @@ function readImageUrlFor(x) {
 }
 
 // Busca en el DOM si no vino en datos
-function findStageImgUrl(selectors) {
+function __findStageImgUrl(selectors) {
   for (const sel of selectors) {
     const el = document.querySelector(sel);
     if (!el) continue;
@@ -229,7 +229,7 @@ async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
 }
 
 // --- LECTURA de URL de imagen desde tus productos (fallback de datos) ---
-function readImageUrlFor(prod) {
+function __readImageUrlFor(prod) {
   return (
     prod?.featuredImage?.url ||
     prod?.image?.url || prod?.image?.src ||
@@ -1343,8 +1343,8 @@ async function buyNow() {
     const snap = (mult=2)=> canvas.toDataURL({ format:"png", multiplier: mult, backgroundColor: null });
 
     // --- URLs de maceta/planta ---
-    let potUrl   = readImageUrlFor(pots?.[selectedPotIndex])   || "";
-    let plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]) || "";
+    let potUrl   = __readImageUrlFor(pots?.[selectedPotIndex])   || "";
+    let plantUrl = __readImageUrlFor(plants?.[selectedPlantIndex]) || "";
     if (!potUrl)   potUrl   = findStageImgUrl(['[data-role="pot"] img','.dobo-pot img','.pot img','#pot img','[data-role="pot"]','.dobo-pot','.pot','#pot']);
     if (!plantUrl) plantUrl = findStageImgUrl(['[data-role="plant"] img','.dobo-plant img','.plant img','#plant img','[data-role="plant"]','.dobo-plant','.plant','#plant']);
 
