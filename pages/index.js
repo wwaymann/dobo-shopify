@@ -1297,6 +1297,28 @@ const getAccessoryVariantIds = () =>
 
 
 
+// Helper DOM: intenta extraer la URL de una imagen desde el escenario (img src o background-image)
+function findStageImgUrl(selectors) {
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+
+    // Caso <img>
+    if (typeof el.src === "string" && el.src) {
+      return el.src;
+    }
+
+    // Caso background-image en CSS
+    const bg = (getComputedStyle(el).backgroundImage || "");
+    // extrae url("...") o url('...') o url(...)
+    const m = bg.match(/url\(["']?(.+?)["']?\)/i);
+    if (m && m[1]) {
+      // limpia &quot; si el motor de estilos los dejó
+      return m[1].replace(/&quot;/g, '"');
+    }
+  }
+  return "";
+}
 
 // —————————————————————————————————————————————
 // BUY NOW
