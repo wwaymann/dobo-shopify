@@ -1608,18 +1608,16 @@ async function addToCart() {
       previewFull = overlayAll;
     }
 
-    // Exponer valores para inspección desde consola
-__exposeDebug("buyNow", {
+__exposeDebug("addToCart", {
   potUrl,
   plantUrl,
   overlayAllBytes: (overlayAll || "").length,
   layerImgBytes:   (layerImg   || "").length,
   layerTxtBytes:   (layerTxt   || "").length
 });
-
-// (opcional) acceso rápido desde la consola
 window.__potUrl   = potUrl;
 window.__plantUrl = plantUrl;
+
 
     // 6) Subir a https y mergear attrs
     const overlayAllHttps   = await ensureHttpsUrl(overlayAll, "overlay");
