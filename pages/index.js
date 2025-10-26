@@ -8,6 +8,31 @@ import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
+// Inserta/actualiza una pareja key/value dentro de attrs (sin duplicar claves)
+function __putKV(attrs, k, v) {
+  if (!v) return attrs;
+  const kLow = String(k).toLowerCase();
+  return [...attrs.filter(a => {
+    const kk = String(a.key || "").toLowerCase();
+    return kk !== kLow && kk !== `_${kLow}`;
+  }), { key: k, value: v }];
+}
+
+// Escribe TODAS las variantes que el email/Shopify suelen leer.
+// Ej: base="Overlay:All" -> ["Overlay:All", "OverlayAll", "_OverlayAll"]
+function __putAllAliases(attrs, baseKey, value) {
+  if (!value) return attrs;
+  const noColon = baseKey.replace(/:/g, "");
+  const variants = [
+    baseKey,            // "Overlay:All" | "Layer:Image" | "Layer:Text" | "DesignPreview"
+    noColon,            // "OverlayAll"  | "LayerImage"  | "LayerText"  | "DesignPreview"
+    `_${noColon}`       // "_OverlayAll" | "_LayerImage" | "_LayerText" | "_DesignPreview"
+  ];
+  let out = attrs;
+  for (const k of variants) out = __putKV(out, k, value);
+  return out;
+}
+
 // Quita duplicados por clave (case-insensitive)
 function __dedupByKey(list) {
   const seen = new Set();
@@ -1539,22 +1564,46 @@ console.log("[DOBO][EMAIL buyNow] sizes:", {
   layerTxt: (layerTxtHttps   || "").length
 });
 
-// Descripción/subject como ya lo tenías
+// ——— Subir a https (si no lo hiciste ya) ———
+const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
+const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
+const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
+// ——— Merge de atributos con ALIAS para máxima compatibilidad ———
+attrs = __putAllAliases(attrs, "DesignPreview",  previewFullHttps); // 👉 lo que se publica y muestra
+attrs = __putAllAliases(attrs, "Overlay:All",    overlayAllHttps);
+attrs = __putAllAliases(attrs, "Layer:Image",    layerImgHttps);
+attrs = __putAllAliases(attrs, "Layer:Text",     layerTxtHttps);
+
+// (alias útil para backend antiguos que miran "Preview:Full")
+attrs = __putKV(attrs, "Preview:Full", previewFullHttps);
+
+// DO / NO (mantén tu cálculo actual)
+const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+const noNum = String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId);
+attrs = __putKV(attrs, "_DO", doNum);
+attrs = __putKV(attrs, "_NO", noNum);
+attrs = __putKV(attrs, "DO", doNum);
+attrs = __putKV(attrs, "NO", noNum);
+
+// ——— Email ———
 const shortDescription = (
   `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
   `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
   `${activeSize ?? ""} · ${selectedColor ?? ""}`
 ).replace(/\s+/g, " ").trim();
 
-// Enviar correo usando los attrs compatibles
 sendEmailNow({
   subject: makeEmailSubject({ doNum, noNum }),
-  attrs: emailAttrs,                 // ← ahora con todas las claves “legacy” y nuevas
+  // OJO: manda attrs completos (ya incluyen TODAS las variantes)
+  attrs: attrs.slice(),
   meta: { Descripcion: shortDescription, Precio: basePrice },
   links: { Storefront: location.origin },
   attachPreviews: true,
   attachOverlayAll: true
 });
+
 
 
     const accIds = getAccessoryVariantIds();
@@ -1712,6 +1761,24 @@ console.log("[DOBO][EMAIL addToCart] sizes:", {
   layerTxt: (layerTxtHttps   || "").length
 });
 
+const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
+const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
+const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
+attrs = __putAllAliases(attrs, "DesignPreview",  previewFullHttps);
+attrs = __putAllAliases(attrs, "Overlay:All",    overlayAllHttps);
+attrs = __putAllAliases(attrs, "Layer:Image",    layerImgHttps);
+attrs = __putAllAliases(attrs, "Layer:Text",     layerTxtHttps);
+attrs = __putKV(attrs, "Preview:Full", previewFullHttps);
+
+const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+const noNum = String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId);
+attrs = __putKV(attrs, "_DO", doNum);
+attrs = __putKV(attrs, "_NO", noNum);
+attrs = __putKV(attrs, "DO", doNum);
+attrs = __putKV(attrs, "NO", noNum);
+
 const shortDescription = (
   `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
   `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1720,12 +1787,13 @@ const shortDescription = (
 
 sendEmailNow({
   subject: makeEmailSubject({ doNum, noNum }),
-  attrs: emailAttrs,
+  attrs: attrs.slice(),
   meta: { Descripcion: shortDescription, Precio: basePrice },
   links: { Storefront: location.origin },
   attachPreviews: true,
   attachOverlayAll: true
 });
+
 
 
     const accIds = getAccessoryVariantIds();
