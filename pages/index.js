@@ -10,39 +10,7 @@ import * as DS from "../lib/designStore"; // namespace import (sin destructuring
 
 
 // 1) arriba de pages/index.js (una sola vez)
-function buildEmailAttrs(attrs = [], { previewIntegrated = "", overlayAll = "", layerImg = "", layerTxt = "" } = {}) {
-  const out = [...(attrs || [])];
-  const get = (k) => (out.find(a => a.key === k) || {}).value || "";
-  const put = (k, v) => { if (v && !out.some(a => a.key === k)) out.push({ key: k, value: String(v) }); };
 
-  const preview = previewIntegrated || get("DesignPreview") || get("_DesignPreview");
-  put("DesignPreview",  preview);
-  put("_DesignPreview", preview);
-  put("Preview:Full",   imgs.previewFull); 
-  
-
-  const ov = overlayAll || get("Overlay:All") || get("OverlayAll") || get("_OverlayAll");
-  put("Overlay:All", ov);
-  put("OverlayAll",  ov);
-  put("_OverlayAll", ov);
-
-  const li = layerImg || get("Layer:Image") || get("LayerImage") || get("_LayerImage");
-  put("Layer:Image", li);
-  put("LayerImage",  li);
-  put("_LayerImage", li);
-
-  const lt = layerTxt || get("Layer:Text") || get("LayerText") || get("_LayerText");
-  put("Layer:Text", lt);
-  put("LayerText",  lt);
-  put("_LayerText", lt);
-
-  const doNum = get("_DO") || get("DO");
-  const noNum = get("_NO") || get("NO");
-  put("_DO", doNum); put("DO", doNum);
-  put("_NO", noNum); put("NO", noNum);
-
-  return out;
-}
 
 
 
@@ -1470,7 +1438,7 @@ async function buyNow() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    const emailAttrs = buildEmailAttrs(attrs, { previewIntegrated, overlayAll, layerImg, layerTxt });
+    const emailAttrs = (attrs, { previewIntegrated, overlayAll, layerImg, layerTxt });
 
     sendEmailNow({
       subject: makeEmailSubject({ doNum, noNum }),
@@ -1623,7 +1591,7 @@ async function addToCart() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    const emailAttrs = buildEmailAttrs(attrs, { previewIntegrated, overlayAll, layerImg, layerTxt });
+  //  const emailAttrs = buildEmailAttrs(attrs, { previewIntegrated, overlayAll, layerImg, layerTxt });
 
     sendEmailNow({
       subject: makeEmailSubject({ doNum, noNum }),
