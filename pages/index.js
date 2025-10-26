@@ -9,8 +9,48 @@ import dynamic from "next/dynamic";
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
 
-// 1) arriba de pages/index.js (una sola vez)
+// Convierte un Blob en dataURL (para dibujar en canvas sin CORS)
+const blobToDataURL = (blob) =>
+  new Promise((res) => { const fr = new FileReader(); fr.onloadend = () => res(fr.result); fr.readAsDataURL(blob); });
 
+// Proxy binario → evita límites/JSON enormes
+async function fetchDataURLViaBinaryProxy(u) {
+  if (!u) return "";
+  try {
+    const r = await fetch(`/api/image-proxy-bin?url=${encodeURIComponent(u)}`);
+    if (!r.ok) return "";
+    const b = await r.blob();
+    if (!b || !b.size) return "";
+    return await blobToDataURL(b);
+  } catch {
+    return "";
+  }
+}
+
+// Lectura de URLs desde tus objetos de producto/colección
+function readImageUrlFor(x) {
+  if (!x) return "";
+  return (
+    x?.featured_image?.src ||
+    x?.image?.src ||
+    x?.images?.[0]?.src ||
+    x?.featuredMedia?.preview?.image?.url ||
+    x?.preview_image?.src || ""
+  );
+}
+
+// Busca en el DOM si no vino en datos
+function findStageImgUrl(selectors) {
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    if (el.src) return el.src;
+    const bg = getComputedStyle(el).backgroundImage || "";
+    const m = bg.match(/url\(["']?(.+?)["']?\)/i);
+    if (m && m[1]) return m[1];
+  }
+  return "";
+}
 
 // Helper de depuración: guarda datos en window.__doboDebug
 function __exposeDebug(tag, data) {
@@ -1265,13 +1305,12 @@ async function buyNow() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // 1) Asegurar editor/canvas
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
     const canvas = window.doboDesignAPI?.getCanvas?.() || null;
     if (!canvas) throw new Error("canvas-missing");
 
-    // 2) Helpers locales (evita dependencias globales)
+    // --- helpers de canvas para separar capas ---
     const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const small = (d)=> (d||"").length < 2000;
     const isTextLike  = (o)=> !!o && (/text/i.test(o.type||"") || typeof o.text === "string");
@@ -1282,7 +1321,6 @@ async function buyNow() {
       return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
     const hasBaseDeep = (o)=> !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
-
     const hidden = [];
     const hideIf = (pred) => {
       const walk = (o) => {
@@ -1304,66 +1342,25 @@ async function buyNow() {
     };
     const snap = (mult=2)=> canvas.toDataURL({ format:"png", multiplier: mult, backgroundColor: null });
 
-    // Extraer URL de imagen de un objeto de producto
-    const readUrl = (x) =>
-      (x?.featured_image?.src ||
-       x?.image?.src ||
-       x?.images?.[0]?.src ||
-       x?.featuredMedia?.preview?.image?.url ||
-       x?.preview_image?.src || "");
-
-    // Buscar en el DOM si no viene desde data
-    const findStageImgUrl = (selectors) => {
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (!el) continue;
-        if (el.src) return el.src;
-        const bg = getComputedStyle(el).backgroundImage || "";
-        const m = bg.match(/url\(["']?(.+?)["']?\)/i);
-        if (m && m[1]) return m[1];
-      }
-      return "";
-    };
-
-    const toDataURLViaProxy = async (u) => {
-      if (!u) return "";
-      try {
-        const r = await fetch(`/api/image-proxy?url=${encodeURIComponent(u)}`);
-        if (!r.ok) return "";
-        const j = await r.json();
-        return j.dataUrl || "";
-      } catch { return ""; }
-    };
-
-    const loadImage = (src) => new Promise((res, rej) => {
-      if (!src) return rej(new Error("no-src"));
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => res(img);
-      img.onerror = (e) => rej(e);
-      img.src = src;
-    });
-
-    // 3) Resolver URLs de maceta/planta (multi-fuente)
-    let potUrl   = readUrl(pots?.[selectedPotIndex])   || "";
-    let plantUrl = readUrl(plants?.[selectedPlantIndex]) || "";
+    // --- URLs de maceta/planta ---
+    let potUrl   = readImageUrlFor(pots?.[selectedPotIndex])   || "";
+    let plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]) || "";
     if (!potUrl)   potUrl   = findStageImgUrl(['[data-role="pot"] img','.dobo-pot img','.pot img','#pot img','[data-role="pot"]','.dobo-pot','.pot','#pot']);
     if (!plantUrl) plantUrl = findStageImgUrl(['[data-role="plant"] img','.dobo-plant img','.plant img','#plant img','[data-role="plant"]','.dobo-plant','.plant','#plant']);
 
-    // 4) Capturas del diseñador
-    await delay(50); // pequeño flush
+    await delay(50); // flush de render
 
-    // Overlay completo (sin base)
+    // Overlay:All (sin base)
     hideIf((o)=> hasBaseDeep(o) || o === canvas.backgroundImage);
     let overlayAll = snap(2);
 
-    // Solo TEXTO
+    // Layer:Text
     restoreAll();
     hideIf((o)=> hasBaseDeep(o) || o === canvas.backgroundImage);
     hideIf((o)=> !hasTextDeep(o));
     let layerTxt = snap(2);
 
-    // Solo IMAGEN (sin texto)
+    // Layer:Image
     restoreAll();
     hideIf((o)=> hasBaseDeep(o) || o === canvas.backgroundImage);
     hideIf((o)=> hasTextDeep(o));
@@ -1374,52 +1371,41 @@ async function buyNow() {
     if (small(layerTxt)) layerTxt = "";
     if (small(layerImg) && !small(overlayAll)) layerImg = overlayAll;
 
-    // 5) Componer FULL (maceta + planta + overlay) blindando CORS
-    const potDataURL   = await toDataURLViaProxy(potUrl);
-    const plantDataURL = await toDataURLViaProxy(plantUrl);
+    // ====== AQUÍ LA CLAVE: traer base como dataURL por proxy binario ======
+    const potDataURL   = await fetchDataURLViaBinaryProxy(potUrl);
+    const plantDataURL = await fetchDataURLViaBinaryProxy(plantUrl);
+
+    // Componer FULL (maceta + planta + overlay)
     let previewFull;
     try {
-      const overlayImg = await loadImage(overlayAll); // overlayAll es dataURL => seguro
+      const overlayImg = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=rej; i.src=overlayAll; });
       const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
       const H = overlayImg.naturalHeight || overlayImg.height || 1024;
       const off = document.createElement("canvas");
       off.width = W; off.height = H;
       const ctx = off.getContext("2d");
-      if (potDataURL)   { const p = await loadImage(potDataURL);   ctx.drawImage(p,   0, 0, W, H); }
-      if (plantDataURL) { const q = await loadImage(plantDataURL); ctx.drawImage(q,  0, 0, W, H); }
+      if (potDataURL)   { const p = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=rej; i.src=potDataURL;   }); ctx.drawImage(p,   0, 0, W, H); }
+      if (plantDataURL) { const q = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=rej; i.src=plantDataURL; }); ctx.drawImage(q,  0, 0, W, H); }
       ctx.drawImage(overlayImg, 0, 0, W, H);
       previewFull = off.toDataURL("image/png");
     } catch {
-      previewFull = overlayAll; // fallback
+      previewFull = overlayAll; // fallback no rompe flujo
     }
 
-    // Exponer valores para inspección desde consola
-__exposeDebug("buyNow", {
-  potUrl,
-  plantUrl,
-  overlayAllBytes: (overlayAll || "").length,
-  layerImgBytes:   (layerImg   || "").length,
-  layerTxtBytes:   (layerTxt   || "").length
-});
-
-// (opcional) acceso rápido desde la consola
-window.__potUrl   = potUrl;
-window.__plantUrl = plantUrl;
-
-    // 6) Subir a https (Cloudinary) y mergear attrs
-    const overlayAllHttps   = await ensureHttpsUrl(overlayAll, "overlay");
-    const layerImgHttps     = await ensureHttpsUrl(layerImg, "layer-image");
-    const layerTxtHttps     = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps  = await ensureHttpsUrl(previewFull, "preview-full");
+    // Subir a https (Cloudinary) y mergear attrs
+    const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
+    const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
+    const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
 
     const put = (k,v)=>{ if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key:k, value:v }]; };
-    put("DesignPreview",  previewFullHttps); // 👉 se publica esta integrada
+    put("DesignPreview",  previewFullHttps); // 👉 publicar la integrada
     put("Overlay:All",    overlayAllHttps);
     put("Layer:Image",    layerImgHttps);
     put("Layer:Text",     layerTxtHttps);
     put("Preview:Full",   previewFullHttps);
 
-    // 7) Precios y producto temporal
+    // Precios / producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1429,7 +1415,7 @@ window.__plantUrl = plantUrl;
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps, // 👉 publica la compuesta
+        previewUrl: previewFullHttps, // 👉 compuesta, no overlay
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1441,19 +1427,16 @@ window.__plantUrl = plantUrl;
     const dp = await dpRes.json();
     if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
 
-    // 8) DO / NO
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId);
     put("_DO", doNum);
     put("_NO", noNum);
 
-    // 9) Publicar assets
     const again = await waitDesignerReady(20000);
     if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // 10) Email (usa attrs tal cual)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
@@ -1469,7 +1452,6 @@ window.__plantUrl = plantUrl;
       attachOverlayAll: true
     });
 
-    // 11) Checkout
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
   } catch (e) {
@@ -1485,13 +1467,11 @@ async function addToCart() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // 1) Asegurar editor/canvas
     const ready = await waitDesignerReady(20000);
     if (!ready) throw new Error("designer-not-ready");
     const canvas = window.doboDesignAPI?.getCanvas?.() || null;
     if (!canvas) throw new Error("canvas-missing");
 
-    // 2) Helpers locales
     const delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const small = (d)=> (d||"").length < 2000;
     const isTextLike  = (o)=> !!o && (/text/i.test(o.type||"") || typeof o.text === "string");
@@ -1502,7 +1482,6 @@ async function addToCart() {
       return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
     const hasBaseDeep = (o)=> !!o && (isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(hasBaseDeep)));
-
     const hidden = [];
     const hideIf = (pred) => {
       const walk = (o) => {
@@ -1524,51 +1503,12 @@ async function addToCart() {
     };
     const snap = (mult=2)=> canvas.toDataURL({ format:"png", multiplier: mult, backgroundColor: null });
 
-    const readUrl = (x) =>
-      (x?.featured_image?.src ||
-       x?.image?.src ||
-       x?.images?.[0]?.src ||
-       x?.featuredMedia?.preview?.image?.url ||
-       x?.preview_image?.src || "");
-
-    const findStageImgUrl = (selectors) => {
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (!el) continue;
-        if (el.src) return el.src;
-        const bg = getComputedStyle(el).backgroundImage || "";
-        const m = bg.match(/url\(["']?(.+?)["']?\)/i);
-        if (m && m[1]) return m[1];
-      }
-      return "";
-    };
-
-    const toDataURLViaProxy = async (u) => {
-      if (!u) return "";
-      try {
-        const r = await fetch(`/api/image-proxy?url=${encodeURIComponent(u)}`);
-        if (!r.ok) return "";
-        const j = await r.json();
-        return j.dataUrl || "";
-      } catch { return ""; }
-    };
-
-    const loadImage = (src) => new Promise((res, rej) => {
-      if (!src) return rej(new Error("no-src"));
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => res(img);
-      img.onerror = (e) => rej(e);
-      img.src = src;
-    });
-
-    // 3) Resolver URLs de maceta/planta
-    let potUrl   = readUrl(pots?.[selectedPotIndex])   || "";
-    let plantUrl = readUrl(plants?.[selectedPlantIndex]) || "";
+    // URLs base
+    let potUrl   = readImageUrlFor(pots?.[selectedPotIndex])   || "";
+    let plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]) || "";
     if (!potUrl)   potUrl   = findStageImgUrl(['[data-role="pot"] img','.dobo-pot img','.pot img','#pot img','[data-role="pot"]','.dobo-pot','.pot','#pot']);
     if (!plantUrl) plantUrl = findStageImgUrl(['[data-role="plant"] img','.dobo-plant img','.plant img','#plant img','[data-role="plant"]','.dobo-plant','.plant','#plant']);
 
-    // 4) Capturas
     await delay(50);
 
     hideIf((o)=> hasBaseDeep(o) || o === canvas.backgroundImage);
@@ -1589,41 +1529,31 @@ async function addToCart() {
     if (small(layerTxt)) layerTxt = "";
     if (small(layerImg) && !small(overlayAll)) layerImg = overlayAll;
 
-    // 5) Full integrado con proxy (CORS-safe)
-    const potDataURL   = await toDataURLViaProxy(potUrl);
-    const plantDataURL = await toDataURLViaProxy(plantUrl);
+    // Base via proxy binario → dataURL
+    const potDataURL   = await fetchDataURLViaBinaryProxy(potUrl);
+    const plantDataURL = await fetchDataURLViaBinaryProxy(plantUrl);
+
+    // Integrado
     let previewFull;
     try {
-      const overlayImg = await loadImage(overlayAll);
+      const overlayImg = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=rej; i.src=overlayAll; });
       const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
       const H = overlayImg.naturalHeight || overlayImg.height || 1024;
       const off = document.createElement("canvas");
       off.width = W; off.height = H;
       const ctx = off.getContext("2d");
-      if (potDataURL)   { const p = await loadImage(potDataURL);   ctx.drawImage(p,   0, 0, W, H); }
-      if (plantDataURL) { const q = await loadImage(plantDataURL); ctx.drawImage(q,  0, 0, W, H); }
+      if (potDataURL)   { const p = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=rej; i.src=potDataURL;   }); ctx.drawImage(p,   0, 0, W, H); }
+      if (plantDataURL) { const q = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=rej; i.src=plantDataURL; }); ctx.drawImage(q,  0, 0, W, H); }
       ctx.drawImage(overlayImg, 0, 0, W, H);
       previewFull = off.toDataURL("image/png");
     } catch {
       previewFull = overlayAll;
     }
 
-__exposeDebug("addToCart", {
-  potUrl,
-  plantUrl,
-  overlayAllBytes: (overlayAll || "").length,
-  layerImgBytes:   (layerImg   || "").length,
-  layerTxtBytes:   (layerTxt   || "").length
-});
-window.__potUrl   = potUrl;
-window.__plantUrl = plantUrl;
-
-
-    // 6) Subir a https y mergear attrs
-    const overlayAllHttps   = await ensureHttpsUrl(overlayAll, "overlay");
-    const layerImgHttps     = await ensureHttpsUrl(layerImg, "layer-image");
-    const layerTxtHttps     = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps  = await ensureHttpsUrl(previewFull, "preview-full");
+    const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
+    const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
+    const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
 
     const put = (k,v)=>{ if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key:k, value:v }]; };
     put("DesignPreview",  previewFullHttps);
@@ -1632,7 +1562,6 @@ window.__plantUrl = plantUrl;
     put("Layer:Text",     layerTxtHttps);
     put("Preview:Full",   previewFullHttps);
 
-    // 7) Producto temporal
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1642,7 +1571,7 @@ window.__plantUrl = plantUrl;
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps, // 👉 publicar compuesta
+        previewUrl: previewFullHttps,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1679,7 +1608,6 @@ window.__plantUrl = plantUrl;
       attachOverlayAll: true
     });
 
-    // 8) Carrito
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
