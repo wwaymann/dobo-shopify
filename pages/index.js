@@ -12,6 +12,14 @@ import * as DS from "../lib/designStore"; // namespace import (sin destructuring
 // 1) arriba de pages/index.js (una sola vez)
 
 
+// Helper de depuración: guarda datos en window.__doboDebug
+function __exposeDebug(tag, data) {
+  try {
+    window.__doboDebug = window.__doboDebug || {};
+    window.__doboDebug[tag] = data;
+    console.log(`[DOBO][${tag}]`, data);
+  } catch (e) {}
+}
 
 
 
@@ -1385,6 +1393,19 @@ async function buyNow() {
       previewFull = overlayAll; // fallback
     }
 
+    // Exponer valores para inspección desde consola
+__exposeDebug("buyNow", {
+  potUrl,
+  plantUrl,
+  overlayAllBytes: (overlayAll || "").length,
+  layerImgBytes:   (layerImg   || "").length,
+  layerTxtBytes:   (layerTxt   || "").length
+});
+
+// (opcional) acceso rápido desde la consola
+window.__potUrl   = potUrl;
+window.__plantUrl = plantUrl;
+
     // 6) Subir a https (Cloudinary) y mergear attrs
     const overlayAllHttps   = await ensureHttpsUrl(overlayAll, "overlay");
     const layerImgHttps     = await ensureHttpsUrl(layerImg, "layer-image");
@@ -1586,6 +1607,19 @@ async function addToCart() {
     } catch {
       previewFull = overlayAll;
     }
+
+    // Exponer valores para inspección desde consola
+__exposeDebug("buyNow", {
+  potUrl,
+  plantUrl,
+  overlayAllBytes: (overlayAll || "").length,
+  layerImgBytes:   (layerImg   || "").length,
+  layerTxtBytes:   (layerTxt   || "").length
+});
+
+// (opcional) acceso rápido desde la consola
+window.__potUrl   = potUrl;
+window.__plantUrl = plantUrl;
 
     // 6) Subir a https y mergear attrs
     const overlayAllHttps   = await ensureHttpsUrl(overlayAll, "overlay");
