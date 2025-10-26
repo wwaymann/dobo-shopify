@@ -1279,27 +1279,6 @@ const getAccessoryVariantIds = () =>
     })
     .filter((id) => /^\d+$/.test(id));
 
-// Helper "a prueba de balas": no depende de variables globales
-function buildEmailAttrsSafe(baseAttrs, imgsObj) {
-  const out = Array.isArray(baseAttrs) ? baseAttrs.slice() : [];
-  const put = (k, v) => { if (v) out.push({ key: k, value: v }); };
-
-  // Mantén compat: DesignPreview apunta al integrado (o al full)
-  put("DesignPreview",  imgsObj.previewIntegrated || imgsObj.previewFull);
-
-  // Capas
-  put("Overlay:All",    imgsObj.overlayAll);
-  put("Layer:Image",    imgsObj.layerImg);
-  if (imgsObj.layerTxt) put("Layer:Text", imgsObj.layerTxt);
-
-  // La cuarta imagen integrada completa (si la envías)
-  if (imgsObj.previewFull) {
-    put("Preview:Full",       imgsObj.previewFull);
-    put("_DesignPreviewFull", imgsObj.previewFull); // alias opcional
-  }
-
-  return out;
-}
 
 
 
