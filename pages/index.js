@@ -7,9 +7,19 @@ import dynamic from "next/dynamic";
 
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
+// Normaliza URLs a https (Cloudinary) en un solo lugar
+var __toHttpsSet;
+if (typeof __toHttpsSet !== "function") {
+  __toHttpsSet = async function({ overlayAll, layerImg, layerTxt, previewFull }) {
+    const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
+    const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
+    const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+    return { overlayAllHttps, layerImgHttps, layerTxtHttps, previewFullHttps };
+  };
+}
 
 // ===== Helpers idempotentes (ponlos una sola vez, arriba del archivo) =====
-
 // Inserta/actualiza una clave (case-insensitive), evitando duplicados.
 var __putKV;
 if (typeof __putKV !== "function") {
@@ -1502,10 +1512,9 @@ async function buyNow() {
     }
 
     // Subir a https (Cloudinary) y mergear attrs
-    const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
-    const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
-    const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+   const { overlayAllHttps, layerImgHttps, layerTxtHttps, previewFullHttps } =
+  await __toHttpsSet({ overlayAll, layerImg, layerTxt, previewFull });
+
 
     const put = (k,v)=>{ if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key:k, value:v }]; };
     put("DesignPreview",  previewFullHttps); // 👉 publicar la integrada
@@ -1564,10 +1573,7 @@ console.log("[DOBO][EMAIL buyNow] sizes:", {
 });
 
 // ——— Subir a https (si no lo hiciste ya) ———
-const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
-const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
-const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
 
 // ——— Merge de atributos con ALIAS para máxima compatibilidad ———
 attrs = __putAllAliases(attrs, "DesignPreview",  previewFullHttps); // 👉 lo que se publica y muestra
@@ -1703,10 +1709,8 @@ async function addToCart() {
       previewFull = overlayAll;
     }
 
-    const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
-    const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
-    const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+   const { overlayAllHttps, layerImgHttps, layerTxtHttps, previewFullHttps } =
+  await __toHttpsSet({ overlayAll, layerImg, layerTxt, previewFull });
 
     const put = (k,v)=>{ if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key:k, value:v }]; };
     put("DesignPreview",  previewFullHttps);
@@ -1760,10 +1764,7 @@ console.log("[DOBO][EMAIL addToCart] sizes:", {
   layerTxt: (layerTxtHttps   || "").length
 });
 
-const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay");
-const layerImgHttps    = await ensureHttpsUrl(layerImg, "layer-image");
-const layerTxtHttps    = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
 
 attrs = __putAllAliases(attrs, "DesignPreview",  previewFullHttps);
 attrs = __putAllAliases(attrs, "Overlay:All",    overlayAllHttps);
