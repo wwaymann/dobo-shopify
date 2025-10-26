@@ -46,16 +46,7 @@ function __dedupByKey(list) {
   return out;
 }
 
-// Inserta/actualiza una clave (case-insensitive), y permite aliasar sin duplicar
-function __putKV(arr, key, value) {
-  if (!value) return arr;
-  const low = key.toLowerCase();
-  const filtered = (arr || []).filter(a => {
-    const k = String(a?.key || "").toLowerCase();
-    return k !== low;
-  });
-  return [...filtered, { key, value }];
-}
+
 
 // Construye attrs compatibles para el EMAIL duplicando las claves en todos los alias comunes
 function makeCompatEmailAttrs(baseAttrs, urls) {
