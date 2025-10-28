@@ -4,7 +4,7 @@ import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 import { exportPreviewDataURL, dataURLtoBase64Attachment, loadLocalDesign } from '../lib/designStore';
-import HomePage from "../features/home/HomePage";
+
 
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
@@ -1303,5 +1303,5 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 export async function getServerSideProps() {
   return { props: {} };
 }
-export default dynamic(() => Promise.resolve(HomePage), { ssr: false });
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
 
