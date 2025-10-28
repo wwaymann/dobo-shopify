@@ -1251,7 +1251,7 @@ const getAccessoryVariantIds = () =>
 
 
 // —————————————————————————————————————————————
-// BUY NOW (sin buildEmailAttrs, sin imgs)
+// BUY NOW (normaliza https una sola vez y fuerza _DesignPreview)
 // —————————————————————————————————————————————
 async function buyNow() {
   try {
@@ -1266,21 +1266,18 @@ async function buyNow() {
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // === Utilidades locales (nombres internos para no chocar) ===
+    // === Utilidades locales internas ===
     const __delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const __size  = (s)=> (s || "").length;
     const __tooSmall = (d) => __size(d) < 2000;
-
     const __isTextLike = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
     const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
-
     const __isBaseLike = (o) => {
       if (!o) return false;
       const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
       return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
     const __hasBaseDeep = (o) => !!o && (__isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasBaseDeep)));
-
     const __hidden = [];
     const __hideIf = (pred) => {
       const walk = (o) => {
@@ -1353,24 +1350,27 @@ async function buyNow() {
     try { previewFull = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
     catch { previewFull = __snap(2); }
 
-    // Fallbacks
+    // Fallbacks prudentes
     if (__tooSmall(layerTxt)) layerTxt = "";
     if (__tooSmall(layerImg) && !__tooSmall(overlayAll)) layerImg = overlayAll;
     if (__tooSmall(previewFull) && !__tooSmall(overlayAll)) previewFull = overlayAll;
 
-    // Subir a https
-    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
-    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
-    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+    // ——— Normalización a HTTPS: UNA SOLA VEZ ———
+    overlayAll = await ensureHttpsUrl(overlayAll, "overlay-all");
+    layerImg   = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt   = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullUrl =
+      (await ensureHttpsUrl(previewFull, "preview-full")) ||
+      overlayAll || previewFull || "";
 
-    // Merge attrs sin duplicados
-    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview",  previewFullHttps); // preview principal integrado
-    pushKV("Overlay:All",    overlayAll);
-    pushKV("Layer:Image",    layerImg);
-    pushKV("Layer:Text",     layerTxt);
-    pushKV("Preview:Full",   previewFullHttps); // alias visible en email si quieres
+    // ——— Merge attrs sin duplicados (forzando nombre histórico) ———
+    const put = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    put("_DesignPreview",  previewFullUrl); // clásico
+    put("DesignPreview",   previewFullUrl); // alias
+    put("Preview:Full",    previewFullUrl); // opcional
+    put("Overlay:All",     overlayAll);
+    put("Layer:Image",     layerImg);
+    put("Layer:Text",      layerTxt);
 
     // Precio y product temp
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
@@ -1382,7 +1382,7 @@ async function buyNow() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps || overlayAll, // integrado completo
+        previewUrl: previewFullUrl || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1397,8 +1397,8 @@ async function buyNow() {
     // DO / NO
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
-    pushKV("_DO", doNum);
-    pushKV("_NO", noNum);
+    put("_DO", doNum);
+    put("_NO", noNum);
 
     // Publicar assets
     const again = await waitDesignerReady(20000);
@@ -1406,29 +1406,14 @@ async function buyNow() {
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // EMAIL: SIN buildEmailAttrs, SIN imgs (usamos attrs tal cual)
+    // EMAIL: usa attrs ya normalizados
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
-    const emailAttrs = attrs.slice(); // ya contiene DesignPreview/Overlay/Layer:Image/Layer:Text/Preview:Full
-    
-// tras calcular overlayAll (dataURL) y previewFull (dataURL)…
-const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay-all");
-const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
-
-// publica siempre Overlay y Layers con https si existe
-pushKV("Overlay:All", overlayAllHttps || overlayAll);
-pushKV("Layer:Image", await ensureHttpsUrl(layerImg, "layer-image"));
-pushKV("Layer:Text",  await ensureHttpsUrl(layerTxt, "layer-text"));
-
-// *** clave: garantizar la compuesta en attrs con nombre compatible ***
-const designPreviewUrl = previewFullHttps || overlayAllHttps || overlayAll || "";
-pushKV("_DesignPreview", designPreviewUrl);  // nombre clásico (v39)
-pushKV("DesignPreview",  designPreviewUrl);  // opcional, por compatibilidad
-pushKV("Preview:Full",   designPreviewUrl);  // opcional, si tu server la usa
+    const emailAttrs = attrs.slice();
 
     sendEmailNow({
       subject: makeEmailSubject({ doNum, noNum }),
@@ -1448,8 +1433,9 @@ pushKV("Preview:Full",   designPreviewUrl);  // opcional, si tu server la usa
 }
 
 
+
 // —————————————————————————————————————————————
-// ADD TO CART (sin buildEmailAttrs, sin imgs)
+// ADD TO CART (normaliza https una sola vez y fuerza _DesignPreview)
 // —————————————————————————————————————————————
 async function addToCart() {
   try {
@@ -1464,7 +1450,7 @@ async function addToCart() {
     const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
     const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // === Utilidades locales ===
+    // === Utilidades locales internas ===
     const __delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const __size  = (s)=> (s || "").length;
     const __tooSmall = (d) => __size(d) < 2000;
@@ -1548,17 +1534,22 @@ async function addToCart() {
     if (__tooSmall(layerImg) && !__tooSmall(overlayAll)) layerImg = overlayAll;
     if (__tooSmall(previewFull) && !__tooSmall(overlayAll)) previewFull = overlayAll;
 
-    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
-    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
-    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+    // ——— Normalización a HTTPS: UNA SOLA VEZ ———
+    overlayAll = await ensureHttpsUrl(overlayAll, "overlay-all");
+    layerImg   = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt   = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullUrl =
+      (await ensureHttpsUrl(previewFull, "preview-full")) ||
+      overlayAll || previewFull || "";
 
-    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    pushKV("DesignPreview",  previewFullHttps);
-    pushKV("Overlay:All",    overlayAll);
-    pushKV("Layer:Image",    layerImg);
-    pushKV("Layer:Text",     layerTxt);
-    pushKV("Preview:Full",   previewFullHttps);
+    // ——— Merge attrs sin duplicados (forzando nombre histórico) ———
+    const put = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    put("_DesignPreview",  previewFullUrl); // clásico
+    put("DesignPreview",   previewFullUrl); // alias
+    put("Preview:Full",    previewFullUrl); // opcional
+    put("Overlay:All",     overlayAll);
+    put("Layer:Image",     layerImg);
+    put("Layer:Text",      layerTxt);
 
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
@@ -1569,7 +1560,7 @@ async function addToCart() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps || overlayAll,
+        previewUrl: previewFullUrl || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1583,8 +1574,8 @@ async function addToCart() {
 
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
-    pushKV("_DO", doNum);
-    pushKV("_NO", noNum);
+    put("_DO", doNum);
+    put("_NO", noNum);
 
     const again = await waitDesignerReady(20000);
     if (!again) throw new Error("designer-not-ready");
@@ -1615,6 +1606,7 @@ async function addToCart() {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
+
 
 
 
