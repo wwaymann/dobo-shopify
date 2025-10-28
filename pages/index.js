@@ -1304,4 +1304,4 @@ export async function getServerSideProps() {
   return { props: {} };
 }
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
-export default dynamic(() => Promise.resolve(HomePage), { ssr: false });
+
