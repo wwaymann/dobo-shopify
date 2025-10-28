@@ -1251,42 +1251,37 @@ const getAccessoryVariantIds = () =>
 
 
 // —————————————————————————————————————————————
-// BUY NOW (con rehost CORS + compositor DOM y fallback)
+// BUY NOW (sin buildEmailAttrs, sin imgs)
 // —————————————————————————————————————————————
 async function buyNow() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    // Asegurar editor listo y canvas
-    const api = await waitDesignerReady(20000);
-    if (!api) throw new Error("designer-not-ready");
-    const fabricCanvas = api.getCanvas?.() || window.doboDesignAPI?.getCanvas?.() || null;
+    // Canvas listo
+    const ready = await waitDesignerReady(20000);
+    if (!ready) throw new Error("designer-not-ready");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
     if (!fabricCanvas) throw new Error("canvas-missing");
 
-    // URLs base (preferir variante de maceta) + rehost CORS
-    const potVarImg = selectedPotVariant?.image?.src || selectedPotVariant?.image?.url || selectedPotVariant?.imageUrl || null;
-    const rawPotUrl   = potVarImg || readImageUrlFor(pots?.[selectedPotIndex]);
-    const rawPlantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
-    const [potUrl, plantUrl] = await Promise.all([
-      rawPotUrl   ? rehostForCORS(rawPotUrl)   : "",
-      rawPlantUrl ? rehostForCORS(rawPlantUrl) : "",
-    ]);
+    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
-    // Utilidades locales
+    // === Utilidades locales (nombres internos para no chocar) ===
     const __delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const __size  = (s)=> (s || "").length;
     const __tooSmall = (d) => __size(d) < 2000;
 
-    // Ocultar base (si existiera en Fabric) y sacar overlay
-    const __hidden = [];
-    const __isTextLike = (o) => !!o && (/text/i.test(o.type||"") || typeof o.text === "string");
+    const __isTextLike = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+    const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
+
     const __isBaseLike = (o) => {
       if (!o) return false;
       const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
       return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
-    const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
     const __hasBaseDeep = (o) => !!o && (__isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasBaseDeep)));
+
+    const __hidden = [];
     const __hideIf = (pred) => {
       const walk = (o) => {
         if (!o) return;
@@ -1308,9 +1303,35 @@ async function buyNow() {
     const __snap = (mult = 2) =>
       fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
-    await __delay(30);
+    const __loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+    const __composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        __loadImage(overlayAllUrl),
+        potUrl ? __loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? __loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const ctx = off.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return off.toDataURL("image/png");
+    };
 
-    // Overlay:All (solo diseño)
+    // === Capturas ===
+    await __delay(50);
+
+    // Overlay:All (sin base)
     __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
     let overlayAll = __snap(2);
 
@@ -1320,77 +1341,38 @@ async function buyNow() {
     __hideIf((o) => !__hasTextDeep(o));
     let layerTxt = __snap(2);
 
-    // Solo imagen (diseño sin texto)
+    // Solo imagen (sin texto)
     __restoreAll();
     __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
     __hideIf((o) => __hasTextDeep(o));
     let layerImg = __snap(2);
 
-    // Preview integrado (preferir compositor DOM)
+    // Full integrado (maceta + planta + overlayAll)
     __restoreAll();
-    let previewFull = await exportIntegratedPreview({
-      stageEl: selectStageEl(fabricCanvas) || stageRef.current,
-      fabricCanvas,
-      multiplier: 2,
-      potUrl,
-      plantUrl
-    });
+    let previewFull = "";
+    try { previewFull = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
+    catch { previewFull = __snap(2); }
 
-    // Fallback manual si el DOM composer no pudo (o quedó muy chico)
-    if (__tooSmall(previewFull)) {
-      try {
-        const __load = (src) => new Promise((res, rej) => {
-          if (!src) return res(null);
-          const im = new Image(); im.crossOrigin = "anonymous";
-          im.onload = () => res(im);
-          im.onerror = rej;
-          im.src = src;
-        });
-        const [ovImg, pImg, plImg] = await Promise.all([
-          __load(overlayAll),
-          __load(potUrl),
-          __load(plantUrl),
-        ]);
-        if (ovImg) {
-          const W = ovImg.naturalWidth || ovImg.width  || 1024;
-          const H = ovImg.naturalHeight|| ovImg.height || 1024;
-          const off = document.createElement("canvas");
-          off.width = W; off.height = H;
-          const ctx = off.getContext("2d");
-          // Contener para evitar deformación
-          if (pImg)  drawContain(ctx, pImg,  0, 0, W, H);
-          if (plImg) drawContain(ctx, plImg, 0, 0, W, H);
-          ctx.drawImage(ovImg, 0, 0, W, H);
-          previewFull = off.toDataURL("image/png");
-        }
-      } catch {
-        // último recurso: usa overlayAll
-        previewFull = overlayAll;
-      }
-    }
-
-    // Saneos mínimos
+    // Fallbacks
     if (__tooSmall(layerTxt)) layerTxt = "";
     if (__tooSmall(layerImg) && !__tooSmall(overlayAll)) layerImg = overlayAll;
     if (__tooSmall(previewFull) && !__tooSmall(overlayAll)) previewFull = overlayAll;
 
     // Subir a https
-    const [overlayAllHttps, layerImgHttps, layerTxtHttps, previewFullHttps] = await Promise.all([
-      ensureHttpsUrl(overlayAll, "overlay"),
-      ensureHttpsUrl(layerImg, "layer-image"),
-      layerTxt ? ensureHttpsUrl(layerTxt, "layer-text") : Promise.resolve(""),
-      ensureHttpsUrl(previewFull, "preview-full"),
-    ]);
+    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
 
-    // Unificar attrs (sin duplicados)
-    const put = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    put("DesignPreview", previewFullHttps); // integrado (maceta + planta + diseño)
-    put("Overlay:All",   overlayAllHttps);
-    put("Layer:Image",   layerImgHttps);
-    put("Layer:Text",    layerTxtHttps);
-    put("Preview:Full",  previewFullHttps);
+    // Merge attrs sin duplicados
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    pushKV("DesignPreview",  previewFullHttps); // preview principal integrado
+    pushKV("Overlay:All",    overlayAll);
+    pushKV("Layer:Image",    layerImg);
+    pushKV("Layer:Text",     layerTxt);
+    pushKV("Preview:Full",   previewFullHttps); // alias visible en email si quieres
 
-    // Precio y product temporal
+    // Precio y product temp
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
     const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
@@ -1400,7 +1382,7 @@ async function buyNow() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps || overlayAllHttps,
+        previewUrl: previewFullHttps || overlayAll, // integrado completo
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1415,23 +1397,42 @@ async function buyNow() {
     // DO / NO
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
-    put("_DO", doNum);
-    put("_NO", noNum);
+    pushKV("_DO", doNum);
+    pushKV("_NO", noNum);
 
-    // Publicar assets/metadatos
+    // Publicar assets
+    const again = await waitDesignerReady(20000);
+    if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
-    // Email (usa attrs tal cual)
+    // EMAIL: SIN buildEmailAttrs, SIN imgs (usamos attrs tal cual)
     const shortDescription = (
       `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
       `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
+    const emailAttrs = attrs.slice(); // ya contiene DesignPreview/Overlay/Layer:Image/Layer:Text/Preview:Full
+    
+// tras calcular overlayAll (dataURL) y previewFull (dataURL)…
+const overlayAllHttps  = await ensureHttpsUrl(overlayAll, "overlay-all");
+const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
+
+// publica siempre Overlay y Layers con https si existe
+pushKV("Overlay:All", overlayAllHttps || overlayAll);
+pushKV("Layer:Image", await ensureHttpsUrl(layerImg, "layer-image"));
+pushKV("Layer:Text",  await ensureHttpsUrl(layerTxt, "layer-text"));
+
+// *** clave: garantizar la compuesta en attrs con nombre compatible ***
+const designPreviewUrl = previewFullHttps || overlayAllHttps || overlayAll || "";
+pushKV("_DesignPreview", designPreviewUrl);  // nombre clásico (v39)
+pushKV("DesignPreview",  designPreviewUrl);  // opcional, por compatibilidad
+pushKV("Preview:Full",   designPreviewUrl);  // opcional, si tu server la usa
+
     sendEmailNow({
       subject: makeEmailSubject({ doNum, noNum }),
-      attrs: attrs.slice(),
+      attrs: emailAttrs,
       meta: { Descripcion: shortDescription, Precio: basePrice },
       links: { Storefront: location.origin },
       attachPreviews: true,
@@ -1446,39 +1447,36 @@ async function buyNow() {
   }
 }
 
+
 // —————————————————————————————————————————————
-// ADD TO CART (mismo flujo que buyNow)
+// ADD TO CART (sin buildEmailAttrs, sin imgs)
 // —————————————————————————————————————————————
 async function addToCart() {
   try {
     let attrs = await prepareDesignAttributes();
 
-    const api = await waitDesignerReady(20000);
-    if (!api) throw new Error("designer-not-ready");
-    const fabricCanvas = api.getCanvas?.() || window.doboDesignAPI?.getCanvas?.() || null;
+    // Canvas listo
+    const ready = await waitDesignerReady(20000);
+    if (!ready) throw new Error("designer-not-ready");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
     if (!fabricCanvas) throw new Error("canvas-missing");
 
-    const potVarImg = selectedPotVariant?.image?.src || selectedPotVariant?.image?.url || selectedPotVariant?.imageUrl || null;
-    const rawPotUrl   = potVarImg || readImageUrlFor(pots?.[selectedPotIndex]);
-    const rawPlantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
-    const [potUrl, plantUrl] = await Promise.all([
-      rawPotUrl   ? rehostForCORS(rawPotUrl)   : "",
-      rawPlantUrl ? rehostForCORS(rawPlantUrl) : "",
-    ]);
+    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
+    // === Utilidades locales ===
     const __delay = (ms)=> new Promise(r=>setTimeout(r, ms));
     const __size  = (s)=> (s || "").length;
     const __tooSmall = (d) => __size(d) < 2000;
-
-    const __hidden = [];
-    const __isTextLike = (o) => !!o && (/text/i.test(o.type||"") || typeof o.text === "string");
+    const __isTextLike = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+    const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
     const __isBaseLike = (o) => {
       if (!o) return false;
       const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
       return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
-    const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
     const __hasBaseDeep = (o) => !!o && (__isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasBaseDeep)));
+    const __hidden = [];
     const __hideIf = (pred) => {
       const walk = (o) => {
         if (!o) return;
@@ -1500,7 +1498,33 @@ async function addToCart() {
     const __snap = (mult = 2) =>
       fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
-    await __delay(30);
+    const __loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+    const __composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        __loadImage(overlayAllUrl),
+        potUrl ? __loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? __loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const ctx = off.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return off.toDataURL("image/png");
+    };
+
+    // === Capturas ===
+    await __delay(50);
 
     __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
     let overlayAll = __snap(2);
@@ -1516,61 +1540,25 @@ async function addToCart() {
     let layerImg = __snap(2);
 
     __restoreAll();
-    let previewFull = await exportIntegratedPreview({
-      stageEl: selectStageEl(fabricCanvas) || stageRef.current,
-      fabricCanvas,
-      multiplier: 2,
-      potUrl,
-      plantUrl
-    });
-
-    if (__tooSmall(previewFull)) {
-      try {
-        const __load = (src) => new Promise((res, rej) => {
-          if (!src) return res(null);
-          const im = new Image(); im.crossOrigin = "anonymous";
-          im.onload = () => res(im);
-          im.onerror = rej;
-          im.src = src;
-        });
-        const [ovImg, pImg, plImg] = await Promise.all([
-          __load(overlayAll),
-          __load(potUrl),
-          __load(plantUrl),
-        ]);
-        if (ovImg) {
-          const W = ovImg.naturalWidth || ovImg.width  || 1024;
-          const H = ovImg.naturalHeight|| ovImg.height || 1024;
-          const off = document.createElement("canvas");
-          off.width = W; off.height = H;
-          const ctx = off.getContext("2d");
-          if (pImg)  drawContain(ctx, pImg,  0, 0, W, H);
-          if (plImg) drawContain(ctx, plImg, 0, 0, W, H);
-          ctx.drawImage(ovImg, 0, 0, W, H);
-          previewFull = off.toDataURL("image/png");
-        }
-      } catch {
-        previewFull = overlayAll;
-      }
-    }
+    let previewFull = "";
+    try { previewFull = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
+    catch { previewFull = __snap(2); }
 
     if (__tooSmall(layerTxt)) layerTxt = "";
     if (__tooSmall(layerImg) && !__tooSmall(overlayAll)) layerImg = overlayAll;
     if (__tooSmall(previewFull) && !__tooSmall(overlayAll)) previewFull = overlayAll;
 
-    const [overlayAllHttps, layerImgHttps, layerTxtHttps, previewFullHttps] = await Promise.all([
-      ensureHttpsUrl(overlayAll, "overlay"),
-      ensureHttpsUrl(layerImg, "layer-image"),
-      layerTxt ? ensureHttpsUrl(layerTxt, "layer-text") : Promise.resolve(""),
-      ensureHttpsUrl(previewFull, "preview-full"),
-    ]);
+    overlayAll             = await ensureHttpsUrl(overlayAll, "overlay");
+    layerImg               = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt               = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const previewFullHttps = await ensureHttpsUrl(previewFull, "preview-full");
 
-    const put = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-    put("DesignPreview", previewFullHttps);
-    put("Overlay:All",   overlayAllHttps);
-    put("Layer:Image",   layerImgHttps);
-    put("Layer:Text",    layerTxtHttps);
-    put("Preview:Full",  previewFullHttps);
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    pushKV("DesignPreview",  previewFullHttps);
+    pushKV("Overlay:All",    overlayAll);
+    pushKV("Layer:Image",    layerImg);
+    pushKV("Layer:Text",     layerTxt);
+    pushKV("Preview:Full",   previewFullHttps);
 
     const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
     const plantPrice = productMin(plants[selectedPlantIndex]);
@@ -1581,7 +1569,7 @@ async function addToCart() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-        previewUrl: previewFullHttps || overlayAllHttps,
+        previewUrl: previewFullHttps || overlayAll,
         price: basePrice,
         color: selectedColor || "Único",
         size:  activeSize   || "Único",
@@ -1595,9 +1583,11 @@ async function addToCart() {
 
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
-    put("_DO", doNum);
-    put("_NO", noNum);
+    pushKV("_DO", doNum);
+    pushKV("_NO", noNum);
 
+    const again = await waitDesignerReady(20000);
+    if (!again) throw new Error("designer-not-ready");
     const pub = await publishDesignForVariant(dp.variantId);
     if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
@@ -1607,23 +1597,24 @@ async function addToCart() {
       `${activeSize ?? ""} · ${selectedColor ?? ""}`
     ).replace(/\s+/g, " ").trim();
 
+    const emailAttrs = attrs.slice();
+
     sendEmailNow({
       subject: makeEmailSubject({ doNum, noNum }),
-      attrs: attrs.slice(),
+      attrs: emailAttrs,
       meta: { Descripcion: shortDescription, Precio: basePrice },
       links: { Storefront: location.origin },
       attachPreviews: true,
       attachOverlayAll: true
     });
 
-    // Carrito
+    // Añadir al carrito
     const accIds = getAccessoryVariantIds();
     postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
   } catch (e) {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
-
 
 
 
