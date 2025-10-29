@@ -5,6 +5,8 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
+import { useCallback } from "react"; // asegúrate de tener esto arriba del archivo
+
 
 // Busca un attr por nombre, ignorando '_' inicial y case-insensitive
 function getAttrCI(attrs, name) {
@@ -1351,6 +1353,162 @@ const getAccessoryVariantIds = () =>
     })
     .filter((id) => /^\d+$/.test(id));
 
+// === REEMPLAZO: pegar DENTRO del componente Home(), antes del return ===
+
+import { useCallback } from "react"; // asegúrate de tener esto arriba del archivo
+
+const actionCore = useCallback(async ({ goCheckout }) => {
+  // 1) Atributos base (DesignPreview + meta mínima)
+  let attrs = await prepareDesignAttributes();
+
+  // 2) Canvas listo
+  const ready = await waitDesignerReady(20000);
+  if (!ready) throw new Error("designer-not-ready");
+  const fabricCanvas = window.doboDesignAPI?.getCanvas?.();
+  if (!fabricCanvas) throw new Error("canvas-missing");
+
+  // 3) URLs base (maceta / planta) desde lista
+  const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+  const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+
+  // --- util internos mínimos ---
+  const snap = (mult = 2) =>
+    fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+
+  const loadImg = (u) => new Promise((res, rej) => {
+    if (!u) return rej(new Error("no-url"));
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = u;
+  });
+
+  const composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+    const [ov, po, pl] = await Promise.all([
+      loadImg(overlayAllUrl),
+      potUrl ? loadImg(potUrl).catch(()=>null) : null,
+      plantUrl ? loadImg(plantUrl).catch(()=>null) : null,
+    ]);
+    const W = ov.naturalWidth || ov.width || 1024;
+    const H = ov.naturalHeight || ov.height || 1024;
+    const can = document.createElement("canvas");
+    can.width = W; can.height = H;
+    const ctx = can.getContext("2d");
+    if (po) ctx.drawImage(po, 0, 0, W, H);
+    if (pl) ctx.drawImage(pl, 0, 0, W, H);
+    ctx.drawImage(ov, 0, 0, W, H);
+    return can.toDataURL("image/png");
+  };
+
+  // 4) Capturas (overlay/texto/imagen) ocultando base
+  const isTxt = (o) => /^(i-text|textbox|text)$/i.test(o?.type) || typeof o?.text === "string";
+  const isBase = (o) => {
+    const tag = String(o?.name || o?.id || o?.doboKind || o?.role || "").toLowerCase();
+    return /(pot|maceta|plant|planta|base|bg|background)/.test(tag);
+  };
+  const hidden = [];
+  const hideIf = (pred) => {
+    (fabricCanvas.getObjects?.() || []).forEach(o => {
+      const walk = (x) => {
+        if (!x) return;
+        if (pred(x)) { hidden.push(x); x.__vis = x.visible; x.visible = false; }
+        (x._objects || []).forEach(walk);
+      };
+      walk(o);
+    });
+    if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
+      const bg = fabricCanvas.backgroundImage;
+      hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
+    }
+    fabricCanvas.requestRenderAll?.();
+  };
+  const restore = () => { hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; }); hidden.length = 0; fabricCanvas.requestRenderAll?.(); };
+
+  // overlayAll
+  hideIf(o => isBase(o) || o === fabricCanvas.backgroundImage);
+  let overlayAll = snap(2); restore();
+
+  // solo texto
+  hideIf(o => isBase(o) || o === fabricCanvas.backgroundImage);
+  hideIf(o => !isTxt(o));
+  let layerTxt = snap(2); restore();
+
+  // solo imagen
+  hideIf(o => isBase(o) || o === fabricCanvas.backgroundImage);
+  hideIf(o => isTxt(o));
+  let layerImg = snap(2); restore();
+
+  // preview integrado (maceta + planta + overlayAll)
+  let previewFull = "";
+  try { previewFull = await composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
+  catch { previewFull = overlayAll; }
+
+  // A https
+  const overlayAllHttps = await ensureHttpsUrl(overlayAll, "overlay-all");
+  const layerImgHttps   = await ensureHttpsUrl(layerImg,   "layer-image");
+  const layerTxtHttps   = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+  const previewFullHttps= await ensureHttpsUrl(previewFull,"preview-full");
+
+  // Merge attrs (sin duplicar claves)
+  const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+  pushKV("Overlay:All",  overlayAllHttps || overlayAll);
+  pushKV("Layer:Image",  layerImgHttps   || layerImg);
+  pushKV("Layer:Text",   layerTxtHttps   || layerTxt);
+  pushKV("DesignPreview",previewFullHttps|| previewFull); // integrado principal
+
+  // Precios y creación del “design product”
+  const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+  const plantPrice = productMin(plants[selectedPlantIndex]);
+  const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+  const dpRes = await fetch("/api/design-product", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+      previewUrl: previewFullHttps || overlayAllHttps || overlayAll,
+      price: basePrice,
+      color: selectedColor || "Único",
+      size:  activeSize   || "Único",
+      designId: attrs.find((a) => a.key === "_DesignId")?.value,
+      plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+      potTitle:   pots[selectedPotIndex]?.title   || "Maceta",
+    }),
+  });
+  const dp = await dpRes.json();
+  if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+  // DO / NO (para que lleguen en properties y luego el webhook los use)
+  const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+  const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
+  pushKV("_DO", doNum);
+  pushKV("_NO", noNum);
+
+  // Publicar assets (igual que antes)
+  const again = await waitDesignerReady(20000);
+  if (!again) throw new Error("designer-not-ready");
+  const pub = await publishDesignForVariant(dp.variantId);
+  if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+  // Ir a carrito/checkout
+  const accIds = getAccessoryVariantIds();
+  postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, goCheckout ? "/checkout" : "/cart");
+}, [
+  pots, plants, accessories, selectedPotIndex, selectedPlantIndex, selectedPotVariant,
+  selectedAccessoryIndices, quantity, selectedColor, activeSize
+]);
+
+// Botones públicos
+const addToCart = useCallback(() => actionCore({ goCheckout: false }).catch(e => alert(`No se pudo añadir: ${e.message}`)), [actionCore]);
+const buyNow    = useCallback(() => actionCore({ goCheckout: true  }).catch(e => alert(`No se pudo iniciar el checkout: ${e.message}`)), [actionCore]);
+
+// Exponer por si algo externo las llama
+useEffect(() => {
+  window.__DOBO = window.__DOBO || {};
+  window.__DOBO.addToCart = addToCart;
+  window.__DOBO.buyNow    = buyNow;
+}, [addToCart, buyNow]);
 
 
 
