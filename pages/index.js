@@ -1355,7 +1355,6 @@ const getAccessoryVariantIds = () =>
 
 // === REEMPLAZO: pegar DENTRO del componente Home(), antes del return ===
 
-import { useCallback } from "react"; // asegúrate de tener esto arriba del archivo
 
 const actionCore = useCallback(async ({ goCheckout }) => {
   // 1) Atributos base (DesignPreview + meta mínima)
