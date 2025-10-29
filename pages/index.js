@@ -3,8 +3,6 @@ import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
-
-
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
@@ -15,6 +13,99 @@ function getAttrCI(attrs, name) {
   return hit?.value || "";
 }
 
+// === SIZE GUARD & COMPRESSION HELPERS ===
+function approxBytesFromDataURL(s = "") {
+  // aprox bytes: largo base64 * 0.75
+  return Math.max(0, Math.floor((s.length || 0) * 0.75));
+}
+
+function loadImageFromDataURL(dataUrl) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = dataUrl;
+  });
+}
+
+/**
+ * Comprime/redimensiona un dataURL.
+ * - preserveAlpha=true  => PNG (para overlays / texto)
+ * - preserveAlpha=false => JPEG (para previews integrados)
+ */
+async function compressDataURL(dataUrl, {
+  maxW = 1400,
+  maxH = 1400,
+  preserveAlpha = false,
+  jpegQuality = 0.82,          // punto de partida
+  hardByteLimit = 3_500_000,   // ~3.5 MB amortiguado (< 4.5 MB de Vercel)
+} = {}) {
+  if (!dataUrl) return "";
+  try {
+    const img = await loadImageFromDataURL(dataUrl);
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+
+    // Redimensiona manteniendo aspecto
+    const sx = maxW / iw, sy = maxH / ih;
+    const scale = Math.min(1, isFinite(sx) && isFinite(sy) ? Math.min(sx, sy) : 1);
+    const W = Math.max(1, Math.round(iw * scale));
+    const H = Math.max(1, Math.round(ih * scale));
+
+    const cnv = document.createElement("canvas");
+    cnv.width = W; cnv.height = H;
+    const ctx = cnv.getContext("2d");
+    // Fondo para JPEG (sin alfa). Para PNG no pintamos nada.
+    if (!preserveAlpha) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.drawImage(img, 0, 0, W, H);
+
+    if (preserveAlpha) {
+      // PNG (alfa) – un solo tiro
+      let out = cnv.toDataURL("image/png");
+      // si aún pesa demasiado, baja dimensiones más…
+      let step = 0;
+      while (approxBytesFromDataURL(out) > hardByteLimit && step < 3) {
+        step++;
+        cnv.width = Math.max(1, Math.round(cnv.width * 0.85));
+        cnv.height = Math.max(1, Math.round(cnv.height * 0.85));
+        const c2 = cnv.getContext("2d");
+        c2.clearRect(0, 0, cnv.width, cnv.height);
+        c2.drawImage(img, 0, 0, cnv.width, cnv.height);
+        out = cnv.toDataURL("image/png");
+      }
+      return out;
+    } else {
+      // JPEG (sin alfa) – iteramos calidad si hace falta
+      let q = jpegQuality;
+      let out = cnv.toDataURL("image/jpeg", q);
+      let guard = 0;
+      while (approxBytesFromDataURL(out) > hardByteLimit && q > 0.5 && guard < 8) {
+        q -= 0.06;
+        guard++;
+        out = cnv.toDataURL("image/jpeg", q);
+      }
+      // último recurso: bajar dimensiones
+      let step = 0;
+      while (approxBytesFromDataURL(out) > hardByteLimit && step < 3) {
+        step++;
+        cnv.width = Math.max(1, Math.round(cnv.width * 0.85));
+        cnv.height = Math.max(1, Math.round(cnv.height * 0.85));
+        const c2 = cnv.getContext("2d");
+        c2.fillStyle = "#ffffff";
+        c2.fillRect(0, 0, cnv.width, cnv.height);
+        c2.drawImage(img, 0, 0, cnv.width, cnv.height);
+        out = cnv.toDataURL("image/jpeg", q);
+      }
+      return out;
+    }
+  } catch {
+    return dataUrl; // si falla, devolvemos el original (mejor que romper el flujo)
+  }
+}
 
 
 // --- UTIL: marcar dirty hacia arriba (rompe cache de grupos) ---
@@ -1033,7 +1124,7 @@ useEffect(() => {
         if (c) { c.style.overflow = "visible"; c.style.clipPath = "none"; }
       });
     };
-    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
+    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 2, useCORS: true, onclone });
     return canvas.toDataURL("image/png");
   }
   async function prepareDesignAttributes() {
@@ -1370,6 +1461,21 @@ async function buyNow() {
     const previewFromPrepare = getAttrCI(attrs, "designpreview"); // _DesignPreview o DesignPreview
     const bestIntegrated = previewFromPrepare || previewRecomposed || overlayAll;
 
+// === COMPRESS GUARD (reduce tamaño antes de subir) ===
+// Overlays/Capas: necesitan alfa -> PNG
+overlayAll  = await compressDataURL(overlayAll,  { maxW: 1600, maxH: 1600, preserveAlpha: true });
+if (layerImg) layerImg = await compressDataURL(layerImg, { maxW: 1600, maxH: 1600, preserveAlpha: true });
+if (layerTxt) layerTxt = await compressDataURL(layerTxt, { maxW: 1600, maxH: 1600, preserveAlpha: true });
+
+// Preview integrado: NO requiere alfa -> JPEG (mucho más liviano)
+previewFull = await compressDataURL(previewFull, {
+  maxW: 1400,
+  maxH: 1400,
+  preserveAlpha: false,  // fuerza JPEG
+  jpegQuality: 0.82,
+});
+
+    
     // Subir a https lo que falte
     overlayAll                 = await ensureHttpsUrl(overlayAll, "overlay-all");
     layerImg                   = await ensureHttpsUrl(layerImg, "layer-image");
@@ -1561,6 +1667,20 @@ async function addToCart() {
 
     const previewFromPrepare = getAttrCI(attrs, "designpreview");
     const bestIntegrated = previewFromPrepare || previewRecomposed || overlayAll;
+
+    // === COMPRESS GUARD (reduce tamaño antes de subir) ===
+// Overlays/Capas: necesitan alfa -> PNG
+overlayAll  = await compressDataURL(overlayAll,  { maxW: 1600, maxH: 1600, preserveAlpha: true });
+if (layerImg) layerImg = await compressDataURL(layerImg, { maxW: 1600, maxH: 1600, preserveAlpha: true });
+if (layerTxt) layerTxt = await compressDataURL(layerTxt, { maxW: 1600, maxH: 1600, preserveAlpha: true });
+
+// Preview integrado: NO requiere alfa -> JPEG (mucho más liviano)
+previewFull = await compressDataURL(previewFull, {
+  maxW: 1400,
+  maxH: 1400,
+  preserveAlpha: false,  // fuerza JPEG
+  jpegQuality: 0.82,
+});
 
     overlayAll                = await ensureHttpsUrl(overlayAll, "overlay-all");
     layerImg                  = await ensureHttpsUrl(layerImg, "layer-image");
