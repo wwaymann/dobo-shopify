@@ -613,7 +613,12 @@ function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
 }
 
 /* ---------- overlay ---------- */
-const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
+const CustomizationOverlay = dynamic(
+  () => import("../components/CustomizationOverlay").then(m => m.default || m).catch(() => () => null),
+  { ssr: false }
+);
+
+
 
 /* ---------- swipe ---------- */
 function makeSwipeEvents(swipeRef, handlers) {
