@@ -24,6 +24,12 @@ function markDirty(o) {
   if (o.group) markDirty(o.group);
 }
 
+const SEND_EMAIL_ON_CLICK =
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_SEND_EMAIL_ON_CLICK === "1") ||
+  false;
+
+
 // ---------- Utils básicos ----------
 const gidToNum = (id) => {
   const s = String(id || "");
@@ -1429,14 +1435,19 @@ async function buyNow() {
 
     const emailAttrs = attrs.slice();
 
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum, noNum }),
-      attrs: emailAttrs,
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+  if (SEND_EMAIL_ON_CLICK) {
+  // modo depuración: manda el correo al hacer click
+  sendEmailNow({
+    subject: makeEmailSubject({ doNum, noNum }),
+    attrs: emailAttrs,
+    meta: { Descripcion: shortDescription, Precio: basePrice },
+    links: { Storefront: location.origin },
+    attachPreviews: true,
+    attachOverlayAll: true
+  });
+} else {
+  console.log("[DOBO][email] Envío diferido: se enviará vía webhook orders/paid");
+}
 
     // Checkout
     const accIds = getAccessoryVariantIds();
@@ -1608,14 +1619,20 @@ async function addToCart() {
 
     const emailAttrs = attrs.slice();
 
-    sendEmailNow({
-      subject: makeEmailSubject({ doNum, noNum }),
-      attrs: emailAttrs,
-      meta: { Descripcion: shortDescription, Precio: basePrice },
-      links: { Storefront: location.origin },
-      attachPreviews: true,
-      attachOverlayAll: true
-    });
+    if (SEND_EMAIL_ON_CLICK) {
+  // modo depuración: manda el correo al hacer click
+  sendEmailNow({
+    subject: makeEmailSubject({ doNum, noNum }),
+    attrs: emailAttrs,
+    meta: { Descripcion: shortDescription, Precio: basePrice },
+    links: { Storefront: location.origin },
+    attachPreviews: true,
+    attachOverlayAll: true
+  });
+} else {
+  console.log("[DOBO][email] Envío diferido: se enviará vía webhook orders/paid");
+}
+
 
     // Añadir al carrito
     const accIds = getAccessoryVariantIds();
