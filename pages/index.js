@@ -1514,6 +1514,9 @@ useEffect(() => {
 // —————————————————————————————————————————————
 // BUY NOW  (manda claves dobles: con y sin _ )
 // —————————————————————————————————————————————
+// —————————————————————————————————————————————
+// BUY NOW  (manda claves dobles: con y sin _ )
+// —————————————————————————————————————————————
 async function buyNow() {
   try {
     let attrs = await prepareDesignAttributes();
@@ -1626,13 +1629,13 @@ async function buyNow() {
     // 4. meter attrs **dobles**
     const pushBoth = (k, v) => {
       if (!v) return;
-      // versión "bonita"
+      // versión normal
       attrs = attrs.filter(a => a.key !== k);
       attrs.push({ key: k, value: v });
       // versión con _
       const u = k.startsWith("_")
         ? k
-        : "_" + k.replace(/[:]/g, ""); // "Overlay:All" -> "_OverlayAll"
+        : "_" + k.replace(/[:]/g, "");
       attrs = attrs.filter(a => a.key !== u);
       attrs.push({ key: u, value: v });
     };
@@ -1669,7 +1672,7 @@ async function buyNow() {
     const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
     const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
     pushBoth("DO", doNum);
-    pushBoth("_DO", doNum); // por si acaso
+    pushBoth("_DO", doNum);
     pushBoth("_NO", noNum);
 
     // 7. publicar snapshot
@@ -1685,6 +1688,7 @@ async function buyNow() {
     alert(`No se pudo iniciar el checkout: ${e.message}`);
   }
 }
+
 
 // —————————————————————————————————————————————
 // ADD TO CART  (mismo patrón de claves dobles)
@@ -1842,6 +1846,7 @@ async function addToCart() {
     alert(`No se pudo añadir: ${e.message}`);
   }
 }
+
 
 
 
