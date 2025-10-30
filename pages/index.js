@@ -1,17 +1,19 @@
 // pages/index.js
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 // ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
 import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
-import { useCallback } from "react"; // asegúrate de tener esto arriba del archivo
 
 
 // Busca un attr por nombre, ignorando '_' inicial y case-insensitive
 function getAttrCI(attrs, name) {
-  const target = String(name||"").toLowerCase();
-  const hit = (attrs||[]).find(a => String(a?.key||"").toLowerCase().replace(/^_/, "") === target);
+  const target = String(name || "").toLowerCase();
+  const hit = (attrs || []).find(
+    (a) =>
+      String(a?.key || "").toLowerCase().replace(/^_/, "") === target
+  );
   return hit?.value || "";
 }
 
@@ -36,13 +38,16 @@ function loadImageFromDataURL(dataUrl) {
  * - preserveAlpha=true  => PNG (para overlays / texto)
  * - preserveAlpha=false => JPEG (para previews integrados)
  */
-async function compressDataURL(dataUrl, {
-  maxW = 1400,
-  maxH = 1400,
-  preserveAlpha = false,
-  jpegQuality = 0.82,          // punto de partida
-  hardByteLimit = 3_500_000,   // ~3.5 MB amortiguado (< 4.5 MB de Vercel)
-} = {}) {
+async function compressDataURL(
+  dataUrl,
+  {
+    maxW = 1400,
+    maxH = 1400,
+    preserveAlpha = false,
+    jpegQuality = 0.82, // punto de partida
+    hardByteLimit = 3_500_000, // ~3.5 MB amortiguado (< 4.5 MB de Vercel)
+  } = {}
+) {
   if (!dataUrl) return "";
   try {
     const img = await loadImageFromDataURL(dataUrl);
@@ -50,13 +55,16 @@ async function compressDataURL(dataUrl, {
     const ih = img.naturalHeight || img.height || 1;
 
     // Redimensiona manteniendo aspecto
-    const sx = maxW / iw, sy = maxH / ih;
-    const scale = Math.min(1, isFinite(sx) && isFinite(sy) ? Math.min(sx, sy) : 1);
+    const sx = maxW / iw,
+      sy = maxH / ih;
+    const scale =
+      Math.min(1, isFinite(sx) && isFinite(sy) ? Math.min(sx, sy) : 1) || 1;
     const W = Math.max(1, Math.round(iw * scale));
     const H = Math.max(1, Math.round(ih * scale));
 
     const cnv = document.createElement("canvas");
-    cnv.width = W; cnv.height = H;
+    cnv.width = W;
+    cnv.height = H;
     const ctx = cnv.getContext("2d");
     // Fondo para JPEG (sin alfa). Para PNG no pintamos nada.
     if (!preserveAlpha) {
@@ -85,7 +93,11 @@ async function compressDataURL(dataUrl, {
       let q = jpegQuality;
       let out = cnv.toDataURL("image/jpeg", q);
       let guard = 0;
-      while (approxBytesFromDataURL(out) > hardByteLimit && q > 0.5 && guard < 8) {
+      while (
+        approxBytesFromDataURL(out) > hardByteLimit &&
+        q > 0.5 &&
+        guard < 8
+      ) {
         q -= 0.06;
         guard++;
         out = cnv.toDataURL("image/jpeg", q);
@@ -109,7 +121,6 @@ async function compressDataURL(dataUrl, {
   }
 }
 
-
 // --- UTIL: marcar dirty hacia arriba (rompe cache de grupos) ---
 function markDirty(o) {
   if (!o) return;
@@ -121,7 +132,6 @@ const SEND_EMAIL_ON_CLICK =
   (typeof process !== "undefined" &&
     process.env.NEXT_PUBLIC_SEND_EMAIL_ON_CLICK === "1") ||
   false;
-
 
 // ---------- Utils básicos ----------
 const gidToNum = (id) => {
@@ -139,7 +149,10 @@ async function ensureHttpsUrl(u, namePrefix = "img") {
       const r = await fetch("/api/upload-design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrl: s, filename: `${namePrefix}-${Date.now()}.png` })
+        body: JSON.stringify({
+          dataUrl: s,
+          filename: `${namePrefix}-${Date.now()}.png`,
+        }),
       });
       const j = await r.json().catch(() => ({}));
       return j?.url || "";
@@ -153,19 +166,28 @@ async function ensureHttpsUrl(u, namePrefix = "img") {
 // Filtra attrs para el email (incluye DO/NO si existen)
 function shrinkAttrsForEmail(attrs = []) {
   const keep = new Set([
-    "_designid","designid","_designpreview","designpreview",
-    "overlay:all","layer:image","layer:text"
+    "_designid",
+    "designid",
+    "_designpreview",
+    "designpreview",
+    "overlay:all",
+    "layer:image",
+    "layer:text",
   ]);
   const out = [];
-  for (const a of (attrs || [])) {
+  for (const a of attrs || []) {
     const k = String(a?.key || "").toLowerCase();
     const v = String(a?.value ?? "");
-    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("overlay:")) {
+    if (
+      keep.has(k) ||
+      k.startsWith("layer:") ||
+      k.startsWith("overlay:")
+    ) {
       out.push({ key: a.key, value: v });
     }
   }
-  for (const k of ["_DO","_NO"]) {
-    const hit = (attrs || []).find(a => a.key === k);
+  for (const k of ["_DO", "_NO"]) {
+    const hit = (attrs || []).find((a) => a.key === k);
     if (hit) out.push({ key: k, value: String(hit.value || "") });
   }
   return out.slice(0, 100);
@@ -181,20 +203,39 @@ function sendEmailNow(payload) {
       navigator.sendBeacon(url, blob);
       return;
     }
-    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
-      .then(r => r.json()).then(r => { if (!r?.ok) console.warn("[email] not ok", r); })
-      .catch(err => console.warn("[email] error", err));
-  } catch (e) { console.warn("sendEmailNow failed", e); }
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: json,
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        if (!r?.ok) console.warn("[email] not ok", r);
+      })
+      .catch((err) => console.warn("[email] error", err));
+  } catch (e) {
+    console.warn("sendEmailNow failed", e);
+  }
 }
 
 // ---------- Fallbacks de exportación (por si DS no exporta) ----------
 // Overlay completo (texto+imágenes) desde el canvas Fabric
 function exportOverlayAllLocal(canvas, { multiplier = 2 } = {}) {
   try {
-    const c = canvas || (typeof window !== "undefined" && window.doboDesignAPI?.getCanvas?.());
+    const c =
+      canvas ||
+      (typeof window !== "undefined" &&
+        window.doboDesignAPI?.getCanvas?.());
     if (!c || !c.toDataURL) return "";
-    return c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
-  } catch { return ""; }
+    return c.toDataURL({
+      format: "png",
+      multiplier,
+      backgroundColor: "transparent",
+    });
+  } catch {
+    return "";
+  }
 }
 
 // Oculta/rehabilita objetos por predicado (maneja grupos)
@@ -204,30 +245,42 @@ function maskCanvasByPredicate(canvas, predicate) {
     if (!g || !Array.isArray(g._objects)) return;
     for (const ch of g._objects) {
       const keep = keepChild(ch);
-      if (!keep) { hidden.push(ch); ch.__wasVisible = ch.visible; ch.visible = false; }
+      if (!keep) {
+        hidden.push(ch);
+        ch.__wasVisible = ch.visible;
+        ch.visible = false;
+      }
     }
   };
   const hasKind = (o, kind) => {
     const isImg = o.type === "image";
-    const isTxt = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
+    const isTxt =
+      o.type === "i-text" ||
+      o.type === "textbox" ||
+      o.type === "text";
     if (kind === "image" && isImg) return true;
-    if (kind === "text"  && isTxt) return true;
+    if (kind === "text" && isTxt) return true;
     if (o.type === "group" && Array.isArray(o._objects)) {
-      return o._objects.some(ch => hasKind(ch, kind));
+      return o._objects.some((ch) => hasKind(ch, kind));
     }
     return false;
   };
-  canvas.getObjects().forEach(o => {
+  canvas.getObjects().forEach((o) => {
     const res = predicate(o, { hasKind });
     if (res === "children") {
       toggleChild(o, (ch) => predicate(ch, { hasKind }) === true);
     } else if (res !== true) {
-      hidden.push(o); o.__wasVisible = o.visible; o.visible = false;
+      hidden.push(o);
+      o.__wasVisible = o.visible;
+      o.visible = false;
     }
   });
   canvas.requestRenderAll();
   return () => {
-    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; });
+    hidden.forEach((o) => {
+      o.visible = o.__wasVisible !== false;
+      delete o.__wasVisible;
+    });
     canvas.requestRenderAll();
   };
 }
@@ -235,31 +288,53 @@ function maskCanvasByPredicate(canvas, predicate) {
 // --- SOLO IMAGEN / SOLO TEXTO (con invalidación de cache y grupos) ---
 async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
   try {
-    const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    const c =
+      typeof window !== "undefined"
+        ? window.doboDesignAPI?.getCanvas?.()
+        : null;
     if (!c?.getObjects) return "";
 
-    const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
-    const wantText  = names.map(String).some(n => /text|texto/i.test(n));
+    const wantImage = names
+      .map(String)
+      .some((n) => /image|imagen|plant|planta/i.test(n));
+    const wantText = names
+      .map(String)
+      .some((n) => /text|texto/i.test(n));
     const kind = wantImage ? "image" : wantText ? "text" : "";
 
-    const isTxt = (o) => o?.type === "i-text" || o?.type === "textbox" || o?.type === "text" || typeof o?.text === "string";
-    const isImg = (o) => o?.type === "image" || (!!o?._element && o._element.tagName === "IMG");
+    const isTxt = (o) =>
+      o?.type === "i-text" ||
+      o?.type === "textbox" ||
+      o?.type === "text" ||
+      typeof o?.text === "string";
+    const isImg = (o) =>
+      o?.type === "image" || (!!o?._element && o._element.tagName === "IMG");
 
     const hidden = [];
-    const hide = (o) => { if (!o) return; hidden.push(o); o.__wasVisible = o.visible; o.visible = false; markDirty(o); };
+    const hide = (o) => {
+      if (!o) return;
+      hidden.push(o);
+      o.__wasVisible = o.visible;
+      o.visible = false;
+      markDirty(o);
+    };
 
     // oculta lo que NO corresponda; respeta grupos/activeSelection
-    (c.getObjects() || []).forEach(o => {
+    (c.getObjects() || []).forEach((o) => {
       const visit = (x) => {
         if (!x) return;
         if (x.type === "group" || x.type === "activeSelection") {
           (x._objects || []).forEach(visit);
           // si el grupo no tiene ningún hijo del tipo pedido, se oculta completo
-          const keepAny = (x._objects || []).some(ch => (kind === "image" ? isImg(ch) : isTxt(ch)));
+          const keepAny = (x._objects || []).some((ch) =>
+            kind === "image" ? isImg(ch) : isTxt(ch)
+          );
           if (!keepAny) hide(x);
           return;
         }
-        const keep = (kind === "image" && isImg(x)) || (kind === "text" && isTxt(x));
+        const keep =
+          (kind === "image" && isImg(x)) ||
+          (kind === "text" && isTxt(x));
         if (!keep) hide(x);
       };
       visit(o);
@@ -269,10 +344,18 @@ async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
     c.discardActiveObject?.();
     c.renderAll?.();
 
-    const url = c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+    const url = c.toDataURL({
+      format: "png",
+      multiplier,
+      backgroundColor: "transparent",
+    });
 
     // restaurar
-    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; markDirty(o); });
+    hidden.forEach((o) => {
+      o.visible = o.__wasVisible !== false;
+      delete o.__wasVisible;
+      markDirty(o);
+    });
     c.renderAll?.();
 
     return url;
@@ -285,8 +368,10 @@ async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
 function readImageUrlFor(prod) {
   return (
     prod?.featuredImage?.url ||
-    prod?.image?.url || prod?.image?.src ||
-    (Array.isArray(prod?.images) && (prod.images[0]?.url || prod.images[0]?.src)) ||
+    prod?.image?.url ||
+    prod?.image?.src ||
+    (Array.isArray(prod?.images) &&
+      (prod.images[0]?.url || prod.images[0]?.src)) ||
     ""
   );
 }
@@ -296,12 +381,15 @@ async function rehostForCORS(url) {
   if (!url) return "";
   try {
     const r = await fetch("/api/proxy-image", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
     });
     const j = await r.json().catch(() => ({}));
     return j?.url || "";
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 
 // ---------- Preview INTEGRADO (maceta + planta + overlay) ----------
@@ -312,7 +400,8 @@ function selectStageEl(canvas) {
     cEl?.closest?.("[data-stage-root]") ||
     document.getElementById("dobo-stage") ||
     document.getElementById("design-stage") ||
-    cEl?.parentElement || null
+    cEl?.parentElement ||
+    null
   );
 }
 
@@ -330,10 +419,28 @@ function drawContain(ctx, img, x, y, w, h) {
 
 function pickImg(stageEl, role) {
   if (!stageEl) return null;
-  const sels = role === "pot"
-    ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
-    : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
-  for (const s of sels) { const el = stageEl.querySelector(s); if (el) return el; }
+  const sels =
+    role === "pot"
+      ? [
+          '[data-role="pot"] img',
+          "img[data-pot]",
+          ".pot img",
+          "img.pot",
+          ".pot-image",
+          'img[alt*="maceta" i]',
+        ]
+      : [
+          '[data-role="plant"] img',
+          "img[data-plant]",
+          ".plant img",
+          "img.plant",
+          ".plant-image",
+          'img[alt*="planta" i]',
+        ];
+  for (const s of sels) {
+    const el = stageEl.querySelector(s);
+    if (el) return el;
+  }
   const imgs = stageEl.querySelectorAll("img");
   if (imgs.length === 0) return null;
   if (role === "pot") return imgs[0];
@@ -344,7 +451,12 @@ function pickImg(stageEl, role) {
 function stageRelativeRect(el, stageEl) {
   const er = el.getBoundingClientRect();
   const sr = stageEl.getBoundingClientRect();
-  return { x: er.left - sr.left, y: er.top - sr.top, w: er.width, h: er.height };
+  return {
+    x: er.left - sr.left,
+    y: er.top - sr.top,
+    w: er.width,
+    h: er.height,
+  };
 }
 
 function loadImageCORS(src) {
@@ -358,39 +470,74 @@ function loadImageCORS(src) {
 }
 
 // --- Preview INTEGRADO (3 estrategias: DOM -> rehost -> datos) ---
-async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2, potUrl = "", plantUrl = "" } = {}) {
+async function exportIntegratedPreview({
+  stageEl,
+  fabricCanvas,
+  multiplier = 2,
+  potUrl = "",
+  plantUrl = "",
+} = {}) {
   try {
-    const canvas = fabricCanvas || (typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null);
-    const stage  = stageEl || (function selectStageEl(c) {
-      const el = c?.lowerCanvasEl || c?.upperCanvasEl || null;
-      return (
-        document.querySelector("[data-stage-root]") ||
-        el?.closest?.("[data-stage-root]") ||
-        document.getElementById("dobo-stage") ||
-        document.getElementById("design-stage") ||
-        el?.parentElement || null
-      );
-    })(canvas);
+    const canvas =
+      fabricCanvas ||
+      (typeof window !== "undefined"
+        ? window.doboDesignAPI?.getCanvas?.()
+        : null);
+    const stage =
+      stageEl ||
+      (function selectStageEl(c) {
+        const el = c?.lowerCanvasEl || c?.upperCanvasEl || null;
+        return (
+          document.querySelector("[data-stage-root]") ||
+          el?.closest?.("[data-stage-root]") ||
+          document.getElementById("dobo-stage") ||
+          document.getElementById("design-stage") ||
+          el?.parentElement ||
+          null
+        );
+      })(canvas);
     if (!canvas) return "";
 
     const W = Math.round(canvas.getWidth?.() || stage?.clientWidth || 800);
     const H = Math.round(canvas.getHeight?.() || stage?.clientHeight || 800);
 
     const out = document.createElement("canvas");
-    out.width  = Math.max(1, Math.round(W * multiplier));
+    out.width = Math.max(1, Math.round(W * multiplier));
     out.height = Math.max(1, Math.round(H * multiplier));
     const ctx = out.getContext("2d");
 
     // ---------- Estrategia A: DOM con posiciones ----------
     const selImg = (root, role) => {
       if (!root) return null;
-      const sels = role === "pot"
-        ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
-        : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
-      for (const s of sels) { const el = root.querySelector(s); if (el) return el; }
+      const sels =
+        role === "pot"
+          ? [
+              '[data-role="pot"] img',
+              "img[data-pot]",
+              ".pot img",
+              "img.pot",
+              ".pot-image",
+              'img[alt*="maceta" i]',
+            ]
+          : [
+              '[data-role="plant"] img',
+              "img[data-plant]",
+              ".plant img",
+              "img.plant",
+              ".plant-image",
+              'img[alt*="planta" i]',
+            ];
+      for (const s of sels) {
+        const el = root.querySelector(s);
+        if (el) return el;
+      }
       const imgs = root.querySelectorAll("img");
       if (!imgs.length) return null;
-      return role === "plant" ? (imgs.length > 1 ? imgs[1] : imgs[0]) : imgs[0];
+      return role === "plant"
+        ? imgs.length > 1
+          ? imgs[1]
+          : imgs[0]
+        : imgs[0];
     };
 
     let drewBase = false;
@@ -399,33 +546,51 @@ async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2, 
       const er = el.getBoundingClientRect();
       const sr = (stage || el.parentElement).getBoundingClientRect();
       const rx = (er.left - sr.left) * multiplier;
-      const ry = (er.top  - sr.top ) * multiplier;
-      const rw = (er.width)  * multiplier;
-      const rh = (er.height) * multiplier;
+      const ry = (er.top - sr.top) * multiplier;
+      const rw = er.width * multiplier;
+      const rh = er.height * multiplier;
       const src0 = el.currentSrc || el.src || "";
       try {
         const im = await (async () => {
           try {
-            const im = new Image(); im.crossOrigin = "anonymous";
-            await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = src0; });
+            const im = new Image();
+            im.crossOrigin = "anonymous";
+            await new Promise((res, rej) => {
+              im.onload = res;
+              im.onerror = rej;
+              im.src = src0;
+            });
             return im;
           } catch {
             const prox = await rehostForCORS(src0);
             if (!prox) throw new Error("rehost-failed");
-            const im2 = new Image(); im2.crossOrigin = "anonymous";
-            await new Promise((res, rej) => { im2.onload = res; im2.onerror = rej; im2.src = prox; });
+            const im2 = new Image();
+            im2.crossOrigin = "anonymous";
+            await new Promise((res, rej) => {
+              im2.onload = res;
+              im2.onerror = rej;
+              im2.src = prox;
+            });
             return im2;
           }
         })();
-      ctx.drawImage(im, Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
-      return true;
-      } catch { return false; }
+        ctx.drawImage(
+          im,
+          Math.round(rx),
+          Math.round(ry),
+          Math.round(rw),
+          Math.round(rh)
+        );
+        return true;
+      } catch {
+        return false;
+      }
     }
 
     if (stage) {
-      const potEl   = selImg(stage, "pot");
+      const potEl = selImg(stage, "pot");
       const plantEl = selImg(stage, "plant");
-      if (await drawDomImage(potEl))   drewBase = true;
+      if (await drawDomImage(potEl)) drewBase = true;
       if (await drawDomImage(plantEl)) drewBase = true;
     }
 
@@ -434,27 +599,51 @@ async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2, 
       const loadCORS = async (u) => {
         if (!u) return null;
         try {
-          const im = new Image(); im.crossOrigin = "anonymous";
-          await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = u; });
+          const im = new Image();
+          im.crossOrigin = "anonymous";
+          await new Promise((res, rej) => {
+            im.onload = res;
+            im.onerror = rej;
+            im.src = u;
+          });
           return im;
         } catch {
           const prox = await rehostForCORS(u);
           if (!prox) return null;
-          const im2 = new Image(); im2.crossOrigin = "anonymous";
-          await new Promise((res, rej) => { im2.onload = res; im2.onerror = rej; im2.src = prox; });
+          const im2 = new Image();
+          im2.crossOrigin = "anonymous";
+          await new Promise((res, rej) => {
+            im2.onload = res;
+            im2.onerror = rej;
+            im2.src = prox;
+          });
           return im2;
         }
       };
-      const [poti, plti] = await Promise.all([loadCORS(potUrl), loadCORS(plantUrl)]);
-      if (poti) { drawContain(ctx, poti, 0, 0, out.width, out.height); drewBase = true; }
-      if (plti) { drawContain(ctx, plti, 0, 0, out.width, out.height); drewBase = true; }
+      const [poti, plti] = await Promise.all([
+        loadCORS(potUrl),
+        loadCORS(plantUrl),
+      ]);
+      if (poti) {
+        drawContain(ctx, poti, 0, 0, out.width, out.height);
+        drewBase = true;
+      }
+      if (plti) {
+        drawContain(ctx, plti, 0, 0, out.width, out.height);
+        drewBase = true;
+      }
     }
 
     // ---------- Estrategia C: backgroundImage de Fabric ----------
     if (!drewBase && canvas?.backgroundImage) {
       try {
-        const bi = canvas.backgroundImage.getElement?.() || canvas.backgroundImage._element;
-        if (bi) { ctx.drawImage(bi, 0, 0, out.width, out.height); drewBase = true; }
+        const bi =
+          canvas.backgroundImage.getElement?.() ||
+          canvas.backgroundImage._element;
+        if (bi) {
+          ctx.drawImage(bi, 0, 0, out.width, out.height);
+          drewBase = true;
+        }
       } catch {}
     }
 
@@ -463,7 +652,8 @@ async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2, 
       const ov = canvas.toCanvasElement(multiplier);
       if (ov) ctx.drawImage(ov, 0, 0);
     } else if (canvas?.lowerCanvasEl) {
-      ctx.save(); ctx.scale(multiplier, multiplier);
+      ctx.save();
+      ctx.scale(multiplier, multiplier);
       ctx.drawImage(canvas.lowerCanvasEl, 0, 0);
       ctx.restore();
     }
@@ -483,11 +673,6 @@ function makeEmailSubject({ doNum, noNum }) {
 }
 // ===================== FIN HELPERS DOBO =====================
 
-
-
-
-
-
 // al inicio del archivo, junto a otros useRef/useState
 const initFromURLRef = { current: false };
 const mobileShellRef = { current: null };
@@ -496,31 +681,48 @@ function ControlesPublicar() {
   const onPublish = async () => {
     const api = window.doboDesignAPI;
     const snap = api?.exportDesignSnapshot?.();
-    if (!snap) { alert('No hay diseño'); return; }
+    if (!snap) {
+      alert("No hay diseño");
+      return;
+    }
 
     const canvas = api.getCanvas();
     const dataURL = exportPreviewDataURL(canvas, { multiplier: 2 });
     const attachment = await dataURLtoBase64Attachment(dataURL);
 
-    const meta = { potHandle: 'maceta-x', plantHandle: 'planta-y', size: 'M' }; // ajusta con tus selecciones reales
+    const meta = {
+      potHandle: "maceta-x",
+      plantHandle: "planta-y",
+      size: "M",
+    }; // ajusta con tus selecciones reales
     const designJSON = { ...snap, meta };
 
-    const r = await fetch('/api/design/publish', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ designJSON, previewBase64: attachment, status: 'draft', tags: ['dobo','custom'] })
+    const r = await fetch("/api/design/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        designJSON,
+        previewBase64: attachment,
+        status: "draft",
+        tags: ["dobo", "custom"],
+      }),
     });
     const out = await r.json();
-    if (!r.ok) { alert(out.error || 'Error al publicar'); return; }
-    console.log('Publicado:', out);
+    if (!r.ok) {
+      alert(out.error || "Error al publicar");
+      return;
+    }
+    console.log("Publicado:", out);
   };
 
-  return <button className="btn btn-primary" onClick={onPublish}>Publicar diseño</button>;
+  return (
+    <button className="btn btn-primary" onClick={onPublish}>
+      Publicar diseño
+    </button>
+  );
 }
 
-
 // Dispara el email sin bloquear el checkout
-
 
 /* ---------- tamaño: normalización de etiquetas ---------- */
 function normalizeSizeTag(raw) {
@@ -528,7 +730,15 @@ function normalizeSizeTag(raw) {
   const s = String(raw).trim().toLowerCase();
   if (s === "grande" || s === "g") return "Grande";
   if (s === "mediano" || s === "mediana" || s === "m") return "Mediano";
-  if (s === "pequeño" || s === "pequeno" || s === "pequeña" || s === "pequena" || s === "perqueña" || s === "perquena" || s === "p")
+  if (
+    s === "pequeño" ||
+    s === "pequeno" ||
+    s === "pequeña" ||
+    s === "pequena" ||
+    s === "perqueña" ||
+    s === "perquena" ||
+    s === "p"
+  )
     return "Pequeño";
   return "";
 }
@@ -543,8 +753,13 @@ const getSizeTag = (tags = []) => {
 
 /* ---------- precio ---------- */
 const money = (amount, currency = "CLP") =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
-const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
+  new Intl.NumberFormat("es-CL", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(Number(amount || 0));
+const num = (v) =>
+  Number(typeof v === "object" ? v?.amount : v || 0);
 const firstVariantPrice = (p) => {
   const v = p?.variants?.[0]?.price;
   return v ? num(v) : num(p?.minPrice);
@@ -553,7 +768,15 @@ const productMin = (p) => num(p?.minPrice);
 
 /* ---------- preview accesorios ---------- */
 const escapeHtml = (s) =>
-  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
+  (s &&
+    s.replace(/[&<>"']/g, (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[m]))) ||
+  "";
 const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,sans-serif}
@@ -562,10 +785,15 @@ img{max-width:100%;height:auto;display:block}
 h4{margin:0;font-size:14px;font-weight:600;text-align:center}
 p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
 </style></head><body><div class="wrap">
-<img src="${escapeHtml(imgUrl)}" alt=""><h4>${escapeHtml(title||"")}</h4><p>${escapeHtml(desc||"")}</p>
+<img src="${escapeHtml(
+  imgUrl
+)}" alt=""><h4>${escapeHtml(title || "")}</h4><p>${escapeHtml(
+  desc || ""
+)}</p>
 </div></body></html>`;
 function getPreviewRect() {
-  if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
+  if (typeof window === "undefined")
+    return { w: 360, h: 360, centered: false };
   const m = window.innerWidth <= 768;
   const w = m ? Math.min(window.innerWidth - 24, 420) : 360;
   const h = m ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
@@ -584,43 +812,76 @@ function IframePreview(props) {
     pointerEvents: "none",
   };
   const style = d.centered
-    ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: d.w, height: d.h }
-    : { ...base, left: props.x, top: props.y, width: d.w, height: d.h };
+    ? {
+        ...base,
+        left: "50%",
+        bottom: 12,
+        transform: "translateX(-50%)",
+        width: d.w,
+        height: d.h,
+      }
+    : {
+        ...base,
+        left: props.x,
+        top: props.y,
+        width: d.w,
+        height: d.h,
+      };
   return (
     <div style={style}>
-      <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
+      <iframe
+        srcDoc={props.html}
+        style={{
+          width: "100%",
+          height: "100%",
+          border: 0,
+          pointerEvents: "none",
+        }}
+      />
     </div>
-    
   );
 }
 
 /* ---------- dots ---------- */
-function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
+function IndicatorDots({
+  count,
+  current,
+  onSelect,
+  position = "bottom",
+}) {
   if (!count || count < 2) return null;
   return (
-    <div className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}>
+    <div
+      className={`${styles.dots} ${
+        position === "top" ? styles.dotsTop : styles.dotsBottom
+      }`}
+    >
       {Array.from({ length: count }).map((_, i) => (
         <button
           key={i}
           type="button"
-          className={`${styles.dot} ${i === current ? styles.dotActive : ""}`}
+          className={`${styles.dot} ${
+            i === current ? styles.dotActive : ""
+          }`}
           aria-current={i === current ? "true" : "false"}
           onClick={() => onSelect(i)}
         />
       ))}
-      <span className={styles.dotsLabel}>{current + 1}/{count}</span>
+      <span className={styles.dotsLabel}>
+        {current + 1}/{count}
+      </span>
     </div>
-   
   );
 }
 
 /* ---------- overlay ---------- */
 const CustomizationOverlay = dynamic(
-  () => import("../components/CustomizationOverlay").then(m => m.default || m).catch(() => () => null),
+  () =>
+    import("../components/CustomizationOverlay")
+      .then((m) => m.default || m)
+      .catch(() => () => null),
   { ssr: false }
 );
-
-
 
 /* ---------- swipe ---------- */
 function makeSwipeEvents(swipeRef, handlers) {
@@ -630,13 +891,15 @@ function makeSwipeEvents(swipeRef, handlers) {
   };
   const end = (ev, el) => {
     const id = swipeRef.current?.id;
-    if (id != null && el?.releasePointerCapture) el.releasePointerCapture(id);
+    if (id != null && el?.releasePointerCapture)
+      el.releasePointerCapture(id);
     swipeRef.current = { active: false, id: null, x: 0, y: 0 };
   };
   const move = (x, y, ev, el) => {
     const s = swipeRef.current;
     if (!s?.active) return;
-    const dx = x - s.x, dy = y - s.y;
+    const dx = x - s.x,
+      dy = y - s.y;
     if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
       ev.preventDefault();
       if (Math.abs(dx) > 48) {
@@ -646,32 +909,49 @@ function makeSwipeEvents(swipeRef, handlers) {
     }
   };
   return {
-    onPointerDown: (e) => begin(e.clientX, e.clientY, e.pointerId ?? null, e.currentTarget),
-    onPointerMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onPointerDown: (e) =>
+      begin(
+        e.clientX,
+        e.clientY,
+        e.pointerId ?? null,
+        e.currentTarget
+      ),
+    onPointerMove: (e) =>
+      move(e.clientX, e.clientY, e, e.currentTarget),
     onPointerUp: (e) => end(e, e.currentTarget),
     onPointerCancel: (e) => end(e, e.currentTarget),
-    onTouchStart: (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, null, e.currentTarget); },
-    onTouchMove: (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e, e.currentTarget); },
+    onTouchStart: (e) => {
+      const t = e.touches[0];
+      begin(t.clientX, t.clientY, null, e.currentTarget);
+    },
+    onTouchMove: (e) => {
+      const t = e.touches[0];
+      move(t.clientX, t.clientY, e, e.currentTarget);
+    },
     onTouchEnd: (e) => end(e, e.currentTarget),
     onTouchCancel: (e) => end(e, e.currentTarget),
-    onMouseDown: (e) => begin(e.clientX, e.clientY, null, e.currentTarget),
-    onMouseMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onMouseDown: (e) =>
+      begin(e.clientX, e.clientY, null, e.currentTarget),
+    onMouseMove: (e) =>
+      move(e.clientX, e.clientY, e, e.currentTarget),
     onMouseUp: (e) => end(e, e.currentTarget),
   };
 }
 
 /* ---------- shop ---------- */
-let SHOP_DOMAIN = process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com";
-if (typeof window !== 'undefined') {
+let SHOP_DOMAIN =
+  process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com";
+if (typeof window !== "undefined") {
   const qs = new URLSearchParams(window.location.search);
-  const fromQS = qs.get('shopDomain');
+  const fromQS = qs.get("shopDomain");
   if (fromQS) {
     SHOP_DOMAIN = fromQS;
   } else if (document.referrer) {
-    try { SHOP_DOMAIN = new URL(document.referrer).host || SHOP_DOMAIN; } catch {}
+    try {
+      SHOP_DOMAIN = new URL(document.referrer).host || SHOP_DOMAIN;
+    } catch {}
   }
 }
-
 
 function Home() {
   const [plants, setPlants] = useState([]);
@@ -682,10 +962,16 @@ function Home() {
   const [selectedPotIndex, setSelectedPotIndex] = useState(0);
   const [selectedPotVariant, setSelectedPotVariant] = useState(null);
 
-  const [selectedAccessoryIndices, setSelectedAccessoryIndices] = useState([]);
+  const [selectedAccessoryIndices, setSelectedAccessoryIndices] =
+    useState([]);
   const [quantity, setQuantity] = useState(1);
 
-  const [accPreview, setAccPreview] = useState({ visible: false, x: 0, y: 0, html: "" });
+  const [accPreview, setAccPreview] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    html: "",
+  });
 
   const [selectedColor, setSelectedColor] = useState(null);
   const [colorOptions, setColorOptions] = useState([]);
@@ -698,14 +984,19 @@ function Home() {
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
   const potScrollRef = useRef(null);
-  const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+  const plantSwipeRef = useRef({
+    active: false,
+    id: null,
+    x: 0,
+    y: 0,
+  });
   const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
 
   const desiredPotHandleRef = useRef(null);
   const desiredPlantHandleRef = useRef(null);
   const desiredSizeRef = useRef(null);
-  const [designMeta, setDesignMeta] = useState(null);   // <— NUEVO
-  const restoredOnceRef = useRef(false);                // <— NUEVO
+  const [designMeta, setDesignMeta] = useState(null); // <— NUEVO
+  const restoredOnceRef = useRef(false); // <— NUEVO
   const userPickedSizeRef = useRef(false);
   const appliedMetaOnceRef = useRef(false);
 
@@ -714,11 +1005,14 @@ function Home() {
   const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
   const CLICK_STEP_PX = 8;
   // DOBO: meta del diseño cargado
-const designMetaRef = useRef(null);
+  const designMetaRef = useRef(null);
 
   const handlePointerDownCap = (e, ref) => {
     ref.current = {
-      btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0,
+      btn:
+        e.pointerType === "mouse" || e.pointerType === "pen"
+          ? e.button
+          : 0,
       x: e.clientX ?? 0,
       y: e.clientY ?? 0,
     };
@@ -726,7 +1020,11 @@ const designMetaRef = useRef(null);
   const handlePointerUpCap = (e, ref, handlers) => {
     if (editing) return;
     const d = ref.current || { btn: null, x: 0, y: 0 };
-    if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
+    if (
+      (e.pointerType === "mouse" || e.pointerType === "pen") &&
+      d.btn !== 0
+    )
+      return;
     const dx = Math.abs((e.clientX ?? 0) - d.x);
     const dy = Math.abs((e.clientY ?? 0) - d.y);
     if (dx > CLICK_STEP_PX || dy > CLICK_STEP_PX) return;
@@ -736,250 +1034,374 @@ const designMetaRef = useRef(null);
   };
 
   const COLOR_MAP = {
-    negro:"#000000", blanco:"#ffffff", gris:"#808080", "gris claro":"#bfbfbf", "gris oscuro":"#4a4a4a", plomo:"#9ea2a2",
-    plata:"#c0c0c0", dorado:"#d4af37", cobre:"#b87333",
-    rojo:"#ff0000", burdeo:"#6d071a", vino:"#7b001c", rosado:"#ff7aa2", rosa:"#ff7aa2",
-    naranjo:"#ff7a00", naranja:"#ff7a00", amarillo:"#ffd400",
-    verde:"#00a65a", "verde oliva":"#6b8e23", oliva:"#6b8e23", menta:"#3eb489",
-    azul:"#0066ff", celeste:"#4db8ff", turquesa:"#30d5c8",
-    morado:"#7d3cff", lila:"#b57edc", lavanda:"#b497bd",
-    café:"#6f4e37", marrón:"#6f4e37", cafe:"#6f4e37", chocolate:"#4e2a1e",
-    beige:"#d9c6a5", crema:"#f5f0e6", hueso:"#f2efe6",
+    negro: "#000000",
+    blanco: "#ffffff",
+    gris: "#808080",
+    "gris claro": "#bfbfbf",
+    "gris oscuro": "#4a4a4a",
+    plomo: "#9ea2a2",
+    plata: "#c0c0c0",
+    dorado: "#d4af37",
+    cobre: "#b87333",
+    rojo: "#ff0000",
+    burdeo: "#6d071a",
+    vino: "#7b001c",
+    rosado: "#ff7aa2",
+    rosa: "#ff7aa2",
+    naranjo: "#ff7a00",
+    naranja: "#ff7a00",
+    amarillo: "#ffd400",
+    verde: "#00a65a",
+    "verde oliva": "#6b8e23",
+    oliva: "#6b8e23",
+    menta: "#3eb489",
+    azul: "#0066ff",
+    celeste: "#4db8ff",
+    turquesa: "#30d5c8",
+    morado: "#7d3cff",
+    lila: "#b57edc",
+    lavanda: "#b497bd",
+    café: "#6f4e37",
+    marrón: "#6f4e37",
+    cafe: "#6f4e37",
+    chocolate: "#4e2a1e",
+    beige: "#d9c6a5",
+    crema: "#f5f0e6",
+    hueso: "#f2efe6",
   };
 
-  const _stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const _norm = raw => _stripAccents(String(raw||'').toLowerCase().trim())
-    .replace(/\s+/g,' ')
-    .replace(/(claro|oscuro|mate|brillante|satinado|metalico|metalic|pastel)\b/g,'$1')
-    .trim();
+  const _stripAccents = (s) =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const _norm = (raw) =>
+    _stripAccents(String(raw || "").toLowerCase().trim())
+      .replace(/\s+/g, " ")
+      .replace(
+        /(claro|oscuro|mate|brillante|satinado|metalico|metalic|pastel)\b/g,
+        "$1"
+      )
+      .trim();
 
   const resolveColor = (opt) => {
-    const raw = String((opt&&opt.hex) || opt || '').trim();
+    const raw = String((opt && opt.hex) || opt || "").trim();
     if (/^#([0-9a-f]{3}){1,2}$/i.test(raw)) return raw;
     const key = _norm(raw);
     if (COLOR_MAP[key]) return COLOR_MAP[key];
-    const parts = key.split(/[\/,-]/).map(s=>s.trim());
+    const parts = key.split(/[\/,-]/).map((s) => s.trim());
     for (const p of parts) if (COLOR_MAP[p]) return COLOR_MAP[p];
-    return '#ccc';
+    return "#ccc";
   };
 
- useEffect(() => {
+  useEffect(() => {
     if (typeof window !== "undefined" && window.fabric?.Image) {
       window.fabric.Image.prototype.crossOrigin = "anonymous";
     }
   }, []);
-  
+
   useEffect(() => {
     const onFlag = (e) => setEditing(!!e.detail?.editing);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
   useEffect(() => {
-    const s = stageRef.current, c = sceneWrapRef.current;
+    const s = stageRef.current,
+      c = sceneWrapRef.current;
     if (!s || !c) return;
-    const ps = s.style.touchAction, pc = c.style.touchAction;
+    const ps = s.style.touchAction,
+      pc = c.style.touchAction;
     s.style.touchAction = editing ? "none" : "pan-y";
     c.style.touchAction = editing ? "none" : "pan-y";
-    return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+    return () => {
+      s.style.touchAction = ps;
+      c.style.touchAction = pc;
+    };
   }, [editing]);
 
   // en el efecto de montaje inicial
-useEffect(() => {
-  const stage = stageRef.current;
-  if (!stage) return;
-  // expone el zoom inicial al CSS si usas --zoom
-  stage.style.setProperty("--zoom", String(zoomRef.current));
-}, []);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    // expone el zoom inicial al CSS si usas --zoom
+    stage.style.setProperty("--zoom", String(zoomRef.current));
+  }, []);
 
-// Centrar horizontalmente el conjunto en móvil sin remaquetar
-useEffect(() => {
-  const shell = mobileShellRef?.current;
-  if (!shell) return;
-  const content = shell.querySelector('.container');
-  if (!content) return;
-  const center = () => {
-    try {
-      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
-      shell.scrollLeft = target;
-    } catch {}
-  };
-  center();
-  const onR = () => center();
-  window.addEventListener('resize', onR);
-  return () => window.removeEventListener('resize', onR);
-}, []);
+  // Centrar horizontalmente el conjunto en móvil sin remaquetar
+  useEffect(() => {
+    const shell = mobileShellRef?.current;
+    if (!shell) return;
+    const content = shell.querySelector(".container");
+    if (!content) return;
+    const center = () => {
+      try {
+        const target = Math.max(
+          0,
+          (content.scrollWidth - shell.clientWidth) / 2
+        );
+        shell.scrollLeft = target;
+      } catch {}
+    };
+    center();
+    const onR = () => center();
+    window.addEventListener("resize", onR);
+    return () => window.removeEventListener("resize", onR);
+  }, []);
 
-// ---------- fetch por tamaño y tipo ----------
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    try {
-      const sizeQ = encodeURIComponent(activeSize); // "Pequeño" | "Mediano" | "Grande"
-      const [rPots, rPlants, rAcc] = await Promise.all([
-        fetch(`/api/products?size=${sizeQ}&type=maceta&first=60`, { cache: "no-store" }),
-        fetch(`/api/products?size=${sizeQ}&type=planta&first=60`, { cache: "no-store" }),
-        fetch(`/api/products?type=accesorio&first=60`, { cache: "no-store" }), // accesorios no dependen de tamaño
-      ]);
-      if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
-      if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
+  // ---------- fetch por tamaño y tipo ----------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sizeQ = encodeURIComponent(activeSize); // "Pequeño" | "Mediano" | "Grande"
+        const [rPots, rPlants, rAcc] = await Promise.all([
+          fetch(
+            `/api/products?size=${sizeQ}&type=maceta&first=60`,
+            { cache: "no-store" }
+          ),
+          fetch(
+            `/api/products?size=${sizeQ}&type=planta&first=60`,
+            { cache: "no-store" }
+          ),
+          fetch(`/api/products?type=accesorio&first=60`, {
+            cache: "no-store",
+          }), // accesorios no dependen de tamaño
+        ]);
+        if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
+        if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
 
-      const dPots = await rPots.json();
-      const dPlants = await rPlants.json();
-      const dAcc = rAcc.ok ? await rAcc.json() : [];
+        const dPots = await rPots.json();
+        const dPlants = await rPlants.json();
+        const dAcc = rAcc.ok ? await rAcc.json() : [];
 
-      const potsList = Array.isArray(dPots) ? dPots : dPots.products || [];
-      const plantsList = Array.isArray(dPlants) ? dPlants : dPlants.products || [];
-      const accList = Array.isArray(dAcc) ? dAcc : dAcc.products || [];
+        const potsList = Array.isArray(dPots)
+          ? dPots
+          : dPots.products || [];
+        const plantsList = Array.isArray(dPlants)
+          ? dPlants
+          : dPlants.products || [];
+        const accList = Array.isArray(dAcc)
+          ? dAcc
+          : dAcc.products || [];
 
-      const norm = (list) =>
-        list.map((p) => ({
-          ...p,
-          description: p?.description || p?.descriptionHtml || p?.body_html || "",
-          descriptionHtml: p?.descriptionHtml || "",
-          tags: Array.isArray(p?.tags) ? p.tags : [],
-          variants: Array.isArray(p?.variants) ? p.variants : [],
-          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
-          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
-        }));
+        const norm = (list) =>
+          list.map((p) => ({
+            ...p,
+            description: p?.description || p?.descriptionHtml || p?.body_html || "",
+            descriptionHtml: p?.descriptionHtml || "",
+            tags: Array.isArray(p?.tags) ? p.tags : [],
+            variants: Array.isArray(p?.variants) ? p.variants : [],
+            image:
+              p?.image?.src ||
+              p?.image ||
+              (Array.isArray(p?.images) && p.images[0]?.src) ||
+              "",
+            minPrice: p?.minPrice || {
+              amount: 0,
+              currencyCode: "CLP",
+            },
+          }));
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      const potsSafe = norm(potsList);
-      const plantsSafe = norm(plantsList);
-      const accSafe = norm(accList);
+        const potsSafe = norm(potsList);
+        const plantsSafe = norm(plantsList);
+        const accSafe = norm(accList);
 
-      setPots(potsSafe);
-      setPlants(plantsSafe);
-      setAccessories(accSafe);
+        setPots(potsSafe);
+        setPlants(plantsSafe);
+        setAccessories(accSafe);
 
-      // 👉 IMPORTANTE: conservar selección (no resetear a 0 y no tocar selectedPotVariant aquí)
-      setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
-      setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
-      userPickedSizeRef.current = false; // ya cargó la familia del tamaño nuevo
+        // 👉 IMPORTANTE: conservar selección (no resetear a 0 y no tocar selectedPotVariant aquí)
+        setSelectedPotIndex((i) =>
+          Math.min(
+            Math.max(i, 0),
+            Math.max(potsSafe.length - 1, 0)
+          )
+        );
+        setSelectedPlantIndex((i) =>
+          Math.min(
+            Math.max(i, 0),
+            Math.max(plantsSafe.length - 1, 0)
+          )
+        );
+        userPickedSizeRef.current = false; // ya cargó la familia del tamaño nuevo
+      } catch (err) {
+        console.error("Error fetching products:", err);
+        if (!cancelled) {
+          setPlants([]);
+          setPots([]);
+          setAccessories([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSize]);
 
-    } catch (err) {
-      console.error("Error fetching products:", err);
-      if (!cancelled) {
-        setPlants([]);
-        setPots([]);
-        setAccessories([]);
+  // ---------- aplicar selección desde meta/query (una sola vez) ----------
+  const applyDesiredSelection = () => {
+    if (restoredOnceRef.current) return;
+    if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+    if (pots.length === 0 && plants.length === 0) return;
+
+    const meta = designMeta || {};
+    const q = new URLSearchParams(window.location.search);
+
+    const wantSize = (
+      q.get("size") ||
+      meta.size ||
+      meta.tamano ||
+      meta.tamaño ||
+      ""
+    ).toLowerCase();
+    const wantPot = (
+      q.get("pot") ||
+      q.get("potHandle") ||
+      meta.potHandle ||
+      meta.potTitle ||
+      meta.potId ||
+      ""
+    ).toLowerCase();
+    const wantPlant = (
+      q.get("plant") ||
+      q.get("plantHandle") ||
+      meta.plantHandle ||
+      meta.plantTitle ||
+      meta.plantId ||
+      ""
+    ).toLowerCase();
+
+    const toStr = (v) => String(v || "").toLowerCase().trim();
+    const gidToNum = (id) => {
+      const s = String(id || "");
+      return s.includes("gid://") ? s.split("/").pop() : s;
+    };
+    const findIdx = (arr, key) => {
+      if (!key) return -1;
+      const k = toStr(key);
+      const kNum = gidToNum(k);
+      return arr.findIndex((p) => {
+        const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(
+          toStr
+        );
+        return ids.includes(k) || ids.includes(toStr(kNum));
+      });
+    };
+
+    let touched = false;
+
+    // tamaño primero (esto re-dispara el fetch con la familia correcta)
+    if (wantSize) {
+      if (wantSize.startsWith("p")) {
+        setActiveSize("Pequeño");
+        touched = true;
+      } else if (wantSize.startsWith("m")) {
+        setActiveSize("Mediano");
+        touched = true;
+      } else if (wantSize.startsWith("g")) {
+        setActiveSize("Grande");
+        touched = true;
       }
     }
-  })();
-  return () => { cancelled = true; };
-}, [activeSize]);
 
-// ---------- aplicar selección desde meta/query (una sola vez) ----------
-const applyDesiredSelection = () => {
-  if (restoredOnceRef.current) return;
-  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
-  if (pots.length === 0 && plants.length === 0) return;
+    // maceta / planta
+    const ip = findIdx(pots, wantPot);
+    if (ip >= 0) {
+      setSelectedPotIndex(ip);
+      touched = true;
+    }
 
-  const meta = designMeta || {};
-  const q = new URLSearchParams(window.location.search);
+    const il = findIdx(plants, wantPlant);
+    if (il >= 0) {
+      setSelectedPlantIndex(il);
+      touched = true;
+    }
 
-  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
-  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
-  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+    // color
+    if (meta.color) {
+      setSelectedColor(meta.color);
+      touched = true;
+    }
 
-  const toStr = (v) => String(v || '').toLowerCase().trim();
-  const gidToNum = (id) => {
-    const s = String(id || '');
-    return s.includes('gid://') ? s.split('/').pop() : s;
-  };
-  const findIdx = (arr, key) => {
-    if (!key) return -1;
-    const k = toStr(key);
-    const kNum = gidToNum(k);
-    return arr.findIndex(p => {
-      const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(toStr);
-      return ids.includes(k) || ids.includes(toStr(kNum));
-    });
+    if (touched) restoredOnceRef.current = true; // no repetir
   };
 
-  let touched = false;
+  // Ejecuta cuando ya hay productos o cambia la meta
+  useEffect(() => {
+    applyDesiredSelection();
+  }, [pots, plants, designMeta]);
 
-  // tamaño primero (esto re-dispara el fetch con la familia correcta)
-  if (wantSize) {
-    if (wantSize.startsWith('p')) { setActiveSize('Pequeño'); touched = true; }
-    else if (wantSize.startsWith('m')) { setActiveSize('Mediano'); touched = true; }
-    else if (wantSize.startsWith('g')) { setActiveSize('Grande'); touched = true; }
-  }
+  // DOBO: aplica selección de planta/maceta/color/size desde meta
+  useEffect(() => {
+    // Solo una vez y solo si hay meta
+    if (appliedMetaOnceRef.current) return;
+    const meta = designMetaRef.current;
+    if (!meta) return;
+    if (!pots.length || !plants.length) return;
 
-  // maceta / planta
-  const ip = findIdx(pots, wantPot);
-  if (ip >= 0) { setSelectedPotIndex(ip); touched = true; }
+    const asStr = (v) => String(v || "").toLowerCase().trim();
+    const gidToNum = (id) =>
+      String(id || "").includes("gid://")
+        ? String(id).split("/").pop()
+        : String(id || "");
 
-  const il = findIdx(plants, wantPlant);
-  if (il >= 0) { setSelectedPlantIndex(il); touched = true; }
+    const matchIndex = (list, target) => {
+      if (!target) return -1;
+      const t = asStr(target);
+      const tNum = asStr(gidToNum(target));
+      return list.findIndex((p) => {
+        const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(
+          asStr
+        );
+        return ids.includes(t) || ids.includes(tNum);
+      });
+    };
 
-  // color
-  if (meta.color) { setSelectedColor(meta.color); touched = true; }
+    // Tamaño guardado en meta → solo si el usuario AÚN no eligió manualmente
+    const sizeRaw = meta.size || meta.tamano || meta.tamaño;
+    if (!userPickedSizeRef.current && sizeRaw) {
+      const s = asStr(sizeRaw);
+      if (
+        ["p", "pequeño", "pequeno", "pequeña", "pequena"].includes(s)
+      )
+        setActiveSize("Pequeño");
+      else if (["m", "mediano", "mediana"].includes(s))
+        setActiveSize("Mediano");
+      else if (["g", "grande"].includes(s))
+        setActiveSize("Grande");
+    }
 
-  if (touched) restoredOnceRef.current = true; // no repetir
-};
+    // Selección de maceta/planta si existen en la lista actual
+    const ip = matchIndex(
+      pots,
+      meta.potId || meta.pot || meta.potHandle || meta.potTitle
+    );
+    const il = matchIndex(
+      plants,
+      meta.plantId ||
+        meta.plant ||
+        meta.plantHandle ||
+        meta.plantTitle
+    );
+    if (ip >= 0) setSelectedPotIndex(ip);
+    if (il >= 0) setSelectedPlantIndex(il);
 
-// Ejecuta cuando ya hay productos o cambia la meta
-useEffect(() => {
-  applyDesiredSelection();
-}, [pots, plants, designMeta]);
+    if (meta.color) setSelectedColor(meta.color);
 
-
-
-// DOBO: aplica selección de planta/maceta/color/size desde meta
-useEffect(() => {
-  // Solo una vez y solo si hay meta
-  if (appliedMetaOnceRef.current) return;
-  const meta = designMetaRef.current;
-  if (!meta) return;
-  if (!pots.length || !plants.length) return;
-
-  const asStr = v => String(v || "").toLowerCase().trim();
-  const gidToNum = (id) => (String(id||"").includes("gid://") ? String(id).split("/").pop() : String(id||""));
-
-  const matchIndex = (list, target) => {
-    if (!target) return -1;
-    const t = asStr(target); const tNum = asStr(gidToNum(target));
-    return list.findIndex(p => {
-      const ids = [
-        p?.id, gidToNum(p?.id), p?.handle, p?.title
-      ].map(asStr);
-      return ids.includes(t) || ids.includes(tNum);
-    });
-  };
-
-  // Tamaño guardado en meta → solo si el usuario AÚN no eligió manualmente
-  const sizeRaw = meta.size || meta.tamano || meta.tamaño;
-  if (!userPickedSizeRef.current && sizeRaw) {
-    const s = asStr(sizeRaw);
-    if (["p","pequeño","pequeno","pequeña","pequena"].includes(s)) setActiveSize("Pequeño");
-    else if (["m","mediano","mediana"].includes(s)) setActiveSize("Mediano");
-    else if (["g","grande"].includes(s)) setActiveSize("Grande");
-  }
-
-  // Selección de maceta/planta si existen en la lista actual
-  const ip = matchIndex(pots,   meta.potId || meta.pot || meta.potHandle || meta.potTitle);
-  const il = matchIndex(plants, meta.plantId || meta.plant || meta.plantHandle || meta.plantTitle);
-  if (ip >= 0) setSelectedPotIndex(ip);
-  if (il >= 0) setSelectedPlantIndex(il);
-
-  if (meta.color) setSelectedColor(meta.color);
-
-  // ¡No volver a aplicar!
-  appliedMetaOnceRef.current = true;
-}, [pots, plants]);
-
-
-
+    // ¡No volver a aplicar!
+    appliedMetaOnceRef.current = true;
+  }, [pots, plants]);
 
   /* ---------- zoom rueda ---------- */
   useEffect(() => {
-    const container = sceneWrapRef.current, stage = stageRef.current;
+    const container = sceneWrapRef.current,
+      stage = stageRef.current;
     if (!container || !stage) return;
     zoomRef.current = zoomRef.current || 1;
     stage.style.setProperty("--zoom", String(zoomRef.current));
-    const MIN = 0.5, MAX = 2.5;
-    let target = zoomRef.current, raf = 0;
+    const MIN = 0.5,
+      MAX = 2.5;
+    let target = zoomRef.current,
+      raf = 0;
     const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
     const schedule = () => {
       if (raf) return;
@@ -1004,76 +1426,121 @@ useEffect(() => {
     };
   }, []);
 
-// ---------- RESTAURAR SELECCIÓN (una sola vez) desde meta o query ----------
-const restoredRef = useRef(false);
-useEffect(() => {
-  if (restoredRef.current) return;
-  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
-  if (pots.length === 0 && plants.length === 0) return;
+  // ---------- RESTAURAR SELECCIÓN (una sola vez) desde meta o query ----------
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+    if (pots.length === 0 && plants.length === 0) return;
 
-  const meta = designMetaRef.current || {};
-  const q = new URLSearchParams(window.location.search);
+    const meta = designMetaRef.current || {};
+    const q = new URLSearchParams(window.location.search);
 
-  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
-  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
-  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+    const wantSize = (
+      q.get("size") ||
+      meta.size ||
+      meta.tamano ||
+      meta.tamaño ||
+      ""
+    ).toLowerCase();
+    const wantPot = (
+      q.get("pot") ||
+      q.get("potHandle") ||
+      meta.potHandle ||
+      meta.potTitle ||
+      meta.potId ||
+      ""
+    ).toLowerCase();
+    const wantPlant = (
+      q.get("plant") ||
+      q.get("plantHandle") ||
+      meta.plantHandle ||
+      meta.plantTitle ||
+      meta.plantId ||
+      ""
+    ).toLowerCase();
 
-  // tamaño
-  if (wantSize) {
-    if (wantSize.startsWith('p')) setActiveSize('Pequeño');
-    else if (wantSize.startsWith('m')) setActiveSize('Mediano');
-    else if (wantSize.startsWith('g')) setActiveSize('Grande');
-  }
+    // tamaño
+    if (wantSize) {
+      if (wantSize.startsWith("p")) setActiveSize("Pequeño");
+      else if (wantSize.startsWith("m")) setActiveSize("Mediano");
+      else if (wantSize.startsWith("g")) setActiveSize("Grande");
+    }
 
-  // helper
-  const toStr = (v) => String(v || '').toLowerCase().trim();
-  const gidToNum = (id) => {
-    const s = String(id || '');
-    return s.includes('gid://') ? s.split('/').pop() : s;
-  };
-  const findIdx = (arr, key) => {
-    if (!key) return -1;
-    const k = toStr(key);
-    const kNum = gidToNum(k);
-    return arr.findIndex(p => {
-      const ids = [
-        p?.id, gidToNum(p?.id), p?.handle, p?.title
-      ].map(toStr);
-      return ids.includes(k) || ids.includes(toStr(kNum));
-    });
-  };
+    // helper
+    const toStr = (v) => String(v || "").toLowerCase().trim();
+    const gidToNum = (id) => {
+      const s = String(id || "");
+      return s.includes("gid://") ? s.split("/").pop() : s;
+    };
+    const findIdx = (arr, key) => {
+      if (!key) return -1;
+      const k = toStr(key);
+      const kNum = gidToNum(k);
+      return arr.findIndex((p) => {
+        const ids = [
+          p?.id,
+          gidToNum(p?.id),
+          p?.handle,
+          p?.title,
+        ].map(toStr);
+        return ids.includes(k) || ids.includes(toStr(kNum));
+      });
+    };
 
-  // maceta / planta
-  const ip = findIdx(pots, wantPot);
-  if (ip >= 0) setSelectedPotIndex(ip);
+    // maceta / planta
+    const ip = findIdx(pots, wantPot);
+    if (ip >= 0) setSelectedPotIndex(ip);
 
-  const il = findIdx(plants, wantPlant);
-  if (il >= 0) setSelectedPlantIndex(il);
+    const il = findIdx(plants, wantPlant);
+    if (il >= 0) setSelectedPlantIndex(il);
 
-  // color (opcional)
-  if (meta.color) setSelectedColor(meta.color);
+    // color (opcional)
+    if (meta.color) setSelectedColor(meta.color);
 
-  restoredRef.current = true;
-}, [pots, plants]);
+    restoredRef.current = true;
+  }, [pots, plants]);
 
-  
   /* ---------- variantes: SOLO color ---------- */
   useEffect(() => {
     const pot = pots[selectedPotIndex];
-    if (!pot) { setColorOptions([]); setSelectedPotVariant(null); return; }
+    if (!pot) {
+      setColorOptions([]);
+      setSelectedPotVariant(null);
+      return;
+    }
     const valid = (pot.variants || []).filter((v) => !!v.image);
     const lower = (s) => (s ?? "").toString().trim().toLowerCase();
-    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value)))];
+    const colors = [
+      ...new Set(
+        valid.flatMap((v) =>
+          (v.selectedOptions || [])
+            .filter((o) => lower(o.name) === "color")
+            .map((o) => o.value)
+        )
+      ),
+    ];
     setColorOptions(colors);
     const match = (v, c) => {
       const opts = v.selectedOptions || [];
-      return c ? opts.some((o) => lower(o.name) === "color" && lower(o.value) === lower(c)) : true;
+      return c
+        ? opts.some(
+            (o) =>
+              lower(o.name) === "color" && lower(o.value) === lower(c)
+          )
+        : true;
     };
-    if (!(selectedColor && valid.some((v) => match(v, selectedColor)))) {
-      const first = colors.find((c) => valid.some((v) => match(v, c)));
+    if (!(
+      selectedColor &&
+      valid.some((v) => match(v, selectedColor))
+    )) {
+      const first = colors.find((c) =>
+        valid.some((v) => match(v, c))
+      );
       if (first) setSelectedColor(first);
     }
-    const chosen = valid.find((v) => match(v, selectedColor)) || valid[0] || null;
+    const chosen =
+      valid.find((v) => match(v, selectedColor)) || valid[0] || null;
     setSelectedPotVariant(chosen || null);
   }, [pots, selectedPotIndex, selectedColor]);
 
@@ -1081,7 +1548,9 @@ useEffect(() => {
   const getTotalPrice = () => {
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
-    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const potPrice = selectedPotVariant?.price
+      ? num(selectedPotVariant.price)
+      : firstVariantPrice(pot);
     const plantPrice = productMin(plant);
     const accTotal = selectedAccessoryIndices.reduce((s, i) => {
       const a = accessories[i];
@@ -1093,12 +1562,18 @@ useEffect(() => {
   const getTotalComparePrice = () => {
     const pot = pots[selectedPotIndex];
     const plant = plants[selectedPlantIndex];
-    const potCmp = selectedPotVariant?.compareAtPrice ? num(selectedPotVariant.compareAtPrice) :
-                    selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const potCmp = selectedPotVariant?.compareAtPrice
+      ? num(selectedPotVariant.compareAtPrice)
+      : selectedPotVariant?.price
+      ? num(selectedPotVariant.price)
+      : firstVariantPrice(pot);
     const plantCmp = productMin(plant);
     const accCmp = selectedAccessoryIndices.reduce((s, i) => {
       const a = accessories[i];
-      const base = a?.variants?.[0]?.compareAtPrice ?? a?.variants?.[0]?.price ?? a?.minPrice;
+      const base =
+        a?.variants?.[0]?.compareAtPrice ??
+        a?.variants?.[0]?.price ??
+        a?.minPrice;
       return s + num(base);
     }, 0);
     return potCmp + plantCmp + accCmp;
@@ -1114,24 +1589,37 @@ useEffect(() => {
     if (!el) return null;
     const { default: html2canvas } = await import("html2canvas");
     const onclone = (doc) => {
-      const st = doc.querySelector('[data-capture-stage="1"]') || doc.body;
+      const st =
+        doc.querySelector('[data-capture-stage="1"]') || doc.body;
       st.style.overflow = "visible";
       st.style.clipPath = "none";
       const prune = (sel, keep) => {
         const tr = doc.querySelector(sel);
         if (!tr) return;
-        Array.from(tr.children).forEach((node, i) => { if (i !== keep) node.remove(); });
+        Array.from(tr.children).forEach((node, i) => {
+          if (i !== keep) node.remove();
+        });
         tr.style.transform = "none";
         tr.style.width = "100%";
       };
-      prune('[data-capture="pot-track"]', selectedPotIndex);
-      prune('[data-capture="plant-track"]', selectedPlantIndex);
-      ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach((sel) => {
-        const c = doc.querySelector(sel);
-        if (c) { c.style.overflow = "visible"; c.style.clipPath = "none"; }
-      });
+      prune("[data-capture='pot-track']", selectedPotIndex);
+      prune("[data-capture='plant-track']", selectedPlantIndex);
+      ["[data-capture='pot-container']", "[data-capture='plant-container']"].forEach(
+        (sel) => {
+          const c = doc.querySelector(sel);
+          if (c) {
+            c.style.overflow = "visible";
+            c.style.clipPath = "none";
+          }
+        }
+      );
     };
-    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 2, useCORS: true, onclone });
+    const canvas = await html2canvas(el, {
+      backgroundColor: "#eeeaeaff",
+      scale: 2,
+      useCORS: true,
+      onclone,
+    });
     return canvas.toDataURL("image/png");
   }
   async function prepareDesignAttributes() {
@@ -1139,9 +1627,14 @@ useEffect(() => {
     try {
       const dataUrl = await captureDesignPreview();
       if (dataUrl) {
-        const resp = await fetch("/api/upload-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) });
+        const resp = await fetch("/api/upload-design", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl }),
+        });
         const json = await resp.json();
-        if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
+        if (!resp.ok)
+          throw new Error(json?.error || "Error al subir preview");
         previewUrl = json.url || "";
       }
     } catch {}
@@ -1158,526 +1651,674 @@ useEffect(() => {
     ];
   }
 
-async function publishDesignForVariant(variantId) {
-  try {
-    const api = await waitDesignerReady(20000);
-    if (!api) return { ok:false, error:'designer-not-ready' };
+  async function publishDesignForVariant(variantId) {
+    try {
+      const api = await waitDesignerReady(20000);
+      if (!api) return { ok: false, error: "designer-not-ready" };
 
-    // snapshot
-    let snap = (
-      api.exportDesignSnapshot?.() ??
-      api.exportSnapshot?.() ??
-      api.exportJSON?.() ??
-      api.toJSON?.() ??
-      api.getState?.()
-    );
-    if (!snap && typeof loadLocalDesign === 'function') snap = loadLocalDesign();
-    if (!snap) return { ok:false, error:'no-snapshot' };
+      // snapshot
+      let snap =
+        api.exportDesignSnapshot?.() ??
+        api.exportSnapshot?.() ??
+        api.exportJSON?.() ??
+        api.toJSON?.() ??
+        api.getState?.();
+      if (!snap && typeof loadLocalDesign === "function")
+        snap = loadLocalDesign();
+      if (!snap) return { ok: false, error: "no-snapshot" };
 
-    // preview
-    let previewDataURL = null;
-    try { previewDataURL = await captureDesignPreview(); } catch {}
-    if (!previewDataURL) {
-      const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
-      try { previewDataURL = canvas?.toDataURL?.('image/png') || null; } catch {}
-    }
-    if (!previewDataURL) return { ok:false, error:'no-preview' };
+      // preview
+      let previewDataURL = null;
+      try {
+        previewDataURL = await captureDesignPreview();
+      } catch {}
+      if (!previewDataURL) {
+        const canvas =
+          api.getCanvas?.() ||
+          api.canvas ||
+          document.querySelector("canvas");
+        try {
+          previewDataURL =
+            canvas?.toDataURL?.("image/png") || null;
+        } catch {}
+      }
+      if (!previewDataURL)
+        return { ok: false, error: "no-preview" };
 
-
-// DOBO: meta para restaurar selección
-const meta = {
-  potId: pots[selectedPotIndex]?.id || "",
-  potTitle: pots[selectedPotIndex]?.title || "",
-  potHandle: pots[selectedPotIndex]?.handle || "",
-  plantId: plants[selectedPlantIndex]?.id || "",
-  plantTitle: plants[selectedPlantIndex]?.title || "",
-  plantHandle: plants[selectedPlantIndex]?.handle || "",
-  color: selectedColor || "",
-  size: activeSize || ""
-};
-
-    
-    // call
-    const r = await fetch('/api/publish-by-variant', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-  variantId,
-  previewDataURL,
-  design: snap,   // el snapshot actual
-  meta            // ← importante
-})
-    });
-
-    const raw = await r.text();
-    let j; try { j = JSON.parse(raw); } catch { j = { ok:false, error: raw } }
-
-    if (!r.ok || !j?.ok) {
-      const msg = j?.error ? `${j.error}${j.stage ? ' @'+j.stage : ''}` : `HTTP ${r.status}`;
-      return { ok:false, error: msg };
-    }
-    return j;
-  } catch (e) {
-    return { ok:false, error:String(e?.message||e) };
-  }
-}
-
-
-async function getPreviewDataURL(api) {
-  // usa tu helper existente
-  try {
-    const d = await captureDesignPreview();
-    if (d) return d;
-  } catch {}
-  // fallback directo al canvas
-  const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
-  try { return canvas?.toDataURL ? canvas.toDataURL('image/png') : null; } catch { return null; }
-}
-
-async function waitDesignerReady(timeout = 20000) {
-  // 1) evento opcional si tu customizador lo emite
-  let api = null;
-  let resolved = false;
-  const onEvt = (e)=>{ api = (e && e.detail) || window.doboDesignAPI; resolved = true; };
-  window.addEventListener('dobo:ready', onEvt, { once:true });
-
-  // 2) sondeo
-  const start = Date.now();
-  while (Date.now() - start < timeout && !resolved) {
-    const a = window.doboDesignAPI;
-    const ok = a && (a.exportDesignSnapshot || a.exportSnapshot || a.exportJSON || a.toJSON || a.getState);
-    if (ok) { api = a; break; }
-    await new Promise(r => setTimeout(r, 100));
-  }
-  window.removeEventListener('dobo:ready', onEvt);
-  return api || null;
-}
-
-
-
-  
-
-
-
-
-
-
-
-// —————————————————————————————————————————————
-// POST AL CARRITO (versión DOBO → manda TODO)
-// —————————————————————————————————————————————
-function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
-  const asStr = (v) => String(v || "").trim();
-  const isNum = (v) => /^\d+$/.test(asStr(v));
-  const gidToNum = (id) => {
-    const s = asStr(id);
-    return s.includes("gid://") ? s.split("/").pop() : s;
-  };
-
-  const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
-  if (!isNum(main)) throw new Error("Variant principal inválido");
-
-  const accs = (accessoryIds || [])
-    .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
-    .filter(isNum);
-
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.target = "_top";
-  form.action = `https://${shop}/cart/add`;
-
-  const add = (n, v) => {
-    if (!v && v !== 0) return;
-    const i = document.createElement("input");
-    i.type = "hidden";
-    i.name = n;
-    i.value = String(v);
-    form.appendChild(i);
-  };
-
-  // helper: busca attr por nombre, tolera "_", ":" y mayúsculas
-  const getA = (name) => {
-    const n = String(name || "").toLowerCase();
-    return (attrs || []).find((a) => {
-      const k = String(a?.key || "").toLowerCase();
-      // quitamos un "_" inicial para comparar
-      const kClean = k.replace(/^_/, "");
-      return k === n || kClean === n;
-    })?.value || "";
-  };
-
-  let line = 0;
-
-  // leemos TODO lo que puede venir del diseñador
-  const previewUrl   = getA("designpreview");
-  const designId     = getA("designid");
-  const designPlant  = getA("designplant");
-  const designPot    = getA("designpot");
-  const designColor  = getA("designcolor");
-  const designSize   = getA("designsize");
-  const overlayAll   = getA("overlay:all") || getA("overlayall") || getA("overlay_all");
-  const layerImg     = getA("layer:image") || getA("layerimage") || getA("_layerimage");
-  const layerTxt     = getA("layer:text")  || getA("layertext")  || getA("_layertext");
-  const doNum        = getA("do") || getA("_do");
-  const noNum        = getA("no") || getA("_no");
-  const linePriority = getA("linepriority") || "0";
-
-  // ——— línea principal
-  add(`items[${line}][id]`, main);
-  add(`items[${line}][quantity]`, String(qty || 1));
-
-  // prioridad
-  add(`items[${line}][properties][_LinePriority]`, linePriority);
-
-  // preview (todas las variantes)
-  if (previewUrl) {
-    add(`items[${line}][properties][_DesignPreview]`, previewUrl);
-    add(`items[${line}][properties][DesignPreview]`, previewUrl);
-    add(`items[${line}][properties][Preview:Full]`, previewUrl);
-    add(`items[${line}][properties][_PreviewFull]`, previewUrl);
-  }
-
-  // overlay completo
-  if (overlayAll) {
-    add(`items[${line}][properties][Overlay:All]`, overlayAll);
-    add(`items[${line}][properties][OverlayAll]`, overlayAll);
-    add(`items[${line}][properties][_OverlayAll]`, overlayAll);
-  }
-
-  // capas separadas
-  if (layerImg) {
-    add(`items[${line}][properties][_LayerImage]`, layerImg);
-    add(`items[${line}][properties][LayerImage]`, layerImg);
-    add(`items[${line}][properties][Layer:Image]`, layerImg);
-  }
-  if (layerTxt) {
-    add(`items[${line}][properties][_LayerText]`, layerTxt);
-    add(`items[${line}][properties][LayerText]`, layerTxt);
-    add(`items[${line}][properties][Layer:Text]`, layerTxt);
-  }
-
-  // meta de selección
-  if (designId)    { add(`items[${line}][properties][_DesignId]`, designId); add(`items[${line}][properties][DesignId]`, designId); }
-  if (designPlant) { add(`items[${line}][properties][_DesignPlant]`, designPlant); add(`items[${line}][properties][DesignPlant]`, designPlant); }
-  if (designPot)   { add(`items[${line}][properties][_DesignPot]`, designPot); add(`items[${line}][properties][DesignPot]`, designPot); }
-  if (designColor) { add(`items[${line}][properties][_DesignColor]`, designColor); add(`items[${line}][properties][DesignColor]`, designColor); }
-  if (designSize)  { add(`items[${line}][properties][_DesignSize]`, designSize); add(`items[${line}][properties][DesignSize]`, designSize); }
-
-  // DO / NO para que el webhook las encuentre SIEMPRE
-  if (doNum) {
-    add(`items[${line}][properties][DO]`, doNum);
-    add(`items[${line}][properties][_DO]`, doNum);
-  }
-  if (noNum) {
-    add(`items[${line}][properties][NO]`, noNum);
-    add(`items[${line}][properties][_NO]`, noNum);
-  }
-
-  line++;
-
-  // ——— accesorios
-  accs.forEach((id) => {
-    add(`items[${line}][id]`, id);
-    add(`items[${line}][quantity]`, "1");
-    add(`items[${line}][properties][_Accessory]`, "true");
-    add(`items[${line}][properties][_LinePriority]`, "1");
-    line++;
-  });
-
-  if (returnTo) add("return_to", returnTo);
-  document.body.appendChild(form);
-  form.submit();
-}
-
-
-// —————————————————————————————————————————————
-// ACCESORIOS (corrige gidToNumeric → gidToNum)
-// —————————————————————————————————————————————
-const getAccessoryVariantIds = () =>
-  (selectedAccessoryIndices || [])
-    .map((i) => accessories?.[i]?.variants?.[0]?.id)
-    .map((id) => {
-      const s = String(id || "");
-      return s.includes("gid://") ? s.split("/").pop() : s;
-    })
-    .filter((id) => /^\d+$/.test(id));
-
-
-
-  
-// === REEMPLAZO: pegar DENTRO del componente Home(), antes del return ===
-const actionCore = useCallback(async ({ goCheckout }) => {
-  // 1) Atributos base (DesignPreview + meta mínima)
-  let attrs = await prepareDesignAttributes();
-
-  // 2) Canvas listo
-  const ready = await waitDesignerReady(20000);
-  if (!ready) throw new Error("designer-not-ready");
-  const fabricCanvas = window.doboDesignAPI?.getCanvas?.();
-  if (!fabricCanvas) throw new Error("canvas-missing");
-
-  // 3) URLs base (maceta / planta) desde lista
-  const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
-  const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
-
-  // --- util internos mínimos ---
-  const snap = (mult = 2) =>
-    fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
-
-  const loadImg = (u) => new Promise((res, rej) => {
-    if (!u) return rej(new Error("no-url"));
-    const im = new Image();
-    im.crossOrigin = "anonymous";
-    im.onload = () => res(im);
-    im.onerror = rej;
-    im.src = u;
-  });
-
-  const composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
-    const [ov, po, pl] = await Promise.all([
-      loadImg(overlayAllUrl),
-      potUrl ? loadImg(potUrl).catch(()=>null) : null,
-      plantUrl ? loadImg(plantUrl).catch(()=>null) : null,
-    ]);
-    const W = ov.naturalWidth || ov.width || 1024;
-    const H = ov.naturalHeight || ov.height || 1024;
-    const can = document.createElement("canvas");
-    can.width = W; can.height = H;
-    const ctx = can.getContext("2d");
-    if (po) ctx.drawImage(po, 0, 0, W, H);
-    if (pl) ctx.drawImage(pl, 0, 0, W, H);
-    ctx.drawImage(ov, 0, 0, W, H);
-    return can.toDataURL("image/png");
-  };
-
-  // 4) Capturas (overlay/texto/imagen) ocultando base
-  const isTxt = (o) => /^(i-text|textbox|text)$/i.test(o?.type) || typeof o?.text === "string";
-  const isBase = (o) => {
-    const tag = String(o?.name || o?.id || o?.doboKind || o?.role || "").toLowerCase();
-    return /(pot|maceta|plant|planta|base|bg|background)/.test(tag);
-  };
-  const hidden = [];
-  const hideIf = (pred) => {
-    (fabricCanvas.getObjects?.() || []).forEach(o => {
-      const walk = (x) => {
-        if (!x) return;
-        if (pred(x)) { hidden.push(x); x.__vis = x.visible; x.visible = false; }
-        (x._objects || []).forEach(walk);
+      // DOBO: meta para restaurar selección
+      const meta = {
+        potId: pots[selectedPotIndex]?.id || "",
+        potTitle: pots[selectedPotIndex]?.title || "",
+        potHandle: pots[selectedPotIndex]?.handle || "",
+        plantId: plants[selectedPlantIndex]?.id || "",
+        plantTitle: plants[selectedPlantIndex]?.title || "",
+        plantHandle: plants[selectedPlantIndex]?.handle || "",
+        color: selectedColor || "",
+        size: activeSize || "",
       };
-      walk(o);
-    });
-    if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
-      const bg = fabricCanvas.backgroundImage;
-      hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
+
+      // call
+      const r = await fetch("/api/publish-by-variant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          variantId,
+          previewDataURL,
+          design: snap, // el snapshot actual
+          meta, // ← importante
+        }),
+      });
+
+      const raw = await r.text();
+      let j;
+      try {
+        j = JSON.parse(raw);
+      } catch {
+        j = { ok: false, error: raw };
+      }
+
+      if (!r.ok || !j?.ok) {
+        const msg = j?.error
+          ? `${j.error}${j.stage ? " @" + j.stage : ""}`
+          : `HTTP ${r.status}`;
+        return { ok: false, error: msg };
+      }
+      return j;
+    } catch (e) {
+      return { ok: false, error: String(e?.message || e) };
     }
-    fabricCanvas.requestRenderAll?.();
-  };
-  const restore = () => { hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; }); hidden.length = 0; fabricCanvas.requestRenderAll?.(); };
+  }
 
-  // overlayAll
-  hideIf(o => isBase(o) || o === fabricCanvas.backgroundImage);
-  let overlayAll = snap(2); restore();
+  async function getPreviewDataURL(api) {
+    // usa tu helper existente
+    try {
+      const d = await captureDesignPreview();
+      if (d) return d;
+    } catch {}
+    // fallback directo al canvas
+    const canvas =
+      api.getCanvas?.() ||
+      api.canvas ||
+      document.querySelector("canvas");
+    try {
+      return canvas?.toDataURL
+        ? canvas.toDataURL("image/png")
+        : null;
+    } catch {
+      return null;
+    }
+  }
 
-  // solo texto
-  hideIf(o => isBase(o) || o === fabricCanvas.backgroundImage);
-  hideIf(o => !isTxt(o));
-  let layerTxt = snap(2); restore();
+  async function waitDesignerReady(timeout = 20000) {
+    // 1) evento opcional si tu customizador lo emite
+    let api = null;
+    let resolved = false;
+    const onEvt = (e) => {
+      api = (e && e.detail) || window.doboDesignAPI;
+      resolved = true;
+    };
+    window.addEventListener("dobo:ready", onEvt, { once: true });
 
-  // solo imagen
-  hideIf(o => isBase(o) || o === fabricCanvas.backgroundImage);
-  hideIf(o => isTxt(o));
-  let layerImg = snap(2); restore();
+    // 2) sondeo
+    const start = Date.now();
+    while (Date.now() - start < timeout && !resolved) {
+      const a = window.doboDesignAPI;
+      const ok =
+        a &&
+        (a.exportDesignSnapshot ||
+          a.exportSnapshot ||
+          a.exportJSON ||
+          a.toJSON ||
+          a.getState);
+      if (ok) {
+        api = a;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    window.removeEventListener("dobo:ready", onEvt);
+    return api || null;
+  }
 
-  // preview integrado (maceta + planta + overlayAll)
-  let previewFull = "";
-  try { previewFull = await composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
-  catch { previewFull = overlayAll; }
+  // —————————————————————————————————————————————
+  // POST AL CARRITO (mantiene compat de keys)
+  // —————————————————————————————————————————————
+  function postCart(
+    shop,
+    mainVariantId,
+    qty,
+    attrs,
+    accessoryIds,
+    returnTo
+  ) {
+    const asStr = (v) => String(v || "").trim();
+    const isNum = (v) => /^\d+$/.test(asStr(v));
+    const gidToNum = (id) => {
+      const s = asStr(id);
+      return s.includes("gid://") ? s.split("/").pop() : s;
+    };
 
-  // A https
-  const overlayAllHttps = await ensureHttpsUrl(overlayAll, "overlay-all");
-  const layerImgHttps   = await ensureHttpsUrl(layerImg,   "layer-image");
-  const layerTxtHttps   = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
-  const previewFullHttps= await ensureHttpsUrl(previewFull,"preview-full");
+    const main = isNum(mainVariantId)
+      ? asStr(mainVariantId)
+      : gidToNum(mainVariantId);
+    if (!isNum(main)) throw new Error("Variant principal inválido");
 
-  // Merge attrs (sin duplicar claves)
-  const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
-  pushKV("Overlay:All",  overlayAllHttps || overlayAll);
-  pushKV("Layer:Image",  layerImgHttps   || layerImg);
-  pushKV("Layer:Text",   layerTxtHttps   || layerTxt);
-  pushKV("DesignPreview",previewFullHttps|| previewFull); // integrado principal
+    const accs = (accessoryIds || [])
+      .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
+      .filter(isNum);
 
-  // Precios y creación del “design product”
-  const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
-  const plantPrice = productMin(plants[selectedPlantIndex]);
-  const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.target = "_top";
+    form.action = `https://${shop}/cart/add`;
 
-  const dpRes = await fetch("/api/design-product", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
-      previewUrl: previewFullHttps || overlayAllHttps || overlayAll,
-      price: basePrice,
-      color: selectedColor || "Único",
-      size:  activeSize   || "Único",
-      designId: attrs.find((a) => a.key === "_DesignId")?.value,
-      plantTitle: plants[selectedPlantIndex]?.title || "Planta",
-      potTitle:   pots[selectedPotIndex]?.title   || "Maceta",
-    }),
-  });
-  const dp = await dpRes.json();
-  if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+    const add = (n, v) => {
+      const i = document.createElement("input");
+      i.type = "hidden";
+      i.name = n;
+      i.value = String(v);
+      form.appendChild(i);
+    };
 
-  // DO / NO (para que lleguen en properties y luego el webhook los use)
-  const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
-  const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
-  pushKV("_DO", doNum);
-  pushKV("_NO", noNum);
+    let line = 0;
 
-  // Publicar assets (igual que antes)
-  const again = await waitDesignerReady(20000);
-  if (!again) throw new Error("designer-not-ready");
-  const pub = await publishDesignForVariant(dp.variantId);
-  if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+    const getA = (name) => {
+      const n = String(name || "").toLowerCase();
+      return (
+        (attrs || []).find((a) => {
+          const k = String(a?.key || "").toLowerCase();
+          return k === n || k === `_${n}`;
+        })?.value || ""
+      );
+    };
 
-  // Ir a carrito/checkout
-  const accIds = getAccessoryVariantIds();
-  postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, goCheckout ? "/checkout" : "/cart");
-}, [
-  pots, plants, accessories, selectedPotIndex, selectedPlantIndex, selectedPotVariant,
-  selectedAccessoryIndices, quantity, selectedColor, activeSize
-]);
+    const previewUrl = getA("DesignPreview");
+    const designId = getA("DesignId");
+    const designPlant = getA("DesignPlant");
+    const designPot = getA("DesignPot");
+    const designColor = getA("DesignColor");
+    const designSize = getA("DesignSize");
+    const layerImg =
+      getA("Layer:Image") ||
+      getA("LayerImage") ||
+      getA("_LayerImage");
+    const layerTxt =
+      getA("Layer:Text") || getA("LayerText") || getA("_LayerText");
 
-  // === HANDSHAKE: guardar las imágenes en el backend ===
-  const designId =
-    attrs.find(a => a.key === "_DesignId" || a.key === "DesignId")?.value ||
-    String(Date.now());
+    // Línea principal
+    add(`items[${line}][id]`, main);
+    add(`items[${line}][quantity]`, String(qty || 1));
+    add(`items[${line}][properties][_LinePriority]`, "0");
+    if (previewUrl)
+      add(
+        `items[${line}][properties][_DesignPreview]`,
+        previewUrl
+      );
+    if (designId)
+      add(`items[${line}][properties][_DesignId]`, designId);
+    if (designPlant)
+      add(`items[${line}][properties][_DesignPlant]`, designPlant);
+    if (designPot)
+      add(`items[${line}][properties][_DesignPot]`, designPot);
+    if (designColor)
+      add(`items[${line}][properties][_DesignColor]`, designColor);
+    if (designSize)
+      add(`items[${line}][properties][_DesignSize]`, designSize);
+    if (layerImg)
+      add(`items[${line}][properties][_LayerImage]`, layerImg);
+    if (layerTxt)
+      add(`items[${line}][properties][_LayerText]`, layerTxt);
+    line++;
 
-  // nos aseguramos que viaje SIEMPRE el designId corto a Shopify
-  attrs = attrs.filter(a => a.key !== "_DesignId" && a.key !== "DesignId");
-  attrs.push({ key: "_DesignId", value: designId });
+    // Accesorios (si hay)
+    accs.forEach((id) => {
+      add(`items[${line}][id]`, id);
+      add(`items[${line}][quantity]`, "1");
+      add(`items[${line}][properties][_Accessory]`, "true");
+      add(`items[${line}][properties][_LinePriority]`, "1");
+      line++;
+    });
 
-  try {
-    await fetch("/api/design-handshake", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        designId,
-        preview: previewFullHttps || previewFull || "",
-        overlay: overlayAllHttps || overlayAll || "",
-        layerImg: layerImgHttps || layerImg || "",
-        layerText: layerTxtHttps || layerTxt || "",
+    if (returnTo) add("return_to", returnTo);
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  // —————————————————————————————————————————————
+  // ACCESORIOS (corrige gidToNumeric → gidToNum)
+  // —————————————————————————————————————————————
+  const getAccessoryVariantIds = () =>
+    (selectedAccessoryIndices || [])
+      .map((i) => accessories?.[i]?.variants?.[0]?.id)
+      .map((id) => {
+        const s = String(id || "");
+        return s.includes("gid://") ? s.split("/").pop() : s;
+      })
+      .filter((id) => /^\d+$/.test(id));
+
+  // === REEMPLAZO: pegar DENTRO del componente Home(), antes del return ===
+  const actionCore = useCallback(
+    async ({ goCheckout }) => {
+      // 1) Atributos base (DesignPreview + meta mínima)
+      let attrs = await prepareDesignAttributes();
+
+      // 2) Canvas listo
+      const ready = await waitDesignerReady(20000);
+      if (!ready) throw new Error("designer-not-ready");
+      const fabricCanvas = window.doboDesignAPI?.getCanvas?.();
+      if (!fabricCanvas) throw new Error("canvas-missing");
+
+      // 3) URLs base (maceta / planta) desde lista
+      const potUrl = readImageUrlFor(pots?.[selectedPotIndex]);
+      const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+
+      // --- util internos mínimos ---
+      const snap = (mult = 2) =>
+        fabricCanvas.toDataURL({
+          format: "png",
+          multiplier: mult,
+          backgroundColor: null,
+        });
+
+      const loadImg = (u) =>
+        new Promise((res, rej) => {
+          if (!u) return rej(new Error("no-url"));
+          const im = new Image();
+          im.crossOrigin = "anonymous";
+          im.onload = () => res(im);
+          im.onerror = rej;
+          im.src = u;
+        });
+
+      const composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+        const [ov, po, pl] = await Promise.all([
+          loadImg(overlayAllUrl),
+          potUrl ? loadImg(potUrl).catch(() => null) : null,
+          plantUrl ? loadImg(plantUrl).catch(() => null) : null,
+        ]);
+        const W = ov.naturalWidth || ov.width || 1024;
+        const H = ov.naturalHeight || ov.height || 1024;
+        const can = document.createElement("canvas");
+        can.width = W;
+        can.height = H;
+        const ctx = can.getContext("2d");
+        if (po) ctx.drawImage(po, 0, 0, W, H);
+        if (pl) ctx.drawImage(pl, 0, 0, W, H);
+        ctx.drawImage(ov, 0, 0, W, H);
+        return can.toDataURL("image/png");
+      };
+
+      // 4) Capturas (overlay/texto/imagen) ocultando base
+      const isTxt = (o) =>
+        /^(i-text|textbox|text)$/i.test(o?.type) ||
+        typeof o?.text === "string";
+      const isBase = (o) => {
+        const tag = String(
+          o?.name || o?.id || o?.doboKind || o?.role || ""
+        ).toLowerCase();
+        return /(pot|maceta|plant|planta|base|bg|background)/.test(tag);
+      };
+      const hidden = [];
+      const hideIf = (pred) => {
+        (fabricCanvas.getObjects?.() || []).forEach((o) => {
+          const walk = (x) => {
+            if (!x) return;
+            if (pred(x)) {
+              hidden.push(x);
+              x.__vis = x.visible;
+              x.visible = false;
+            }
+            (x._objects || []).forEach(walk);
+          };
+          walk(o);
+        });
+        if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
+          const bg = fabricCanvas.backgroundImage;
+          hidden.push(bg);
+          bg.__vis = bg.visible;
+          bg.visible = false;
+        }
+        fabricCanvas.requestRenderAll?.();
+      };
+      const restore = () => {
+        hidden.forEach((o) => {
+          o.visible = o.__vis !== false;
+          delete o.__vis;
+        });
+        hidden.length = 0;
+        fabricCanvas.requestRenderAll?.();
+      };
+
+      // overlayAll
+      hideIf((o) => isBase(o) || o === fabricCanvas.backgroundImage);
+      let overlayAll = snap(2);
+      restore();
+
+      // solo texto
+      hideIf((o) => isBase(o) || o === fabricCanvas.backgroundImage);
+      hideIf((o) => !isTxt(o));
+      let layerTxt = snap(2);
+      restore();
+
+      // solo imagen
+      hideIf((o) => isBase(o) || o === fabricCanvas.backgroundImage);
+      hideIf((o) => isTxt(o));
+      let layerImg = snap(2);
+      restore();
+
+      // preview integrado (maceta + planta + overlayAll)
+      let previewFull = "";
+      try {
+        previewFull = await composeFull({
+          overlayAllUrl: overlayAll,
+          potUrl,
+          plantUrl,
+        });
+      } catch {
+        previewFull = overlayAll;
+      }
+
+      // A https
+      const overlayAllHttps = await ensureHttpsUrl(
+        overlayAll,
+        "overlay-all"
+      );
+      const layerImgHttps = await ensureHttpsUrl(
+        layerImg,
+        "layer-image"
+      );
+      const layerTxtHttps = layerTxt
+        ? await ensureHttpsUrl(layerTxt, "layer-text")
+        : "";
+      const previewFullHttps = await ensureHttpsUrl(
+        previewFull,
+        "preview-full"
+      );
+
+      // Merge attrs (sin duplicar claves)
+      const pushKV = (k, v) => {
+        if (v)
+          attrs = [
+            ...attrs.filter(
+              (a) => a.key !== k && a.key !== `_${k}`
+            ),
+            { key: k, value: v },
+          ];
+      };
+      pushKV("Overlay:All", overlayAllHttps || overlayAll);
+      pushKV("Layer:Image", layerImgHttps || layerImg);
+      pushKV("Layer:Text", layerTxtHttps || layerTxt);
+      pushKV("DesignPreview", previewFullHttps || previewFull); // integrado principal
+
+      // Precios y creación del “design product”
+      const potPrice = selectedPotVariant?.price
+        ? num(selectedPotVariant.price)
+        : firstVariantPrice(pots[selectedPotIndex]);
+      const plantPrice = productMin(plants[selectedPlantIndex]);
+      const basePrice = Number(
+        ((potPrice + plantPrice) * quantity).toFixed(2)
+      );
+
+      const dpRes = await fetch("/api/design-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `DOBO ${
+            plants[selectedPlantIndex]?.title
+          } + ${pots[selectedPotIndex]?.title}`,
+          previewUrl:
+            previewFullHttps ||
+            overlayAllHttps ||
+            overlayAll,
+          price: basePrice,
+          color: selectedColor || "Único",
+          size: activeSize || "Único",
+          designId: attrs.find((a) => a.key === "_DesignId")?.value,
+          plantTitle:
+            plants[selectedPlantIndex]?.title || "Planta",
+          potTitle: pots[selectedPotIndex]?.title || "Maceta",
+        }),
+      });
+      const dp = await dpRes.json();
+      if (!dpRes.ok || !dp?.variantId)
+        throw new Error(dp?.error || "No se creó el producto DOBO");
+
+      // DO / NO (para que lleguen en properties y luego el webhook los use)
+      const doNum = (
+        attrs.find((a) => a.key === "_DesignId")?.value || ""
+      )
+        .toString()
+        .slice(-8)
+        .toUpperCase();
+      const noNum = (
+        String(dp.variantId || "").includes("gid://")
+          ? String(dp.variantId).split("/").pop()
+          : String(dp.variantId)
+      );
+
+      // ——— forzar que DO / _DO / _NO queden en attrs ———
+      attrs = (attrs || []).filter(
+        (a) => !["DO", "_DO", "_NO"].includes(String(a?.key))
+      );
+      if (doNum) {
+        attrs.push({ key: "DO", value: doNum });
+        attrs.push({ key: "_DO", value: doNum });
+      }
+      if (noNum) {
+        attrs.push({ key: "_NO", value: noNum });
+      }
+
+      // ——— handshake al backend con TODAS las imágenes ———
+      const handshakePayload = {
+        designId:
+          attrs.find(
+            (a) => a.key === "_DesignId" || a.key === "DesignId"
+          )?.value ||
+          doNum ||
+          String(Date.now()),
+        preview:
+          previewFullHttps || previewFull || "",
+        overlay:
+          overlayAllHttps || overlayAll || "",
+        layerImg:
+          layerImgHttps || layerImg || "",
+        layerText:
+          layerTxtHttps || layerTxt || "",
         pot: pots?.[selectedPotIndex] || null,
         plant: plants?.[selectedPlantIndex] || null,
         color: selectedColor || "",
         size: activeSize || "",
-      }),
-    });
-  } catch (e) {
-    console.warn("[dobo] handshake failed, seguimos igual:", e);
-  }
+      };
 
-  
-// Botones públicos
-const addToCart = useCallback(() => actionCore({ goCheckout: false }).catch(e => alert(`No se pudo añadir: ${e.message}`)), [actionCore]);
-const buyNow    = useCallback(() => actionCore({ goCheckout: true  }).catch(e => alert(`No se pudo iniciar el checkout: ${e.message}`)), [actionCore]);
+      try {
+        fetch("/api/design-handshake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(handshakePayload),
+        }).catch((err) =>
+          console.warn("[dobo] handshake failed:", err)
+        );
+      } catch (err) {
+        console.warn("[dobo] handshake error:", err);
+      }
 
-// Exponer por si algo externo las llama
-useEffect(() => {
-  window.__DOBO = window.__DOBO || {};
-  window.__DOBO.addToCart = addToCart;
-  window.__DOBO.buyNow    = buyNow;
-}, [addToCart, buyNow]);
+      // Publicar assets (igual que antes)
+      const again = await waitDesignerReady(20000);
+      if (!again) throw new Error("designer-not-ready");
+      const pub = await publishDesignForVariant(dp.variantId);
+      if (!pub?.ok) throw new Error(pub?.error || "publish failed");
 
+      // Ir a carrito/checkout
+      const accIds = getAccessoryVariantIds();
+      postCart(
+        SHOP_DOMAIN,
+        dp.variantId,
+        quantity,
+        attrs,
+        accIds,
+        goCheckout ? "/checkout" : "/cart"
+      );
+    },
+    [
+      pots,
+      plants,
+      accessories,
+      selectedPotIndex,
+      selectedPlantIndex,
+      selectedPotVariant,
+      selectedAccessoryIndices,
+      quantity,
+      selectedColor,
+      activeSize,
+    ]
+  );
 
+  // Botones públicos
+  const addToCart = useCallback(
+    () =>
+      actionCore({ goCheckout: false }).catch((e) =>
+        alert(`No se pudo añadir: ${e.message}`)
+      ),
+    [actionCore]
+  );
+  const buyNow = useCallback(
+    () =>
+      actionCore({ goCheckout: true }).catch((e) =>
+        alert(`No se pudo iniciar el checkout: ${e.message}`)
+      ),
+    [actionCore]
+  );
 
+  // Exponer por si algo externo las llama
+  useEffect(() => {
+    window.__DOBO = window.__DOBO || {};
+    window.__DOBO.addToCart = addToCart;
+    window.__DOBO.buyNow = buyNow;
+  }, [addToCart, buyNow]);
+
+  // === DOBO loader desde ?designUrl ===
+  useEffect(() => {
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const designUrl = params.get("designUrl");
+      if (!designUrl) return;
+
+      // esperar API del editor
+      const wait = async (ms = 20000) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < ms) {
+          const a = window.doboDesignAPI;
+          const ok =
+            a &&
+            (a.importDesignSnapshot ||
+              a.loadDesignSnapshot ||
+              a.loadJSON ||
+              a.loadFromJSON);
+          if (ok) return a;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return null;
+      };
+      const api = await wait();
+      if (!api) return;
+
+      try {
+        api?.reset?.();
+        const resp = await fetch(designUrl, {
+          cache: "no-store",
+        });
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        const snapshot = payload?.design || payload;
+        // guarda meta para sincronizar carruseles
+        designMetaRef.current =
+          payload?.meta ||
+          payload?.doboMeta ||
+          snapshot?.meta ||
+          null;
+        setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
+
+        if (api.importDesignSnapshot)
+          await api.importDesignSnapshot(snapshot);
+        else if (api.loadDesignSnapshot)
+          await api.loadDesignSnapshot(snapshot);
+        else if (api.loadJSON) await api.loadJSON(snapshot);
+        else if (api.loadFromJSON) {
+          await new Promise((res) =>
+            api.loadFromJSON(snapshot, () => {
+              api.requestRenderAll?.();
+              res();
+            })
+          );
+        }
+      } catch (e) {
+        console.error("load designUrl failed", e);
+      }
+    })();
+  }, []);
+  // === /DOBO loader ===
 
   /* ---------- handlers swipe ---------- */
   const createHandlers = (items, setIndex) => ({
-    prev: () => setIndex((p) => (p > 0 ? p - 1 : Math.max(items.length - 1, 0))),
-    next: () => setIndex((p) => (p < items.length - 1 ? p + 1 : 0)),
+    prev: () =>
+      setIndex((p) =>
+        p > 0 ? p - 1 : Math.max(items.length - 1, 0)
+      ),
+    next: () =>
+      setIndex((p) =>
+        p < items.length - 1 ? p + 1 : 0
+      ),
   });
-  const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
+  const plantHandlers = createHandlers(
+    plants,
+    setSelectedPlantIndex
+  );
   const potHandlers = createHandlers(pots, setSelectedPotIndex);
-  const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
-  const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
+  const plantSwipeEvents = makeSwipeEvents(
+    plantSwipeRef,
+    plantHandlers
+  );
+  const potSwipeEvents = makeSwipeEvents(
+    potSwipeRef,
+    potHandlers
+  );
 
   /* ---------- UI ---------- */
-  const baseCode = selectedPotVariant?.price?.currencyCode || "CLP";
+  const baseCode =
+    selectedPotVariant?.price?.currencyCode || "CLP";
   const totalNow = getTotalPrice() * quantity;
   const totalBase = getTotalComparePrice() * quantity;
 
-// === DOBO loader desde ?designUrl ===
-useEffect(() => {
-  (async () => {
-    const params = new URLSearchParams(window.location.search);
-    const designUrl = params.get("designUrl");
-    if (!designUrl) return;
-
-    // esperar API del editor
-    const wait = async (ms = 20000) => {
-      const t0 = Date.now();
-      while (Date.now() - t0 < ms) {
-        const a = window.doboDesignAPI;
-        const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
-        if (ok) return a;
-        await new Promise(r => setTimeout(r, 100));
-      }
-      return null;
-    };
-    const api = await wait();
-    if (!api) return;
-
-    try {
-      api?.reset?.();
-      const resp = await fetch(designUrl, { cache: "no-store" });
-      if (!resp.ok) return;
-      const payload = await resp.json();
-      const snapshot = payload?.design || payload;
-// guarda meta para sincronizar carruseles
-designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
-      setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
-
-
-      if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
-      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
-      else if (api.loadJSON) await api.loadJSON(snapshot);
-      else if (api.loadFromJSON) {
-        await new Promise(res => api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); }));
-      }
-    } catch (e) {
-      console.error("load designUrl failed", e);
-    }
-  })();
-}, []);
-// === /DOBO loader ===
-
-
-  
   return (
-<div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
-
-
-
+    <div
+      className={`container mt-lg-3 mt-0 ${styles.container}`}
+      style={{ paddingBottom: "150px" }}
+    >
       <div className="row justify-content-center align-items-start gx-5 gy-4">
         <div className="col-lg-5 col-md-8 col-12 text-center">
           {/* Selector de tamaño */}
-          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-         {["Pequeño", "Mediano", "Grande"].map((s) => (
-  <button
-    key={s}
-    className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
-    onClick={() => {
-      userPickedSizeRef.current = true;        // el usuario eligió
-      appliedMetaOnceRef.current = true;       // no volver a aplicar meta luego
-      setActiveSize(s);                        // dispara fetch por tamaño
-    }}
-  >
-    {s}
-  </button>
-))}
-
-
+          <div
+            className="btn-group mb-3"
+            role="group"
+            aria-label="Tamaño"
+          >
+            {["Pequeño", "Mediano", "Grande"].map((s) => (
+              <button
+                key={s}
+                className={`btn btn-sm ${
+                  activeSize === s
+                    ? "btn-dark"
+                    : "btn-outline-secondary"
+                }`}
+                onClick={() => {
+                  userPickedSizeRef.current = true; // el usuario eligió
+                  appliedMetaOnceRef.current = true; // no volver a aplicar meta luego
+                  setActiveSize(s); // dispara fetch por tamaño
+                }}
+              >
+                {s}
+              </button>
+            ))}
           </div>
 
           {/* Escena */}
@@ -1687,7 +2328,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             style={{
               width: "500px",
               height: "650px",
-              width: "100%", maxWidth: "500px",
+              width: "100%",
+              maxWidth: "500px",
               aspectRatio: "500 / 650",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
               backgroundSize: "cover",
@@ -1707,44 +2349,98 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             <IndicatorDots
               count={plants.length}
               current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              onSelect={(i) =>
+                setSelectedPlantIndex(
+                  Math.max(0, Math.min(i, plants.length - 1))
+                )
+              }
               position="top"
             />
             <button
               className={`${styles.chev} ${styles.chevTopLeft}`}
               aria-label="Anterior"
-              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
+              onClick={() =>
+                setSelectedPlantIndex((p) =>
+                  p > 0
+                    ? p - 1
+                    : Math.max(plants.length - 1, 0)
+                )
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
             <button
               className={`${styles.chev} ${styles.chevTopRight}`}
               aria-label="Siguiente"
-              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
+              onClick={() =>
+                setSelectedPlantIndex((p) =>
+                  p < plants.length - 1 ? p + 1 : 0
+                )
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M9 6l6 6-6 6" />
+              </svg>
             </button>
 
             {/* Dots y flechas MACETAS */}
             <IndicatorDots
               count={pots.length}
               current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              onSelect={(i) =>
+                setSelectedPotIndex(
+                  Math.max(0, Math.min(i, pots.length - 1))
+                )
+              }
               position="bottom"
             />
             <button
               className={`${styles.chev} ${styles.chevBottomLeft}`}
               aria-label="Anterior"
-              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+              onClick={() =>
+                setSelectedPotIndex((p) =>
+                  p > 0 ? p - 1 : Math.max(pots.length - 1, 0)
+                )
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
             <button
               className={`${styles.chev} ${styles.chevBottomRight}`}
               aria-label="Siguiente"
-              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+              onClick={() =>
+                setSelectedPotIndex((p) =>
+                  p < pots.length - 1 ? p + 1 : 0
+                )
+              }
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M9 6l6 6-6 6" />
+              </svg>
             </button>
 
             {/* Nodo escalado con carruseles */}
@@ -1768,21 +2464,52 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                style={{
+                  zIndex: 1,
+                  touchAction: "pan-y",
+                  userSelect: "none",
+                }}
+                onPointerDownCapture={(e) =>
+                  handlePointerDownCap(e, potDownRef)
+                }
+                onPointerUpCapture={(e) =>
+                  handlePointerUpCap(
+                    e,
+                    potDownRef,
+                    createHandlers(pots, setSelectedPotIndex)
+                  )
+                }
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...potSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                <div
+                  className={styles.carouselTrack}
+                  data-capture="pot-track"
+                  style={{
+                    transform: `translateX(-${
+                      selectedPotIndex * 100
+                    }%)`,
+                  }}
+                >
                   {pots.map((product, idx) => {
                     const isSel = idx === selectedPotIndex;
-                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                    const vImg = isSel
+                      ? selectedPotVariant?.image ||
+                        selectedPotVariant?.imageUrl ||
+                        null
+                      : null;
                     const imageUrl = vImg || product.image;
                     return (
-                      <div key={product.id} className={styles.carouselItem}>
-                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+                      <div
+                        key={product.id}
+                        className={styles.carouselItem}
+                      >
+                        <img
+                          src={imageUrl}
+                          alt={product.title}
+                          className={styles.carouselImage}
+                        />
                       </div>
                     );
                   })}
@@ -1794,43 +2521,99 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+                style={{
+                  zIndex: 2,
+                  position: "absolute",
+                  bottom: "300px",
+                  height: "530px",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  touchAction: "pan-y",
+                  userSelect: "none",
+                }}
+                onPointerDownCapture={(e) =>
+                  handlePointerDownCap(e, plantDownRef)
+                }
+                onPointerUpCapture={(e) =>
+                  handlePointerUpCap(
+                    e,
+                    plantDownRef,
+                    createHandlers(plants, setSelectedPlantIndex)
+                  )
+                }
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...plantSwipeEvents}
               >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                <div
+                  className={styles.carouselTrack}
+                  data-capture="plant-track"
+                  style={{
+                    transform: `translateX(-${
+                      selectedPlantIndex * 100
+                    }%)`,
+                  }}
+                >
                   {plants.map((product) => (
-                    <div key={product.id} className={styles.carouselItem}>
-                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
+                    <div
+                      key={product.id}
+                      className={styles.carouselItem}
+                    >
+                      <img
+                        src={product.image}
+                        alt={product.title}
+                        className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+                      />
                     </div>
                   ))}
                 </div>
               </div>
             </div>
           </div>
-{/* Dock menú DOBO debajo de carruseles */}
-<div id="dobo-menu-dock" className={styles.menuDock} />
-
-       
+          {/* Dock menú DOBO debajo de carruseles */}
+          <div id="dobo-menu-dock" className={styles.menuDock} />
         </div>
 
         {/* Overlay de edición (restaurado) */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+        <CustomizationOverlay
+          mode="both"
+          stageRef={stageRef}
+          anchorRef={potScrollRef}
+          containerRef={sceneWrapRef}
+          docked={false}
+        />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
           {pots.length > 0 && plants.length > 0 && (
             <div className="text-center">
-              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
+              <div
+                className="d-flex justify-content-center align-items-baseline gap-3 mb-4"
+                style={{ marginTop: 20 }}
+              >
                 {totalBase > totalNow && (
-                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
-                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
+                  <p
+                    style={{
+                      marginTop: 8,
+                      fontSize: "1.2rem",
+                      color: "#6c757d",
+                    }}
+                  >
+                    <span
+                      style={{ textDecoration: "line-through" }}
+                    >
+                      {money(totalBase, baseCode)}
+                    </span>
                   </p>
                 )}
-                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
+                <span
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: "3rem",
+                  }}
+                >
+                  {money(totalNow, baseCode)}
+                </span>
               </div>
 
               {/* SOLO color */}
@@ -1840,7 +2623,9 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                   <div className="d-flex justify-content-center gap-3 flex-wrap">
                     {colorOptions.map((color, index) => {
                       const bg = resolveColor(color);
-                      const isWhite = bg.toLowerCase() === "#ffffff" || bg.toLowerCase() === "#fff";
+                      const isWhite =
+                        bg.toLowerCase() === "#ffffff" ||
+                        bg.toLowerCase() === "#fff";
                       const isSelected = selectedColor === color;
                       return (
                         <div
@@ -1853,9 +2638,15 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                             width: 40,
                             height: 40,
                             borderRadius: "50%",
-                            backgroundColor: bg,              // <- FIX: usar color real
-                            border: isSelected ? "3px solid #000" : (isWhite ? "1px solid #999" : "1px solid #ccc"),
-                            boxShadow: isSelected ? "0 0 0 3px rgba(0,0,0,0.15) inset" : "none",
+                            backgroundColor: bg, // <- FIX: usar color real
+                            border: isSelected
+                              ? "3px solid #000"
+                              : isWhite
+                              ? "1px solid #999"
+                              : "1px solid #ccc",
+                            boxShadow: isSelected
+                              ? "0 0 0 3px rgba(0,0,0,0.15) inset"
+                              : "none",
                             cursor: "pointer",
                             transition: "transform .12s ease",
                           }}
@@ -1866,74 +2657,142 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 </div>
               )}
 
-   {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
-          {accessories && accessories.length > 0 && (
-            <div className="mb-4 mt-4">
-              <h5>Accesorios</h5>
-              <div className="d-flex justify-content-center gap-3 flex-wrap">
-                {accessories.map((product, index) => {
-                  const img =
-                    product?.image?.src || product?.image ||
-                    (Array.isArray(product?.images) && product.images[0]?.src) ||
-                    "/placeholder.png";
-                  const title = product?.title || product?.name || `Accesorio ${index + 1}`;
-                  const selected = selectedAccessoryIndices.includes(index);
-                  return (
-                    <div
-                      key={product?.id || index}
-                      onClick={(e) => {
-                        setSelectedAccessoryIndices((prev) =>
-                          prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
-                        );
-                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
-                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
-                        setAccPreview({
-                          visible: true,
-                          x: cx + 16,
-                          y: cy + 16,
-                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
-                        });
-                      }}
-                      onMouseEnter={(e) => {
-                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
-                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
-                        setAccPreview({
-                          visible: true,
-                          x: cx + 16,
-                          y: cy + 16,
-                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
-                        });
-                      }}
-                      onMouseMove={(e) =>
-                        setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
-                      }
-                      onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
-                      aria-label={title}
-                      style={{
-                        border: selected ? "3px solid black" : "1px solid #ccc",
-                        borderRadius: "12px",
-                        padding: "6px",
-                        cursor: "zoom-in",
-                        width: "100px",
-                        height: "100px",
-                        overflow: "hidden",
-                        transition: "transform 0.2s ease",
-                      }}
-                    >
-                      <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+              {/* Accesorios */}
+              {accessories && accessories.length > 0 && (
+                <div className="mb-4 mt-4">
+                  <h5>Accesorios</h5>
+                  <div className="d-flex justify-content-center gap-3 flex-wrap">
+                    {accessories.map((product, index) => {
+                      const img =
+                        product?.image?.src ||
+                        product?.image ||
+                        (Array.isArray(product?.images) &&
+                          product.images[0]?.src) ||
+                        "/placeholder.png";
+                      const title =
+                        product?.title ||
+                        product?.name ||
+                        `Accesorio ${index + 1}`;
+                      const selected =
+                        selectedAccessoryIndices.includes(index);
+                      return (
+                        <div
+                          key={product?.id || index}
+                          onClick={(e) => {
+                            setSelectedAccessoryIndices((prev) =>
+                              prev.includes(index)
+                                ? prev.filter((i) => i !== index)
+                                : [...prev, index]
+                            );
+                            const cx =
+                              typeof e?.clientX === "number"
+                                ? e.clientX
+                                : 0;
+                            const cy =
+                              typeof e?.clientY === "number"
+                                ? e.clientY
+                                : 0;
+                            setAccPreview({
+                              visible: true,
+                              x: cx + 16,
+                              y: cy + 16,
+                              html: buildIframeHTML(
+                                img,
+                                title,
+                                product?.description ||
+                                  product?.body_html ||
+                                  ""
+                              ),
+                            });
+                          }}
+                          onMouseEnter={(e) => {
+                            const cx =
+                              typeof e?.clientX === "number"
+                                ? e.clientX
+                                : 0;
+                            const cy =
+                              typeof e?.clientY === "number"
+                                ? e.clientY
+                                : 0;
+                            setAccPreview({
+                              visible: true,
+                              x: cx + 16,
+                              y: cy + 16,
+                              html: buildIframeHTML(
+                                img,
+                                title,
+                                product?.description ||
+                                  product?.body_html ||
+                                  ""
+                              ),
+                            });
+                          }}
+                          onMouseMove={(e) =>
+                            setAccPreview((p) =>
+                              p.visible
+                                ? {
+                                    ...p,
+                                    x: e.clientX + 16,
+                                    y: e.clientY + 16,
+                                  }
+                                : p
+                            )
+                          }
+                          onMouseLeave={() =>
+                            setAccPreview((p) => ({
+                              ...p,
+                              visible: false,
+                            }))
+                          }
+                          aria-label={title}
+                          style={{
+                            border: selected
+                              ? "3px solid black"
+                              : "1px solid #ccc",
+                            borderRadius: "12px",
+                            padding: "6px",
+                            cursor: "zoom-in",
+                            width: "100px",
+                            height: "100px",
+                            overflow: "hidden",
+                            transition: "transform 0.2s ease",
+                          }}
+                        >
+                          <img
+                            src={img}
+                            alt={title}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              borderRadius: "6px",
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Cantidad + botones */}
               <div className="d-flex flex-column align-items-center mb-5">
                 <div className="mb-3 text-center">
-                  <label className="form-label d-block">Cantidad</label>
-                  <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
+                  <label className="form-label d-block">
+                    Cantidad
+                  </label>
+                  <div
+                    className="input-group justify-content-center"
+                    style={{ maxWidth: 200, margin: "0 auto" }}
+                  >
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() =>
+                        setQuantity((p) => Math.max(1, p - 1))
+                      }
+                    >
+                      -
+                    </button>
                     <input
                       type="number"
                       className="form-control text-center"
@@ -1944,7 +2803,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                         const val = e.target.value;
                         if (/^\d*$/.test(val)) {
                           const n = parseInt(val, 10);
-                          if (!isNaN(n) && n >= 1 && n <= 1000) setQuantity(n);
+                          if (!isNaN(n) && n >= 1 && n <= 1000)
+                            setQuantity(n);
                           else if (val === "") setQuantity("");
                         }
                       }}
@@ -1954,41 +2814,77 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                         else if (n > 1000) setQuantity(1000);
                       }}
                     />
-                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() =>
+                        setQuantity((p) =>
+                          Math.min(1000, p + 1)
+                        )
+                      }
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
 
                 <div className="d-flex gap-3">
-                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
-                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                  <button
+                    className="btn btn-outline-dark px-4 py-2"
+                    onClick={addToCart}
+                  >
+                    Añadir al carro
+                  </button>
+                  <button
+                    className="btn btn-dark px-4 py-2"
+                    onClick={buyNow}
+                  >
+                    Comprar ahora
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
           {/* Descripciones */}
-          <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
-            <h6><strong>Planta</strong></h6>
+          <div
+            className="text-start px-3 mb-4"
+            style={{ maxWidth: 500, margin: "0 auto" }}
+          >
+            <h6>
+              <strong>Planta</strong>
+            </h6>
             {(() => {
               const p = plants[selectedPlantIndex];
               const html = p?.descriptionHtml;
               const d = p?.description;
               return html ? (
-                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+                <div
+                  style={{ fontSize: "1.2rem" }}
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
               ) : (
-                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+                <p style={{ fontSize: "1.2rem" }}>
+                  {d || "Descripción no disponible."}
+                </p>
               );
             })()}
 
-            <h6 className="mt-3"><strong>Maceta</strong></h6>
+            <h6 className="mt-3">
+              <strong>Maceta</strong>
+            </h6>
             {(() => {
               const p = pots[selectedPotIndex];
               const html = p?.descriptionHtml;
               const d = p?.description;
               return html ? (
-                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+                <div
+                  style={{ fontSize: "1.2rem" }}
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
               ) : (
-                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+                <p style={{ fontSize: "1.2rem" }}>
+                  {d || "Descripción no disponible."}
+                </p>
               );
             })()}
           </div>
@@ -2001,15 +2897,28 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         x={accPreview.x}
         y={accPreview.y}
         html={accPreview.html}
-        onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
+        onClose={() =>
+          setAccPreview((p) => ({ ...p, visible: false }))
+        }
       />
 
       <style jsx global>{`
-        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
-        .pot-carousel--locked::-webkit-scrollbar { display: none; }
+        .pot-carousel--locked {
+          pointer-events: none;
+          user-select: none;
+          -webkit-user-drag: none;
+          touch-action: none;
+          overflow: hidden !important;
+          scrollbar-width: none;
+        }
+        .pot-carousel--locked::-webkit-scrollbar {
+          display: none;
+        }
       `}</style>
     </div>
   );
-
 }
-export default dynamic(() => Promise.resolve(Home), { ssr: false });
+
+export default dynamic(() => Promise.resolve(Home), {
+  ssr: false,
+});
