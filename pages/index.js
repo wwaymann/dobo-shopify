@@ -1548,6 +1548,36 @@ const actionCore = useCallback(async ({ goCheckout }) => {
   selectedAccessoryIndices, quantity, selectedColor, activeSize
 ]);
 
+  // === HANDSHAKE: guardar las imágenes en el backend ===
+  const designId =
+    attrs.find(a => a.key === "_DesignId" || a.key === "DesignId")?.value ||
+    String(Date.now());
+
+  // nos aseguramos que viaje SIEMPRE el designId corto a Shopify
+  attrs = attrs.filter(a => a.key !== "_DesignId" && a.key !== "DesignId");
+  attrs.push({ key: "_DesignId", value: designId });
+
+  try {
+    await fetch("/api/design-handshake", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        designId,
+        preview: previewFullHttps || previewFull || "",
+        overlay: overlayAllHttps || overlayAll || "",
+        layerImg: layerImgHttps || layerImg || "",
+        layerText: layerTxtHttps || layerTxt || "",
+        pot: pots?.[selectedPotIndex] || null,
+        plant: plants?.[selectedPlantIndex] || null,
+        color: selectedColor || "",
+        size: activeSize || "",
+      }),
+    });
+  } catch (e) {
+    console.warn("[dobo] handshake failed, seguimos igual:", e);
+  }
+
+  
 // Botones públicos
 const addToCart = useCallback(() => actionCore({ goCheckout: false }).catch(e => alert(`No se pudo añadir: ${e.message}`)), [actionCore]);
 const buyNow    = useCallback(() => actionCore({ goCheckout: true  }).catch(e => alert(`No se pudo iniciar el checkout: ${e.message}`)), [actionCore]);
