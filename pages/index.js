@@ -1264,7 +1264,7 @@ async function waitDesignerReady(timeout = 20000) {
 
 
 // —————————————————————————————————————————————
-// POST AL CARRITO (mantiene compat de keys)
+// POST AL CARRITO (versión DOBO → manda TODO)
 // —————————————————————————————————————————————
 function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   const asStr = (v) => String(v || "").trim();
@@ -1287,6 +1287,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   form.action = `https://${shop}/cart/add`;
 
   const add = (n, v) => {
+    if (!v && v !== 0) return;
     const i = document.createElement("input");
     i.type = "hidden";
     i.name = n;
@@ -1294,40 +1295,87 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
     form.appendChild(i);
   };
 
-  let line = 0;
-
+  // helper: busca attr por nombre, tolera "_", ":" y mayúsculas
   const getA = (name) => {
     const n = String(name || "").toLowerCase();
     return (attrs || []).find((a) => {
       const k = String(a?.key || "").toLowerCase();
-      return k === n || k === `_${n}`;
+      // quitamos un "_" inicial para comparar
+      const kClean = k.replace(/^_/, "");
+      return k === n || kClean === n;
     })?.value || "";
   };
 
-  const previewUrl  = getA("DesignPreview");
-  const designId    = getA("DesignId");
-  const designPlant = getA("DesignPlant");
-  const designPot   = getA("DesignPot");
-  const designColor = getA("DesignColor");
-  const designSize  = getA("DesignSize");
-  const layerImg    = getA("Layer:Image") || getA("LayerImage") || getA("_LayerImage");
-  const layerTxt    = getA("Layer:Text")  || getA("LayerText")  || getA("_LayerText");
+  let line = 0;
 
-  // Línea principal
+  // leemos TODO lo que puede venir del diseñador
+  const previewUrl   = getA("designpreview");
+  const designId     = getA("designid");
+  const designPlant  = getA("designplant");
+  const designPot    = getA("designpot");
+  const designColor  = getA("designcolor");
+  const designSize   = getA("designsize");
+  const overlayAll   = getA("overlay:all") || getA("overlayall") || getA("overlay_all");
+  const layerImg     = getA("layer:image") || getA("layerimage") || getA("_layerimage");
+  const layerTxt     = getA("layer:text")  || getA("layertext")  || getA("_layertext");
+  const doNum        = getA("do") || getA("_do");
+  const noNum        = getA("no") || getA("_no");
+  const linePriority = getA("linepriority") || "0";
+
+  // ——— línea principal
   add(`items[${line}][id]`, main);
   add(`items[${line}][quantity]`, String(qty || 1));
-  add(`items[${line}][properties][_LinePriority]`, "0");
-  if (previewUrl)  add(`items[${line}][properties][_DesignPreview]`, previewUrl);
-  if (designId)    add(`items[${line}][properties][_DesignId]`, designId);
-  if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
-  if (designPot)   add(`items[${line}][properties][_DesignPot]`, designPot);
-  if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
-  if (designSize)  add(`items[${line}][properties][_DesignSize]`, designSize);
-  if (layerImg)    add(`items[${line}][properties][_LayerImage]`, layerImg);
-  if (layerTxt)    add(`items[${line}][properties][_LayerText]`, layerTxt);
+
+  // prioridad
+  add(`items[${line}][properties][_LinePriority]`, linePriority);
+
+  // preview (todas las variantes)
+  if (previewUrl) {
+    add(`items[${line}][properties][_DesignPreview]`, previewUrl);
+    add(`items[${line}][properties][DesignPreview]`, previewUrl);
+    add(`items[${line}][properties][Preview:Full]`, previewUrl);
+    add(`items[${line}][properties][_PreviewFull]`, previewUrl);
+  }
+
+  // overlay completo
+  if (overlayAll) {
+    add(`items[${line}][properties][Overlay:All]`, overlayAll);
+    add(`items[${line}][properties][OverlayAll]`, overlayAll);
+    add(`items[${line}][properties][_OverlayAll]`, overlayAll);
+  }
+
+  // capas separadas
+  if (layerImg) {
+    add(`items[${line}][properties][_LayerImage]`, layerImg);
+    add(`items[${line}][properties][LayerImage]`, layerImg);
+    add(`items[${line}][properties][Layer:Image]`, layerImg);
+  }
+  if (layerTxt) {
+    add(`items[${line}][properties][_LayerText]`, layerTxt);
+    add(`items[${line}][properties][LayerText]`, layerTxt);
+    add(`items[${line}][properties][Layer:Text]`, layerTxt);
+  }
+
+  // meta de selección
+  if (designId)    { add(`items[${line}][properties][_DesignId]`, designId); add(`items[${line}][properties][DesignId]`, designId); }
+  if (designPlant) { add(`items[${line}][properties][_DesignPlant]`, designPlant); add(`items[${line}][properties][DesignPlant]`, designPlant); }
+  if (designPot)   { add(`items[${line}][properties][_DesignPot]`, designPot); add(`items[${line}][properties][DesignPot]`, designPot); }
+  if (designColor) { add(`items[${line}][properties][_DesignColor]`, designColor); add(`items[${line}][properties][DesignColor]`, designColor); }
+  if (designSize)  { add(`items[${line}][properties][_DesignSize]`, designSize); add(`items[${line}][properties][DesignSize]`, designSize); }
+
+  // DO / NO para que el webhook las encuentre SIEMPRE
+  if (doNum) {
+    add(`items[${line}][properties][DO]`, doNum);
+    add(`items[${line}][properties][_DO]`, doNum);
+  }
+  if (noNum) {
+    add(`items[${line}][properties][NO]`, noNum);
+    add(`items[${line}][properties][_NO]`, noNum);
+  }
+
   line++;
 
-  // Accesorios (si hay)
+  // ——— accesorios
   accs.forEach((id) => {
     add(`items[${line}][id]`, id);
     add(`items[${line}][quantity]`, "1");
@@ -1340,6 +1388,7 @@ function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
   document.body.appendChild(form);
   form.submit();
 }
+
 
 // —————————————————————————————————————————————
 // ACCESORIOS (corrige gidToNumeric → gidToNum)
