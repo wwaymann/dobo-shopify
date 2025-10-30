@@ -1,152 +1,143 @@
 // pages/api/webhooks/shopify.js
 import crypto from "crypto";
 
-export const config = { api: { bodyParser: false } };
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
-// ——— memoria temporal para debug (último payload procesado) ———
-let LAST = { topic: null, shop: null, paid: false, orderId: null, mainLineProps: null, attrs: null, ts: 0 };
-
-// leer cuerpo crudo
 async function readRawBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  return Buffer.concat(chunks);
+  return await new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
 }
 
-function verifyHmac(rawBody, req, secret) {
-  const sig = req.headers["x-shopify-hmac-sha256"];
-  if (!sig || !secret) return false;
-  const digest = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
-  try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(digest)); }
-  catch { return sig === digest; }
-}
-
-function kvListToObject(list = [], nameKey = "name", valueKey = "value") {
-  const out = {};
-  for (const it of list) {
-    const k = String(it?.[nameKey] || "").trim();
-    if (!k) continue;
-    out[k] = String(it?.[valueKey] ?? "");
-  }
-  return out;
-}
-
-function buildEmailAttrsFromProps(props) {
-  const get = (...keys) => {
-    for (const k of keys) {
-      if (props[k] != null) return String(props[k]);
-      const k2 = k.startsWith("_") ? k.slice(1) : `_${k}`;
-      if (props[k2] != null) return String(props[k2]);
-    }
-    return "";
-  };
-  const attrs = [];
-  const push = (k, v) => v && attrs.push({ key: k, value: v });
-
-  // capas
-  push("DesignPreview", get("DesignPreview", "Preview:Full", "PreviewFull"));
-  push("Overlay:All",   get("Overlay:All", "OverlayAll"));
-  push("Layer:Image",   get("Layer:Image", "LayerImage"));
-  push("Layer:Text",    get("Layer:Text",  "LayerText"));
-
-  // meta
-  push("_DesignId",    get("DesignId"));
-  push("_DesignPlant", get("DesignPlant"));
-  push("_DesignPot",   get("DesignPot"));
-  push("_DesignColor", get("DesignColor"));
-  push("_DesignSize",  get("DesignSize"));
-  push("_LinePriority", get("LinePriority"));
-  push("_DO", get("DO"));
-  push("_NO", get("NO"));
-
-  return attrs.slice(0, 100);
+function verifyShopifyHmac(rawBody, hmacHeader, secret) {
+  const digest = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody, "utf8")
+    .digest("base64");
+  return crypto.timingSafeEqual(
+    Buffer.from(digest, "utf8"),
+    Buffer.from(hmacHeader || "", "utf8")
+  );
 }
 
 export default async function handler(req, res) {
-  // ——— GET = inspección rápida del último webhook recibido ———
   if (req.method === "GET") {
-    return res.status(200).json({ ok: true, last: LAST });
+    // tu health
+    return res.status(200).json({ ok: true, path: "/api/webhooks/shopify" });
   }
 
-  const raw = await readRawBody(req);
-  const okHmac = verifyHmac(raw, req, process.env.SHOPIFY_WEBHOOK_SECRET);
-  if (!okHmac) {
-    console.warn("[WEBHOOK] invalid HMAC");
-    return res.status(401).json({ ok: false, error: "invalid-hmac" });
+  if (req.method !== "POST") {
+    return res.status(200).json({ ok: true });
   }
 
-  let payload = {};
-  try { payload = JSON.parse(raw.toString("utf8")); } catch {}
+  const rawBody = await readRawBody(req);
+  const shop = req.headers["x-shopify-shop-domain"] || "";
+  const topic = req.headers["x-shopify-topic"] || "";
+  const hmac = req.headers["x-shopify-hmac-sha256"] || "";
+  const secret =
+    process.env.SHOPIFY_WEBHOOK_SECRET ||
+    process.env.SHOPIFY_API_SECRET ||
+    "";
 
-  const topic = String(req.headers["x-shopify-topic"] || "");
-  const shop  = String(req.headers["x-shopify-shop-domain"] || "");
-  const isPaid =
-    topic === "orders/paid" ||
-    (topic === "orders/create" && String(payload?.financial_status || "").toLowerCase() === "paid");
+  if (secret) {
+    const ok = verifyShopifyHmac(rawBody, hmac, secret);
+    if (!ok) {
+      return res.status(401).json({ ok: false, error: "bad-hmac" });
+    }
+  }
 
-  const orderId = payload?.id || null;
-  console.log("[WEBHOOK] topic=", topic, "shop=", shop, "paid=", isPaid, "order_id=", orderId);
+  const payload = JSON.parse(rawBody || "{}");
 
-  // Respondemos rápido para que Shopify no reintente
-  res.status(200).json({ ok: true, accepted: true });
+  if (topic !== "orders/paid") {
+    return res.status(200).json({ ok: true, skip: true });
+  }
 
-  // Solo actuamos si está pagado
-  if (!isPaid) return;
+  const orderId = payload.id;
+  const line = Array.isArray(payload.line_items) ? payload.line_items[0] : null;
+  const props = Array.isArray(line?.properties) ? line.properties : [];
 
-  try {
-    const items = Array.isArray(payload?.line_items) ? payload.line_items : [];
-    const main =
-      items.find(li =>
-        (li?.properties || []).some(p => p?.name === "_LinePriority" && String(p?.value) === "0")
-      ) || items[0];
+  const attrs = props.map((p) => ({ key: p.name, value: p.value }));
 
-    const propsObj = kvListToObject(main?.properties || [], "name", "value");
-    const attrs = buildEmailAttrsFromProps(propsObj);
+  // 1) buscamos el designId que el frontend guardó
+  const designId =
+    attrs.find((a) => a.key === "_DesignId")?.value ||
+    attrs.find((a) => a.key === "DesignId")?.value ||
+    "";
 
-    const designId = propsObj["_DesignId"] || propsObj["DesignId"] || "";
-    const doNum = (designId ? String(designId).slice(-8).toUpperCase() : (propsObj["DO"] || propsObj["_DO"] || ""));
-    const noNum = String(main?.variant_id || payload?.id || "");
+  let designData = null;
+  if (designId) {
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000");
 
-    if (doNum && !attrs.some(a => a.key === "_DO")) attrs.push({ key: "_DO", value: doNum });
-    if (noNum && !attrs.some(a => a.key === "_NO")) attrs.push({ key: "_NO", value: noNum });
+      const r = await fetch(
+        `${base}/api/design-handshake?designId=${encodeURIComponent(designId)}`
+      );
+      const j = await r.json();
+      if (j?.ok) {
+        designData = j.design;
+      }
+    } catch (e) {
+      console.error("[webhook] no se pudo cargar handshake:", e);
+    }
+  }
 
-    const size  = propsObj["_DesignSize"]  || propsObj["DesignSize"]  || "";
-    const color = propsObj["_DesignColor"] || propsObj["DesignColor"] || "";
-    const shortDescription = [main?.title || "", size, color].filter(Boolean).join(" · ");
+  // 2) si tenemos diseño, mandamos correo
+  if (designData) {
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000");
 
-    const siteHost =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `https://${req.headers["x-forwarded-host"] || req.headers.host}`);
+      await fetch(`${base}/api/send-design-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: `DOBO – Pedido pagado ${orderId || ""}`,
+          orderId,
+          shop,
+          paid: true,
+          designId,
+          preview: designData.preview,
+          overlay: designData.overlay,
+          layerImg: designData.layerImg,
+          layerText: designData.layerText,
+          pot: designData.pot,
+          plant: designData.plant,
+          color: designData.color,
+          size: designData.size,
+          rawProps: attrs,
+        }),
+      });
+    } catch (e) {
+      console.error("[webhook] error enviando correo:", e);
+    }
+  }
 
-    // Guardamos último para inspección
-    LAST = {
-      topic, shop, paid: isPaid, orderId,
-      mainLineProps: propsObj,
+  // 3) responder health como el que viste
+  return res.status(200).json({
+    ok: true,
+    last: {
+      topic,
+      shop,
+      paid: true,
+      orderId,
       attrs,
-      ts: Date.now()
-    };
-    console.log("[WEBHOOK] main props:", propsObj);
-
-    // Disparo del correo (fire-and-forget)
-    fetch(`${siteHost}/api/send-design-email`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        subject: (doNum || noNum) ? [`DO ${doNum || ""}`, `NO ${noNum || ""}`].filter(Boolean).join(" · ") : "DOBO",
-        attrs,
-        meta: { Descripcion: shortDescription, Precio: payload?.current_total_price || payload?.total_price || "" },
-        links: {
-          Order: `https://${shop}/admin/orders/${orderId || ""}`,
-          Storefront: siteHost
-        },
-        attachPreviews: true,
-        attachOverlayAll: true
-      })
-    }).then(r => {
-      if (!r.ok) console.error("[WEBHOOK] send-design-email failed status", r.status);
-    }).catch(err => console.error("[WEBHOOK] send-design-email error", err));
-
-  } catch (e) {
-    console.error("[WEBHOOK] process error", e);
-  }
+      designId,
+      hasDesign: !!designData,
+      ts: Date.now(),
+    },
+  });
 }
