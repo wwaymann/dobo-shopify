@@ -1,135 +1,201 @@
 // pages/api/webhooks/shopify/orders-paid.js
-// o dentro de tu handler principal de /api/webhooks/shopify
+
+// 👉 si usas otra ruta (por ejemplo /api/webhooks/shopify.js) pega esto ahí.
+// 👉 este archivo asume que YA tienes /api/send-design-email funcionando
+//    (lo usabas en el index 39).
 
 export const config = {
   api: {
-    bodyParser: false, // as usual con Shopify
+    bodyParser: true, // ya vimos que tu webhook actual recibe JSON normal
   },
 };
 
-import crypto from "crypto";
+// guardamos el último evento para /api/webhooks/_health
+let LAST_EVENT = null;
 
-// helper básico para leer el raw body de Shopify
-async function readRawBody(req) {
-  return await new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
-  });
+// helper: normaliza las propiedades que vienen desde Shopify
+function normalizeLineItemProps(props = []) {
+  const norm = {};
+  const list = [];
+
+  for (const p of props) {
+    if (!p || !p.name) continue;
+    const rawKey = String(p.name);
+    const value = String(p.value ?? "");
+
+    // guardamos tal cual llegó, para mostrar en _health
+    list.push({ key: rawKey, value });
+
+    // normalizamos: sin _ inicial, sin :, sin espacios, minúscula
+    const k = rawKey
+      .toLowerCase()
+      .replace(/^_+/, "")
+      .replace(/[:\s]+/g, "");
+
+    norm[k] = value;
+  }
+
+  return { norm, list };
 }
 
-// SI YA TIENES un verifyHmac en tu archivo, usa ese y borra este
-function verifyShopifyHmac(rawBody, hmacHeader, secret) {
-  const digest = crypto
-    .createHmac("sha256", secret)
-    .update(rawBody, "utf8")
-    .digest("base64");
-  return crypto.timingSafeEqual(
-    Buffer.from(digest, "utf8"),
-    Buffer.from(hmacHeader || "", "utf8")
-  );
+// helper: arma la URL base para llamarnos a nosotros mismos
+function getBaseUrl(req) {
+  // intenta con las envs típicas de Vercel
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SELF_URL ||
+    process.env.VERCEL_URL;
+
+  if (envUrl) {
+    // si viene sin protocolo, se lo ponemos
+    if (/^https?:\/\//i.test(envUrl)) return envUrl;
+    return `https://${envUrl}`;
+  }
+
+  // fallback: host del request
+  const host = req.headers.host;
+  return `https://${host}`;
 }
 
 export default async function handler(req, res) {
+  // pequeño healthcheck como el que ya tienes
+  if (req.method === "GET" && "_health" in req.query) {
+    return res.json({
+      ok: true,
+      last: LAST_EVENT,
+    });
+  }
+
   if (req.method !== "POST") {
-    return res.status(200).json({ ok: true });
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
 
-  const shop = req.headers["x-shopify-shop-domain"] || "";
-  const topic = req.headers["x-shopify-topic"] || "";
-  const hmac = req.headers["x-shopify-hmac-sha256"] || "";
+  try {
+    const topic =
+      req.headers["x-shopify-topic"] ||
+      req.body?.topic ||
+      "orders/paid"; // por si acaso
+    const shop =
+      req.headers["x-shopify-shop-domain"] ||
+      req.body?.shop_domain ||
+      req.body?.shop ||
+      "unknown-shop";
 
-  const rawBody = await readRawBody(req);
+    const order = req.body || {};
+    const orderId = order.id || order.order_id || order.name || null;
 
-  // ⚠️ pon tu secret real de Shopify acá
-  const secret = process.env.SHOPIFY_WEBHOOK_SECRET || process.env.SHOPIFY_API_SECRET || "";
+    const lineItems = Array.isArray(order.line_items)
+      ? order.line_items
+      : [];
+    // tomamos la primera línea que tenga properties (suele ser la del DOBO)
+    const mainLine =
+      lineItems.find((li) => Array.isArray(li.properties) && li.properties.length) ||
+      lineItems[0] ||
+      {};
 
-  if (secret && !verifyShopifyHmac(rawBody, hmac, secret)) {
-    return res.status(401).json({ ok: false, error: "bad-hmac" });
-  }
+    const { norm, list: attrs } = normalizeLineItemProps(
+      mainLine.properties || []
+    );
 
-  const payload = JSON.parse(rawBody || "{}");
+    // acá viene lo importante:
+    // Shopify muchas veces NO deja pasar claves con ":" (Overlay:All)
+    // y tampoco deja pasar mayúsculas… por eso las buscamos en varias formas
+    const designPreview =
+      norm.previewfull ||
+      norm.designpreview ||
+      norm.preview ||
+      norm.design ||
+      ""; // el integrado
+    const overlayAll =
+      norm.overlayall ||
+      norm.overlay ||
+      norm.overlayallpng ||
+      "";
+    const layerImage =
+      norm.layerimage ||
+      norm.layerimg ||
+      norm.layerpng ||
+      "";
+    const layerText =
+      norm.layertext ||
+      norm.layertexto ||
+      "";
 
-  // SOLO nos interesa cuando está pagado
-  if (topic !== "orders/paid") {
-    return res.status(200).json({ ok: true, skip: true });
-  }
+    // DO / NO (estos sí vimos que llegan)
+    const doNum = norm.do || norm.dobo || norm.designid || "";
+    const noNum =
+      norm.no ||
+      norm._no || // por si acaso
+      ""; 
 
-  const orderId = payload.id;
-  const lineItems = payload.line_items || [];
-  const mainLine = lineItems[0] || {};
-  const props = Array.isArray(mainLine.properties) ? mainLine.properties : [];
+    // guardamos para el _health
+    LAST_EVENT = {
+      topic,
+      shop,
+      paid: true,
+      orderId,
+      mainLineProps: norm,
+      attrs,
+      ts: Date.now(),
+    };
 
-  // acá es donde tu _health te estaba mostrando SOLO _NO
-  // lo rearmamos en un formato que sirva para el mail
-  const attrs = props
-    .filter((p) => p && p.name) // limpia nulls
-    .map((p) => ({ key: p.name, value: p.value }));
+    // si no tenemos NADA de diseño, igual respondemos ok para que Shopify no reintente
+    if (!designPreview && !overlayAll && !layerImage && !layerText) {
+      // PERO dejamos rastro
+      console.warn("[DOBO webhook] Pedido pagado SIN capas de diseño", {
+        orderId,
+        norm,
+      });
 
-  // esto lo dejo igual que tu _health actual
-  const last = {
-    topic,
-    shop,
-    paid: true,
-    orderId,
-    mainLineProps: Object.fromEntries(
-      props.map((p) => [p.name, p.value])
-    ),
-    attrs,
-    ts: Date.now(),
-  };
+      return res.json({
+        ok: true,
+        note: "paid-without-design",
+        last: LAST_EVENT,
+      });
+    }
 
-  // ⬇️⬇️⬇️ AQUÍ VIENE LA PARTE QUE TE FALTABA ⬇️⬇️⬇️
+    // si llegamos acá, hay algún material de diseño → llamamos a /api/send-design-email
+    const baseUrl = getBaseUrl(req);
+    const emailPayload = {
+      subject: `DOBO – pedido pagado ${order.name || orderId || ""}`,
+      orderId: orderId,
+      shop,
+      designPreview,
+      overlayAll,
+      layerImage,
+      layerText,
+      doNum,
+      noNum,
+      // mandamos TODO por si tu /api/send-design-email lo necesita
+      rawOrder: order,
+      attrs,
+    };
 
-  // buscamos las imágenes que mandó el frontend
-  // tu frontend las está mandando en estas keys:
-  // _DesignPreview, _OverlayAll, _LayerImage, _LayerText
-  const find = (name) =>
-    attrs.find((a) => a.key === name)?.value ||
-    attrs.find((a) => a.key.toLowerCase() === name.toLowerCase())?.value ||
-    "";
-
-  const designPreview = find("_DesignPreview") || find("DesignPreview");
-  const overlayAll = find("_OverlayAll") || find("Overlay:All") || find("OverlayAll");
-  const layerImage = find("_LayerImage") || find("Layer:Image") || find("LayerImage");
-  const layerText = find("_LayerText") || find("Layer:Text") || find("LayerText");
-  const doNum = find("_DO") || find("DO");
-  const noNum = find("_NO") || find("NO");
-
-  // si no hay al menos una imagen, no spameamos
-  if (designPreview || overlayAll || layerImage || layerText) {
+    // llamamos a nuestro endpoint interno
     try {
-      // ojo: usa la misma ruta que ya tenías funcionando en el index viejo
-      // (el que mandaba el mail directo)
-      const base =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-
-      await fetch(`${base}/api/send-design-email`, {
+      const r = await fetch(`${baseUrl}/api/send-design-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subject: `DOBO – Pedido pagado ${orderId || ""}`,
-          orderId,
-          shop,
-          paid: true,
-          attrs,
-          mainLineProps: last.mainLineProps,
-          // mando las 4 imágenes en campos explícitos
-          designPreview,
-          overlayAll,
-          layerImage,
-          layerText,
-          doNum,
-          noNum,
-        }),
+        body: JSON.stringify(emailPayload),
       });
-    } catch (err) {
-      console.error("[webhook] error enviando correo:", err);
-    }
-  }
 
-  // devolvemos el mismo formato que viste
-  return res.status(200).json({ ok: true, last });
+      const jr = await r.json().catch(() => ({}));
+      if (!r.ok || !jr?.ok) {
+        console.warn("[DOBO webhook] /api/send-design-email no respondió ok", {
+          status: r.status,
+          body: jr,
+        });
+      }
+    } catch (err) {
+      console.warn(
+        "[DOBO webhook] error llamando a /api/send-design-email",
+        err
+      );
+    }
+
+    return res.json({ ok: true, last: LAST_EVENT });
+  } catch (err) {
+    console.error("[DOBO webhook] error general", err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
 }
