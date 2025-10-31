@@ -1,69 +1,23 @@
-// pages/api/webhooks/shopify/orders-paid.js
-
-// 👉 si usas otra ruta (por ejemplo /api/webhooks/shopify.js) pega esto ahí.
-// 👉 este archivo asume que YA tienes /api/send-design-email funcionando
-//    (lo usabas en el index 39).
+// pages/api/send-design-email.js
+import nodemailer from "nodemailer";
 
 export const config = {
   api: {
-    bodyParser: true, // ya vimos que tu webhook actual recibe JSON normal
+    bodyParser: true,
   },
 };
 
-// guardamos el último evento para /api/webhooks/_health
-let LAST_EVENT = null;
-
-// helper: normaliza las propiedades que vienen desde Shopify
-function normalizeLineItemProps(props = []) {
-  const norm = {};
-  const list = [];
-
-  for (const p of props) {
-    if (!p || !p.name) continue;
-    const rawKey = String(p.name);
-    const value = String(p.value ?? "");
-
-    // guardamos tal cual llegó, para mostrar en _health
-    list.push({ key: rawKey, value });
-
-    // normalizamos: sin _ inicial, sin :, sin espacios, minúscula
-    const k = rawKey
-      .toLowerCase()
-      .replace(/^_+/, "")
-      .replace(/[:\s]+/g, "");
-
-    norm[k] = value;
+// helper para elegir el primer valor no vacío
+function pick(...args) {
+  for (const a of args) {
+    if (a !== undefined && a !== null && a !== "") return a;
   }
-
-  return { norm, list };
-}
-
-// helper: arma la URL base para llamarnos a nosotros mismos
-function getBaseUrl(req) {
-  // intenta con las envs típicas de Vercel
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.SELF_URL ||
-    process.env.VERCEL_URL;
-
-  if (envUrl) {
-    // si viene sin protocolo, se lo ponemos
-    if (/^https?:\/\//i.test(envUrl)) return envUrl;
-    return `https://${envUrl}`;
-  }
-
-  // fallback: host del request
-  const host = req.headers.host;
-  return `https://${host}`;
+  return "";
 }
 
 export default async function handler(req, res) {
-  // pequeño healthcheck como el que ya tienes
   if (req.method === "GET" && "_health" in req.query) {
-    return res.json({
-      ok: true,
-      last: LAST_EVENT,
-    });
+    return res.json({ ok: true, info: "send-design-email up" });
   }
 
   if (req.method !== "POST") {
@@ -71,131 +25,141 @@ export default async function handler(req, res) {
   }
 
   try {
-    const topic =
-      req.headers["x-shopify-topic"] ||
-      req.body?.topic ||
-      "orders/paid"; // por si acaso
-    const shop =
-      req.headers["x-shopify-shop-domain"] ||
-      req.body?.shop_domain ||
-      req.body?.shop ||
-      "unknown-shop";
+    const body = req.body || {};
 
-    const order = req.body || {};
-    const orderId = order.id || order.order_id || order.name || null;
-
-    const lineItems = Array.isArray(order.line_items)
-      ? order.line_items
-      : [];
-    // tomamos la primera línea que tenga properties (suele ser la del DOBO)
-    const mainLine =
-      lineItems.find((li) => Array.isArray(li.properties) && li.properties.length) ||
-      lineItems[0] ||
-      {};
-
-    const { norm, list: attrs } = normalizeLineItemProps(
-      mainLine.properties || []
+    // 🚩 aquí soportamos AMBOS formatos
+    const designPreview = pick(
+      body.designPreview,
+      body.previewFull,
+      body.preview,
+      body.DesignPreview,
+      body["DesignPreview"],
+      body["Preview:Full"]
+    );
+    const overlayAll = pick(
+      body.overlayAll,
+      body["Overlay:All"],
+      body.overlay,
+      body.Overlay,
+      body["overlay:all"]
+    );
+    const layerImage = pick(
+      body.layerImage,
+      body["Layer:Image"],
+      body.layerImg,
+      body.layerPNG
+    );
+    const layerText = pick(
+      body.layerText,
+      body["Layer:Text"],
+      body.layerTxt
     );
 
-    // acá viene lo importante:
-    // Shopify muchas veces NO deja pasar claves con ":" (Overlay:All)
-    // y tampoco deja pasar mayúsculas… por eso las buscamos en varias formas
-    const designPreview =
-      norm.previewfull ||
-      norm.designpreview ||
-      norm.preview ||
-      norm.design ||
-      ""; // el integrado
-    const overlayAll =
-      norm.overlayall ||
-      norm.overlay ||
-      norm.overlayallpng ||
-      "";
-    const layerImage =
-      norm.layerimage ||
-      norm.layerimg ||
-      norm.layerpng ||
-      "";
-    const layerText =
-      norm.layertext ||
-      norm.layertexto ||
-      "";
+    const doNum = pick(body.doNum, body.DO, body._DO, body.do);
+    const noNum = pick(body.noNum, body.NO, body._NO, body.no);
 
-    // DO / NO (estos sí vimos que llegan)
-    const doNum = norm.do || norm.dobo || norm.designid || "";
-    const noNum =
-      norm.no ||
-      norm._no || // por si acaso
-      ""; 
+    const orderId = body.orderId || "";
+    const shop = body.shop || "";
+    const source = body.source || "client";
 
-    // guardamos para el _health
-    LAST_EVENT = {
-      topic,
-      shop,
-      paid: true,
+    console.log("[DOBO send-design-email] payload recibido", {
+      source,
       orderId,
-      mainLineProps: norm,
-      attrs,
-      ts: Date.now(),
-    };
-
-    // si no tenemos NADA de diseño, igual respondemos ok para que Shopify no reintente
-    if (!designPreview && !overlayAll && !layerImage && !layerText) {
-      // PERO dejamos rastro
-      console.warn("[DOBO webhook] Pedido pagado SIN capas de diseño", {
-        orderId,
-        norm,
-      });
-
-      return res.json({
-        ok: true,
-        note: "paid-without-design",
-        last: LAST_EVENT,
-      });
-    }
-
-    // si llegamos acá, hay algún material de diseño → llamamos a /api/send-design-email
-    const baseUrl = getBaseUrl(req);
-    const emailPayload = {
-      subject: `DOBO – pedido pagado ${order.name || orderId || ""}`,
-      orderId: orderId,
       shop,
-      designPreview,
-      overlayAll,
-      layerImage,
-      layerText,
+      hasPreview: !!designPreview,
+      hasOverlay: !!overlayAll,
+      hasLayerImg: !!layerImage,
+      hasLayerTxt: !!layerText,
       doNum,
       noNum,
-      // mandamos TODO por si tu /api/send-design-email lo necesita
-      rawOrder: order,
-      attrs,
-    };
+    });
 
-    // llamamos a nuestro endpoint interno
-    try {
-      const r = await fetch(`${baseUrl}/api/send-design-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailPayload),
-      });
-
-      const jr = await r.json().catch(() => ({}));
-      if (!r.ok || !jr?.ok) {
-        console.warn("[DOBO webhook] /api/send-design-email no respondió ok", {
-          status: r.status,
-          body: jr,
-        });
-      }
-    } catch (err) {
+    // si NO hay ninguna imagen, igual respondemos ok para no romper nada
+    if (!designPreview && !overlayAll && !layerImage && !layerText) {
       console.warn(
-        "[DOBO webhook] error llamando a /api/send-design-email",
-        err
+        "[DOBO send-design-email] sin imágenes/capas, respondo ok igual"
       );
+      return res.json({ ok: true, note: "no-images" });
     }
 
-    return res.json({ ok: true, last: LAST_EVENT });
+    // HTML muy simple
+    const htmlParts = [];
+    htmlParts.push(`<h2>Nuevo diseño DOBO</h2>`);
+    if (orderId) htmlParts.push(`<p><strong>Order:</strong> ${orderId}</p>`);
+    if (shop) htmlParts.push(`<p><strong>Shop:</strong> ${shop}</p>`);
+    if (doNum || noNum)
+      htmlParts.push(
+        `<p><strong>DO/NO:</strong> ${doNum || "-"} / ${noNum || "-"}</p>`
+      );
+    if (designPreview)
+      htmlParts.push(
+        `<p><strong>DesignPreview</strong><br><img src="${designPreview}" alt="preview" style="max-width:400px;border:1px solid #ccc"/></p>`
+      );
+    if (overlayAll)
+      htmlParts.push(
+        `<p><strong>Overlay:All</strong><br><img src="${overlayAll}" alt="overlay" style="max-width:400px;border:1px solid #ccc"/></p>`
+      );
+    if (layerImage)
+      htmlParts.push(
+        `<p><strong>Layer:Image</strong><br><img src="${layerImage}" alt="layer-img" style="max-width:400px;border:1px solid #ccc"/></p>`
+      );
+    if (layerText)
+      htmlParts.push(
+        `<p><strong>Layer:Text</strong><br><img src="${layerText}" alt="layer-txt" style="max-width:400px;border:1px solid #ccc;background:#fff"/></p>`
+      );
+
+    const html = htmlParts.join("\n");
+
+    // SMTP desde env
+    const host = process.env.SMTP_HOST;
+    const port = process.env.SMTP_PORT
+      ? Number(process.env.SMTP_PORT)
+      : 587;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+    const to =
+      process.env.DOBO_INBOX ||
+      process.env.NOTIFY_EMAIL ||
+      process.env.SMTP_TO ||
+      "dev@dobo.local";
+
+    // si no hay SMTP, lo registramos y devolvemos ok para que tú veas el log
+    if (!host || !user || !pass) {
+      console.warn(
+        "[DOBO send-design-email] SMTP no configurado. Env vars faltan."
+      );
+      console.warn("Necesitas: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS");
+      // igual devolvemos el HTML para que lo puedas ver en el log
+      return res.json({
+        ok: true,
+        note: "smtp-not-configured",
+        preview: html,
+      });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+    });
+
+    const subject =
+      body.subject ||
+      `DOBO – diseño pagado ${orderId ? `#${orderId}` : ""}`.trim();
+
+    const info = await transporter.sendMail({
+      from: user,
+      to,
+      subject,
+      html,
+    });
+
+    console.log("[DOBO send-design-email] enviado", info.messageId);
+
+    return res.json({ ok: true, messageId: info.messageId });
   } catch (err) {
-    console.error("[DOBO webhook] error general", err);
+    console.error("[DOBO send-design-email] error", err);
     return res.status(500).json({ ok: false, error: String(err) });
   }
 }
