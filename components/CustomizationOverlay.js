@@ -1608,10 +1608,10 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
    // ===== Render =====
   return (
     <>
-      {/* Overlay dentro de la maceta */}
+           {/* Overlay dentro de la maceta */}
       {stageRef?.current ? createPortal(<OverlayCanvas />, stageRef.current) : null}
 
-      {/* Menú fijo abajo */}
+      {/* Menú fijo inferior */}
       {anchorRef?.current ? (
         createPortal(
           <div
@@ -1635,5 +1635,4 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
   );
 }
 
-// ✅ cierre definitivo sin export fuera de bloque
-module.exports = CustomizationOverlay;
+export default CustomizationOverlay;
