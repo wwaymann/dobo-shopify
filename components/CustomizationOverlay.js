@@ -1605,7 +1605,7 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
     );
   }
 
-  // ===== Render =====
+   // ===== Render =====
   return (
     <>
       {/* Overlay dentro de la maceta */}
@@ -1614,7 +1614,16 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
       {/* Menú fijo abajo */}
       {anchorRef?.current ? (
         createPortal(
-          <div style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center', pointerEvents: 'none', marginTop: 8 }}>
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              marginTop: 8,
+            }}
+          >
             <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
               <Menu />
             </div>
@@ -1626,4 +1635,5 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
   );
 }
 
+// ✅ cierre definitivo sin export fuera de bloque
 module.exports = CustomizationOverlay;
