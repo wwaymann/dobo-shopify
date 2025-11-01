@@ -114,6 +114,8 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     };
   }, [canvas, stageRef, zoomRef]);
 }
+
+
 async function aplicarSobreRelieveEnCanvas(fabricCanvas){
   const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
     logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
@@ -197,6 +199,64 @@ useEffect(() => {
   if (!upper) return;
   upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
 }, [textEditing, editing]);
+
+
+function hexToRgb(hex) {
+  const m = String(hex || '').replace('#','').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return [51,51,51];
+  let s = m[1];
+  if (s.length === 3) s = s.split('').map(ch => ch+ch).join('');
+  const n = parseInt(s, 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+  const applyColorToActive = (hex) => {
+  const c = fabricCanvasRef.current; if (!c) return;
+  const a = c.getActiveObject(); if (!a) return;
+  const rgb = hexToRgb(hex);
+
+  // Texto (grupo o textbox)
+  const asTextBase = () => {
+    if (a._kind === 'textGroup') return a._textChildren?.base || null;
+    if (a.type === 'activeSelection') {
+      const g = a._objects?.find(x => x._kind === 'textGroup');
+      return g?._textChildren?.base || null;
+    }
+    if (a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') return a;
+    return null;
+  };
+  const tb = asTextBase();
+  if (tb) {
+    // fill principal
+    tb.set({ fill: hex });
+    // re-colorea sombra y brillo del group si aplica
+    const g = a._kind === 'textGroup' ? a : null;
+    if (g && g._textChildren) {
+      const { shadow, highlight } = g._textChildren;
+      const dark  = '#000000';
+      const light = '#ffffff';
+      shadow?.set({ stroke: dark });
+      highlight?.set({ stroke: light });
+    }
+    c.requestRenderAll();
+    return;
+  }
+
+  // Imagen con relieve (grupo)
+  const g = a._kind === 'imgGroup' ? a : null;
+  if (g) {
+    const { base, shadow, highlight } = g._imgChildren || {};
+    const Tint = fabric.Image.filters.Tint;
+    const fx = new Tint({ color: hex, opacity: 1 });
+    [base, shadow, highlight].forEach(img => {
+      if (!img) return;
+      img.filters = img.filters?.filter(f => !(f && f.type === 'Tint')) || [];
+      img.filters.push(fx);
+      img.applyFilters();
+    });
+    c.requestRenderAll();
+  }
+};
 
   
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
@@ -445,13 +505,13 @@ useEffect(() => {
     return threshold;
   };
 
-  const vectorizeElementToBitmap = (element, opts = {}) => {
-    const {
-      maxDim   = VECTOR_SAMPLE_DIM,
-      makeDark = true,
-      drawColor = [51, 51, 51],
-      thrBias  = 0
-    } = opts;
+ const [r,g,b] = hexToRgb(currentColorHex || '#333333'); // usa tu estado/picker
+const baseImg = vectorizeElementToBitmap(src, {
+  maxDim: VECTOR_SAMPLE_DIM,
+  makeDark: !vecInvert,
+  drawColor: [r,g,b],         // ← aquí
+  thrBias: vecBias
+});
 
     const iw = element?.width, ih = element?.height;
     if (!iw || !ih) return null;
@@ -1489,18 +1549,69 @@ useEffect(() => {
           </>
         )}
 
-        {/* Inputs ocultos */}
-        <input ref={addInputRef} type="file" accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
-          onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
-        <input ref={replaceInputRef} type="file" accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
-          onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: 'none' }} />
+       {/* Input oculto existente para subir imagen */}
+<input ref={addInputRef} type="file" accept="image/*"
+       style={{ display:'none' }}
+       onChange={(e)=>{ const f=e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }} />
+
+{/* NUEVO: Input oculto para Cámara (mobile/desktop compatibles) */}
+<input id="cameraInput" type="file" accept="image/*" capture="environment"
+       style={{ display:'none' }}
+       onChange={(e)=>{ const f=e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }} />
+
+{editing && (
+  <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center', alignItems:'center' }}>
+    {/* Botones existentes */}
+    <button type="button" className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={addText} disabled={!ready}>+ Texto</button>
+
+    <button type="button" className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={()=>addInputRef.current?.click()} disabled={!ready}>+ Imagen</button>
+
+    {/* NUEVO: Cámara */}
+    <button type="button" className="btn btn-sm btn-outline-secondary"
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={()=>document.getElementById('cameraInput')?.click()}
+            disabled={!ready} title="Tomar foto con cámara">📷 Cámara</button>
+
+    {/* Borrar existente */}
+    {/* ... */}
+  </div>
+)}
+
+{/* LÍNEA 3: Propiedades por tipo (añadir color) */}
+{editing && (
+  <>
+    {/* Para TEXTO: ya tienes Fuente/Estilos; agrega Color */}
+    {selType === 'text' && (
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', alignItems:'center' }}>
+        {/* ... (Fuente / Estilos ya existentes) */}
+        <div className="input-group input-group-sm" style={{ maxWidth: 150 }}>
+          <span className="input-group-text">Color</span>
+          <input type="color" className="form-control form-control-color"
+                 value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                 onPointerDown={(e)=>e.stopPropagation()} />
+        </div>
       </div>
-    );
-  }
+    )}
+
+    {/* Para IMAGEN vectorizada (relieve) */}
+    {selType === 'image' && (
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', alignItems:'center' }}>
+        <div className="input-group input-group-sm" style={{ maxWidth: 150 }}>
+          <span className="input-group-text">Color</span>
+          <input type="color" className="form-control form-control-color"
+                 value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                 onPointerDown={(e)=>e.stopPropagation()} />
+        </div>
+        {/* (Opcional) control de relieve usando setVecOffset y updateDebossVisual(...) */}
+      </div>
+    )}
+  </>
+)}
+
 
   // ===== Render =====
   return (
