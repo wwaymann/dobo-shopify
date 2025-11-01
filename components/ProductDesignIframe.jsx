@@ -1,4 +1,4 @@
-export default function ProductDesignIframe({ designJsonUrl, designPreviewUrl, designId, shopDomain, height = 940 }) {
+export default function ProductDesignIframe({ designJsonUrl, designPreviewUrl, designId, shopDomain, height = 640 }) {
   const base = '/'; // el customizador vive en /pages/index.js
   const params = new URLSearchParams();
   if (designJsonUrl)   params.set('designUrl', designJsonUrl);
