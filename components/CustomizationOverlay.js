@@ -1609,15 +1609,21 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
   return (
     <>
       {/* Overlay dentro de la maceta */}
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+      {stageRef?.current ? createPortal(<OverlayCanvas />, stageRef.current) : null}
 
       {/* Menú fijo abajo */}
-{ anchorRef?.current ?  createPortal(
-   <div style={{ position:'relative', width:'100%', display:'flex', justifyContent:'center', pointerEvents:'none', marginTop:8 }}>
-     <div style={{ pointerEvents:'auto', display:'inline-flex' }}><Menu/></div>
-   </div>,
-  document.getElementById('dobo-menu-dock')
- ) : null }
+      {anchorRef?.current ? (
+        createPortal(
+          <div style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center', pointerEvents: 'none', marginTop: 8 }}>
+            <div style={{ pointerEvents: 'auto', display: 'inline-flex' }}>
+              <Menu />
+            </div>
+          </div>,
+          document.getElementById('dobo-menu-dock')
+        )
+      ) : null}
     </>
   );
 }
+
+export default CustomizationOverlay;
