@@ -1221,24 +1221,38 @@ const applyColorToActive = (hex) => {
     return;
   }
 
-  // === IMAGEN VECTORIAL (grupo con relieve) ===
-  if (a._kind === 'imgGroup' && a._imgChildren) {
-    const { base, shadow, highlight } = a._imgChildren;
-    const Tint = fabric.Image.filters.Tint;
-    const tint = new Tint({ color: hex, opacity: 1 });
+// === IMAGEN VECTORIAL (grupo con relieve) ===
+if (a._kind === 'imgGroup' && a._imgChildren) {
+  const { base, shadow, highlight } = a._imgChildren;
 
-    [base, shadow, highlight].forEach(img => {
-      if (!img) return;
-      img.filters = img.filters?.filter(f => !(f && f.type === 'Tint')) || [];
-      img.filters.push(tint);
-      img.applyFilters();
-      img.dirty = true;
-    });
+  // Intentar primero con filtros Tint (si son fabric.Image)
+  const Tint = fabric.Image.filters.Tint;
+  const tint = new Tint({ color: hex, opacity: 1 });
+  let applied = false;
 
+  [base, shadow, highlight].forEach(obj => {
+    if (!obj) return;
+
+    // Si es una imagen (bitmap)
+    if (obj.filters) {
+      obj.filters = obj.filters.filter(f => !(f && f.type === 'Tint'));
+      obj.filters.push(tint);
+      obj.applyFilters();
+      applied = true;
+    }
+
+    // Si es un path o vector, usar fill/stroke
+    if (obj.set && obj.fill !== undefined) {
+      obj.set({ fill: hex });
+      applied = true;
+    }
+  });
+
+  if (applied) {
     a.dirty = true;
     c.requestRenderAll();
   }
-};
+}
 
   
   // Re-vectorizar imagen al cambiar Detalles/Invertir
