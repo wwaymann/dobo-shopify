@@ -1,3 +1,4 @@
+// DOBO CustomizationOverlay.js – versión estable revisada Nov 2025
 // components/CustomizationOverlay.js
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
@@ -132,7 +133,7 @@ const Z_MENU   = 10000;  // menú fijo por encima de todo
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
-// HEX (#RRGGBB o #RGB) -> [r,g,b]
+// DOBO CUSTOM FIX: conversor HEX → RGB
 function hexToRgb(hex) {
   const m = String(hex || '').replace('#','').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (!m) return [51,51,51];
@@ -141,6 +142,7 @@ function hexToRgb(hex) {
   const n = parseInt(s, 16);
   return [(n>>16)&255, (n>>8)&255, n&255];
 }
+
 
 // Fuentes visibles en el selector
 const FONT_OPTIONS = [
@@ -152,9 +154,6 @@ const FONT_OPTIONS = [
   { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
   { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
 ];
-
-const [shapeColor, setShapeColor] = useState('#333333');
-
 
 export default function CustomizationOverlay({
   stageRef,
@@ -192,7 +191,9 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [textAlign, setTextAlign] = useState('center');
   const [showAlignMenu, setShowAlignMenu] = useState(false);
 
-  // Imagen/relieve
+    // DOBO CUSTOM FIX: color de forma/texto
+  const [shapeColor, setShapeColor] = useState('#333333');
+// Imagen/relieve
   const [vecOffset, setVecOffset] = useState(1);     // 0..5
   const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
   const [vecBias, setVecBias] = useState(0);         // -60..+60
@@ -1077,14 +1078,8 @@ useEffect(() => {
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
     imgEl.onload = () => {
       const src = downscale(imgEl);
-const [r, g, b] = hexToRgb(shapeColor || '#333333');
-const baseImg = vectorizeElementToBitmap(element, {
-  maxDim: VECTOR_SAMPLE_DIM,
-  makeDark: !vecInvert,
-  drawColor: [r, g, b],   // ← antes: [51,51,51]
-  thrBias: vecBias
-});
-if (!baseImg) return;
+      const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
+      if (!baseImg) { URL.revokeObjectURL(url); return; }
       const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
       const s = Math.min(maxW / baseImg._vecMeta.w, maxH / baseImg._vecMeta.h);
       baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: false, evented: false, objectCaching: false });
@@ -1109,19 +1104,9 @@ if (!baseImg) return;
       const src = downscale(imgEl);
       const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
       try { c.remove(active); } catch {}
-    // Asegúrate de tener shapeColor en el estado y la util hexToRgb()
-// const [shapeColor, setShapeColor] = useState('#333333');
-
-const [r, g, b] = hexToRgb(shapeColor || '#333333');
-const baseImg = vectorizeElementToBitmap(element, {
-  maxDim: VECTOR_SAMPLE_DIM,
-  makeDark: !vecInvert,
-  drawColor: [r, g, b],   // ← antes: [51,51,51]
-  thrBias: vecBias
-});
-if (!baseImg) return;
-baseImg.set({ selectable: false, evented: false, objectCaching: false });
-
+      const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
+      if (!baseImg) { URL.revokeObjectURL(url); return; }
+      baseImg.set({ selectable: false, evented: false, objectCaching: false });
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
       c.add(group);
@@ -1210,51 +1195,6 @@ baseImg.set({ selectable: false, evented: false, objectCaching: false });
     c.requestRenderAll();
   };
 
-// Aplica color al objeto activo: texto (textbox o textGroup) o imagen vectorizada (imgGroup)
-const applyColorToActive = (hex) => {
-  const c = fabricCanvasRef.current; if (!c) return;
-  const a = c.getActiveObject(); if (!a) return;
-
-  // Prioridad: grupos de texto (con relieve)
-  const getTextBase = () => {
-    if (a._kind === 'textGroup') return a._textChildren?.base || null;
-    if (a.type === 'activeSelection') {
-      const g = a._objects?.find(x => x._kind === 'textGroup');
-      return g?._textChildren?.base || null;
-    }
-    if (a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') return a;
-    return null;
-  };
-
-  const baseText = getTextBase();
-  if (baseText) {
-    baseText.set({ fill: hex });
-    // si es textGroup, re-sincroniza sombras/luces (negro/blanco simples)
-    if (a._kind === 'textGroup' && a._textChildren) {
-      const { shadow, highlight } = a._textChildren;
-      shadow?.set({ stroke: '#000000' });
-      highlight?.set({ stroke: '#ffffff' });
-    }
-    c.requestRenderAll();
-    return;
-  }
-
-  // Imagen vectorizada con relieve (grupo)
-  if (a._kind === 'imgGroup') {
-    const { base, shadow, highlight } = a._imgChildren || {};
-    const Tint = fabric.Image.filters.Tint;
-    const fx = new Tint({ color: hex, opacity: 1 });
-    [base, shadow, highlight].forEach(img => {
-      if (!img) return;
-      img.filters = (img.filters || []).filter(f => !(f && f.type === 'Tint'));
-      img.filters.push(fx);
-      img.applyFilters();
-    });
-    c.requestRenderAll();
-  }
-};
-
-  
   // Re-vectorizar imagen al cambiar Detalles/Invertir
   useEffect(() => {
     if (!editing || selType !== 'image') return;
@@ -1279,19 +1219,9 @@ const applyColorToActive = (hex) => {
         return;
       }
 
-// Asegúrate de tener shapeColor en el estado y la util hexToRgb()
-// const [shapeColor, setShapeColor] = useState('#333333');
-
-const [r, g, b] = hexToRgb(shapeColor || '#333333');
-const baseImg = vectorizeElementToBitmap(element, {
-  maxDim: VECTOR_SAMPLE_DIM,
-  makeDark: !vecInvert,
-  drawColor: [r, g, b],   // ← antes: [51,51,51]
-  thrBias: vecBias
-});
-if (!baseImg) return;
-baseImg.set({ selectable: false, evented: false, objectCaching: false });
-
+      const baseImg = vectorizeElementToBitmap(element, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
+      if (!baseImg) return;
+      baseImg.set({ selectable: false, evented: false, objectCaching: false });
 
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
@@ -1443,6 +1373,14 @@ baseImg.set({ selectable: false, evented: false, objectCaching: false });
             >
               + Imagen
             </button>
+            // DOBO CUSTOM FIX: botón cámara
+            <button type="button" className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => document.getElementById('cameraInput')?.click()}
+              disabled={!ready}
+              title="Tomar foto con cámara">
+              📷 Cámara
+            </button>
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
@@ -1459,8 +1397,15 @@ baseImg.set({ selectable: false, evented: false, objectCaching: false });
         {/* LÍNEA 3: Propiedades por tipo */}
         {editing && (
           <>
-            {selType === 'text' && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {selType === 'text' && (<>
+              {/* DOBO CUSTOM FIX: color para texto */}
+              <div className="input-group input-group-sm" style={{ maxWidth: 150, marginBottom: 6 }}>
+                <span className="input-group-text">Color</span>
+                <input type="color" className="form-control form-control-color"
+                       value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                       onPointerDown={(e)=>e.stopPropagation()} />
+              </div>
+<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                 <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
                   <span className="input-group-text">Fuente</span>
                   <select
@@ -1546,10 +1491,18 @@ baseImg.set({ selectable: false, evented: false, objectCaching: false });
                   )}
                 </div>
               </div>
+              </>
             )}
 
-            {selType === 'image' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {selType === 'image' && (<>
+              {/* DOBO CUSTOM FIX: color para imagen vectorizada */}
+              <div className="input-group input-group-sm" style={{ width: 170, marginBottom: 6 }}>
+                <span className="input-group-text">Color</span>
+                <input type="color" className="form-control form-control-color"
+                       value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                       onPointerDown={(e)=>e.stopPropagation()} />
+              </div>
+<div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <div className="input-group input-group-sm" style={{ width: 230 }}>
                   <span className="input-group-text">Detalles</span>
                   <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
@@ -1569,11 +1522,17 @@ baseImg.set({ selectable: false, evented: false, objectCaching: false });
                   <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
                 </div>
               </div>
+              </>
             )}
           </>
         )}
 
         {/* Inputs ocultos */}
+        {/* DOBO CUSTOM FIX: input oculto para cámara */}
+        <input id="cameraInput" type="file" accept="image/*" capture="environment"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }} />
         <input ref={addInputRef} type="file" accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
