@@ -1626,4 +1626,4 @@ if (a._kind === 'imgGroup' && a._imgChildren) {
   );
 }
 
-export default CustomizationOverlay;
+module.exports = CustomizationOverlay;
