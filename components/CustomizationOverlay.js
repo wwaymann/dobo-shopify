@@ -1409,21 +1409,22 @@ let element = null;
               disabled={!ready}
             >
               + Imagen
-            </button>
-            <button type=\"button\" className=\"btn btn-sm btn-outline-secondary\"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => { setUploadMode('rgb'); addInputRef.current?.click(); }}
-              disabled={!ready} title=\"Subir imagen RGB\">
-              + Imagen (RGB)
-            </button>
-            <button type=\"button\" className=\"btn btn-sm btn-outline-secondary\"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={handleCameraCapture}
-              disabled={!ready} title=\"Cámara\">
-              <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 512 512\" aria-hidden=\"true\" focusable=\"false\">
-                <path d=\"M149.1 64l32 32H224l32-32h64l32 32H480c17.7 0 32 14.3 32 32v288c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V128c0-17.7 14.3-32 32-32h102.9zM256 400a112 112 0 1 0 0-224 112 112 0 1 0 0 224zm0-48a64 64 0 1 1 0-128 64 64 0 1 1 0 128z\"/>
-              </svg>
-            </button>
+           <button type="button" className="btn btn-sm btn-outline-secondary"
+  onPointerDown={(e)=>e.stopPropagation()}
+  onClick={() => { setUploadMode('rgb'); addInputRef.current?.click(); }}
+  disabled={!ready} title="Subir imagen RGB">
+  + Imagen (RGB)
+</button>
+
+<button type="button" className="btn btn-sm btn-outline-secondary"
+  onPointerDown={(e)=>e.stopPropagation()}
+  onClick={handleCameraCapture}
+  disabled={!ready} title="Cámara">
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+    <path d="M149.1 64l32 32H224l32-32h64l32 32H480c17.7 0 32 14.3 32 32v288c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V128c0-17.7 14.3-32 32-32h102.9zM256 400a112 112 0 1 0 0-224 112 112 0 1 0 0 224zm0-48a64 64 0 1 1 0-128 64 64 0 1 1 0 128z"/>
+  </svg>
+</button>
+
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
