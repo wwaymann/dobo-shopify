@@ -1441,30 +1441,54 @@ let element = null;
         {/* LÍNEA 3: Propiedades por tipo */}
         {editing && (
           <>
-            {selType === 'text' && (
-          <div className="input-group input-group-sm" style={{ maxWidth: 150 }}>
-            <span className="input-group-text">Color</span>
-            <input type="color" className="form-control form-control-color"
-                   value={shapeColor}
-                   onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
-                   onPointerDown={(e)=>e.stopPropagation()} />
-          </div>
-        ) && (
+           {selType === 'text' && (
+  <>
+    <div className="input-group input-group-sm" style={{ maxWidth: 150 }}>
+      <span className="input-group-text">Color</span>
+      <input
+        type="color"
+        className="form-control form-control-color"
+        value={shapeColor}
+        onChange={(e) => {
+          setShapeColor(e.target.value);
+          applyColorToActive(e.target.value);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+      />
+    </div>
 
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
-                  <span className="input-group-text">Fuente</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={fontFamily}
-                    onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                  >
-                    {FONT_OPTIONS.map(f => (
-                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
+    <div
+      style={{
+        display: 'flex',
+        gap: 10,
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+      }}
+    >
+      <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+        <span className="input-group-text">Fuente</span>
+        <select
+          className="form-select form-select-sm"
+          value={fontFamily}
+          onChange={(e) => {
+            const v = e.target.value;
+            setFontFamily(v);
+            applyToSelection((o) => o.set({ fontFamily: v }));
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {FONT_OPTIONS.map((f) => (
+            <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  </>
+)}
+
 
                 <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
                   <button
