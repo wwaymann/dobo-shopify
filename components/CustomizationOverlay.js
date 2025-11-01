@@ -114,8 +114,6 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     };
   }, [canvas, stageRef, zoomRef]);
 }
-
-
 async function aplicarSobreRelieveEnCanvas(fabricCanvas){
   const url = await applyRelief2DFromURLs("/pot.jpg","/logo-dobo.png",{
     logoScaleW: 0.36, logoCenter:[0.48,0.46], strength:3.2
@@ -134,6 +132,16 @@ const Z_MENU   = 10000;  // menú fijo por encima de todo
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
+// HEX (#RRGGBB o #RGB) -> [r,g,b]
+function hexToRgb(hex) {
+  const m = String(hex || '').replace('#','').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return [51,51,51];
+  let s = m[1];
+  if (s.length === 3) s = s.split('').map(ch => ch+ch).join('');
+  const n = parseInt(s, 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
 // Fuentes visibles en el selector
 const FONT_OPTIONS = [
   { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
@@ -144,6 +152,9 @@ const FONT_OPTIONS = [
   { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
   { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
 ];
+
+const [shapeColor, setShapeColor] = useState('#333333');
+
 
 export default function CustomizationOverlay({
   stageRef,
@@ -199,64 +210,6 @@ useEffect(() => {
   if (!upper) return;
   upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
 }, [textEditing, editing]);
-
-
-function hexToRgb(hex) {
-  const m = String(hex || '').replace('#','').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (!m) return [51,51,51];
-  let s = m[1];
-  if (s.length === 3) s = s.split('').map(ch => ch+ch).join('');
-  const n = parseInt(s, 16);
-  return [(n>>16)&255, (n>>8)&255, n&255];
-}
-
-  const applyColorToActive = (hex) => {
-  const c = fabricCanvasRef.current; if (!c) return;
-  const a = c.getActiveObject(); if (!a) return;
-  const rgb = hexToRgb(hex);
-
-  // Texto (grupo o textbox)
-  const asTextBase = () => {
-    if (a._kind === 'textGroup') return a._textChildren?.base || null;
-    if (a.type === 'activeSelection') {
-      const g = a._objects?.find(x => x._kind === 'textGroup');
-      return g?._textChildren?.base || null;
-    }
-    if (a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') return a;
-    return null;
-  };
-  const tb = asTextBase();
-  if (tb) {
-    // fill principal
-    tb.set({ fill: hex });
-    // re-colorea sombra y brillo del group si aplica
-    const g = a._kind === 'textGroup' ? a : null;
-    if (g && g._textChildren) {
-      const { shadow, highlight } = g._textChildren;
-      const dark  = '#000000';
-      const light = '#ffffff';
-      shadow?.set({ stroke: dark });
-      highlight?.set({ stroke: light });
-    }
-    c.requestRenderAll();
-    return;
-  }
-
-  // Imagen con relieve (grupo)
-  const g = a._kind === 'imgGroup' ? a : null;
-  if (g) {
-    const { base, shadow, highlight } = g._imgChildren || {};
-    const Tint = fabric.Image.filters.Tint;
-    const fx = new Tint({ color: hex, opacity: 1 });
-    [base, shadow, highlight].forEach(img => {
-      if (!img) return;
-      img.filters = img.filters?.filter(f => !(f && f.type === 'Tint')) || [];
-      img.filters.push(fx);
-      img.applyFilters();
-    });
-    c.requestRenderAll();
-  }
-};
 
   
   // Mantén --zoom siempre actualizado para leerlo en tiempo real
@@ -505,13 +458,13 @@ function hexToRgb(hex) {
     return threshold;
   };
 
- const [r,g,b] = hexToRgb(currentColorHex || '#333333'); // usa tu estado/picker
-const baseImg = vectorizeElementToBitmap(src, {
-  maxDim: VECTOR_SAMPLE_DIM,
-  makeDark: !vecInvert,
-  drawColor: [r,g,b],         // ← aquí
-  thrBias: vecBias
-});
+  const vectorizeElementToBitmap = (element, opts = {}) => {
+    const {
+      maxDim   = VECTOR_SAMPLE_DIM,
+      makeDark = true,
+      drawColor = [51, 51, 51],
+      thrBias  = 0
+    } = opts;
 
     const iw = element?.width, ih = element?.height;
     if (!iw || !ih) return null;
@@ -1124,8 +1077,14 @@ useEffect(() => {
     const imgEl = new Image(); imgEl.crossOrigin = 'anonymous';
     imgEl.onload = () => {
       const src = downscale(imgEl);
-      const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
+const [r, g, b] = hexToRgb(shapeColor || '#333333');
+const baseImg = vectorizeElementToBitmap(element, {
+  maxDim: VECTOR_SAMPLE_DIM,
+  makeDark: !vecInvert,
+  drawColor: [r, g, b],   // ← antes: [51,51,51]
+  thrBias: vecBias
+});
+if (!baseImg) return;
       const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
       const s = Math.min(maxW / baseImg._vecMeta.w, maxH / baseImg._vecMeta.h);
       baseImg.set({ originX: 'center', originY: 'center', left: c.getWidth()/2, top: c.getHeight()/2, scaleX: s, scaleY: s, selectable: false, evented: false, objectCaching: false });
@@ -1150,9 +1109,19 @@ useEffect(() => {
       const src = downscale(imgEl);
       const pose = { left: active.left, top: active.top, originX: active.originX, originY: active.originY, scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0 };
       try { c.remove(active); } catch {}
-      const baseImg = vectorizeElementToBitmap(src, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
-      baseImg.set({ selectable: false, evented: false, objectCaching: false });
+    // Asegúrate de tener shapeColor en el estado y la util hexToRgb()
+// const [shapeColor, setShapeColor] = useState('#333333');
+
+const [r, g, b] = hexToRgb(shapeColor || '#333333');
+const baseImg = vectorizeElementToBitmap(element, {
+  maxDim: VECTOR_SAMPLE_DIM,
+  makeDark: !vecInvert,
+  drawColor: [r, g, b],   // ← antes: [51,51,51]
+  thrBias: vecBias
+});
+if (!baseImg) return;
+baseImg.set({ selectable: false, evented: false, objectCaching: false });
+
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
       c.add(group);
@@ -1241,6 +1210,51 @@ useEffect(() => {
     c.requestRenderAll();
   };
 
+// Aplica color al objeto activo: texto (textbox o textGroup) o imagen vectorizada (imgGroup)
+const applyColorToActive = (hex) => {
+  const c = fabricCanvasRef.current; if (!c) return;
+  const a = c.getActiveObject(); if (!a) return;
+
+  // Prioridad: grupos de texto (con relieve)
+  const getTextBase = () => {
+    if (a._kind === 'textGroup') return a._textChildren?.base || null;
+    if (a.type === 'activeSelection') {
+      const g = a._objects?.find(x => x._kind === 'textGroup');
+      return g?._textChildren?.base || null;
+    }
+    if (a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') return a;
+    return null;
+  };
+
+  const baseText = getTextBase();
+  if (baseText) {
+    baseText.set({ fill: hex });
+    // si es textGroup, re-sincroniza sombras/luces (negro/blanco simples)
+    if (a._kind === 'textGroup' && a._textChildren) {
+      const { shadow, highlight } = a._textChildren;
+      shadow?.set({ stroke: '#000000' });
+      highlight?.set({ stroke: '#ffffff' });
+    }
+    c.requestRenderAll();
+    return;
+  }
+
+  // Imagen vectorizada con relieve (grupo)
+  if (a._kind === 'imgGroup') {
+    const { base, shadow, highlight } = a._imgChildren || {};
+    const Tint = fabric.Image.filters.Tint;
+    const fx = new Tint({ color: hex, opacity: 1 });
+    [base, shadow, highlight].forEach(img => {
+      if (!img) return;
+      img.filters = (img.filters || []).filter(f => !(f && f.type === 'Tint'));
+      img.filters.push(fx);
+      img.applyFilters();
+    });
+    c.requestRenderAll();
+  }
+};
+
+  
   // Re-vectorizar imagen al cambiar Detalles/Invertir
   useEffect(() => {
     if (!editing || selType !== 'image') return;
@@ -1265,9 +1279,19 @@ useEffect(() => {
         return;
       }
 
-      const baseImg = vectorizeElementToBitmap(element, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [51,51,51], thrBias: vecBias });
-      if (!baseImg) return;
-      baseImg.set({ selectable: false, evented: false, objectCaching: false });
+// Asegúrate de tener shapeColor en el estado y la util hexToRgb()
+// const [shapeColor, setShapeColor] = useState('#333333');
+
+const [r, g, b] = hexToRgb(shapeColor || '#333333');
+const baseImg = vectorizeElementToBitmap(element, {
+  maxDim: VECTOR_SAMPLE_DIM,
+  makeDark: !vecInvert,
+  drawColor: [r, g, b],   // ← antes: [51,51,51]
+  thrBias: vecBias
+});
+if (!baseImg) return;
+baseImg.set({ selectable: false, evented: false, objectCaching: false });
+
 
       const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
       group.set(pose);
@@ -1549,69 +1573,18 @@ useEffect(() => {
           </>
         )}
 
-       {/* Input oculto existente para subir imagen */}
-<input ref={addInputRef} type="file" accept="image/*"
-       style={{ display:'none' }}
-       onChange={(e)=>{ const f=e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }} />
-
-{/* NUEVO: Input oculto para Cámara (mobile/desktop compatibles) */}
-<input id="cameraInput" type="file" accept="image/*" capture="environment"
-       style={{ display:'none' }}
-       onChange={(e)=>{ const f=e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }} />
-
-{editing && (
-  <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center', alignItems:'center' }}>
-    {/* Botones existentes */}
-    <button type="button" className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={addText} disabled={!ready}>+ Texto</button>
-
-    <button type="button" className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={()=>addInputRef.current?.click()} disabled={!ready}>+ Imagen</button>
-
-    {/* NUEVO: Cámara */}
-    <button type="button" className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={()=>document.getElementById('cameraInput')?.click()}
-            disabled={!ready} title="Tomar foto con cámara">📷 Cámara</button>
-
-    {/* Borrar existente */}
-    {/* ... */}
-  </div>
-)}
-
-{/* LÍNEA 3: Propiedades por tipo (añadir color) */}
-{editing && (
-  <>
-    {/* Para TEXTO: ya tienes Fuente/Estilos; agrega Color */}
-    {selType === 'text' && (
-      <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', alignItems:'center' }}>
-        {/* ... (Fuente / Estilos ya existentes) */}
-        <div className="input-group input-group-sm" style={{ maxWidth: 150 }}>
-          <span className="input-group-text">Color</span>
-          <input type="color" className="form-control form-control-color"
-                 value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
-                 onPointerDown={(e)=>e.stopPropagation()} />
-        </div>
+        {/* Inputs ocultos */}
+        <input ref={addInputRef} type="file" accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }} />
+        <input ref={replaceInputRef} type="file" accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }} />
       </div>
-    )}
-
-    {/* Para IMAGEN vectorizada (relieve) */}
-    {selType === 'image' && (
-      <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center', alignItems:'center' }}>
-        <div className="input-group input-group-sm" style={{ maxWidth: 150 }}>
-          <span className="input-group-text">Color</span>
-          <input type="color" className="form-control form-control-color"
-                 value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
-                 onPointerDown={(e)=>e.stopPropagation()} />
-        </div>
-        {/* (Opcional) control de relieve usando setVecOffset y updateDebossVisual(...) */}
-      </div>
-    )}
-  </>
-)}
-
+    );
+  }
 
   // ===== Render =====
   return (
