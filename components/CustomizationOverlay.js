@@ -1158,7 +1158,8 @@ useEffect(() => {
         }}
       />
     </div>
-  );{/* ===== Menú fijo ===== */}
+  );
+{/* ===== Menú fijo ===== */}
   function Menu() {
     return (
       <div
@@ -1248,12 +1249,13 @@ useEffect(() => {
             >
               + Imagen
 </button>
-            </button>{/* DOBO CUSTOM FIX: botón cámara */}
+          
+              {/* DOBO CUSTOM FIX: botón cámara */}
             <button type="button" className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={() => document.getElementById('cameraInput')?.click()}
               disabled={!ready}
-              title="Tomar foto con cámara">
+              title="C">
               📷 Cámara
             </button>
             <button
