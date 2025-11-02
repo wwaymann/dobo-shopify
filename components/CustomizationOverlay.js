@@ -1373,7 +1373,7 @@ useEffect(() => {
             >
               + Imagen
             </button>
-            // DOBO CUSTOM FIX: botón cámaraaaaa
+           
             <button type="button" className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={() => document.getElementById('cameraInput')?.click()}
