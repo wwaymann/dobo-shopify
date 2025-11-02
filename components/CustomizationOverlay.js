@@ -1,18 +1,10 @@
-// DOBO CustomizationOverlay.js – versión estable revisada Nov 2025
-// components/CustomizationOverlay.js
+{/* DOBO CustomizationOverlay.js – versión estable revisada Nov 2025 */}{/* components/CustomizationOverlay.js */}
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { createPortal } from 'react-dom';
 import HistoryManager from '../lib/history';
-import { applyRelief2DFromURLs } from "../lib/relief2d";
-// 1) fondo (maceta/planta) como backgroundImage
-
-
-
-
-// props: { canvas, stageRef, zoomRef }
-export function useCanvasZoom(canvas, stageRef, zoomRef) {
-  // 1) Zoom inicial EXACTO = 0.5, una sola vez
+import { applyRelief2DFromURLs } from "../lib/relief2d";{/* 1) fondo (maceta/planta) como backgroundImage */}{/* props: { canvas, stageRef, zoomRef } */}
+export function useCanvasZoom(canvas, stageRef, zoomRef) {{/* 1) Zoom inicial EXACTO = 0.5, una sola vez */}
   useEffect(() => {
     if (!canvas) return;
     if (canvas.__doboInitZoomApplied) return;
@@ -25,17 +17,13 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
     if (zoomRef) zoomRef.current = z;
     stageRef?.current?.style?.setProperty("--zoom", String(z));
     canvas.requestRenderAll();
-  }, [canvas, stageRef, zoomRef]);
-
-  // 2) Rueda + pellizco sobre el canvas superior
+  }, [canvas, stageRef, zoomRef]);{/* 2) Rueda + pellizco sobre el canvas superior */}
   useEffect(() => {
     if (!canvas) return;
 
     const el = canvas.upperCanvasEl;
-    if (!el || el.__doboZoomBound) return; // idempotente
-    el.__doboZoomBound = true;
-
-    // evita que el navegador consuma el gesto
+    if (!el || el.__doboZoomBound) return;{/* idempotente */}
+    el.__doboZoomBound = true;{/* evita que el navegador consuma el gesto */}
     el.style.touchAction = "none";
 
     const MIN = 0.5, MAX = 2.5;
@@ -45,9 +33,7 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
 
     const apply = (nz, cx, cy) => {
       const next = clamp(nz);
-      if (next === z) return;
-
-      // zoom al punto del evento
+      if (next === z) return;{/* zoom al punto del evento */}
       const rect = el.getBoundingClientRect();
       const px = (cx ?? rect.width / 2);
       const py = (cy ?? rect.height / 2);
@@ -58,18 +44,14 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
       if (zoomRef) zoomRef.current = next;
       stageRef?.current?.style?.setProperty("--zoom", String(next));
       canvas.requestRenderAll();
-    };
-
-    // rueda normalizada: paso fijo, sin saltos por delta grande
+    };{/* rueda normalizada: paso fijo, sin saltos por delta grande */}
     const onWheel = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const dir = Math.sign(e.deltaY);               // 1 afuera, -1 adentro
-      const step = dir > 0 ? -0.08 : 0.08;           // paso corto y suave
+      const dir = Math.sign(e.deltaY);{/* 1 afuera, -1 adentro */}
+      const step = dir > 0 ? -0.08 : 0.08;{/* paso corto y suave */}
       apply(z + step, e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
-    };
-
-    // pellizco en móvil
+    };{/* pellizco en móvil */}
     let pinchDist = 0;
     const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
 
@@ -86,7 +68,7 @@ export function useCanvasZoom(canvas, stageRef, zoomRef) {
         e.preventDefault();
         e.stopPropagation();
         const d = dist2(e.touches[0], e.touches[1]);
-        const ratio = d / pinchDist;                 // ~1 para suavidad
+        const ratio = d / pinchDist;{/* ~1 para suavidad */}
         pinchDist = d;
 
         const rect = el.getBoundingClientRect();
@@ -123,17 +105,13 @@ async function aplicarSobreRelieveEnCanvas(fabricCanvas){
     img.set({ selectable:false, evented:false });
     fabricCanvas.add(img).bringToFront(img).renderAll();
   });
-}
-
-// ===== Constantes =====
+}{/* ===== Constantes ===== */}
 const MAX_TEXTURE_DIM = 1600;
 const VECTOR_SAMPLE_DIM = 500;
-const Z_CANVAS = 4000;   // overlay de edición sobre la maceta
-const Z_MENU   = 10000;  // menú fijo por encima de todo
+const Z_CANVAS = 4000;{/* overlay de edición sobre la maceta */}
+const Z_MENU   = 10000;{/* menú fijo por encima de todo */}
 
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-// DOBO CUSTOM FIX: conversor HEX → RGB
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));{/* DOBO CUSTOM FIX: conversor HEX → RGB */}
 function hexToRgb(hex) {
   const m = String(hex || '').replace('#','').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (!m) return [51,51,51];
@@ -141,10 +119,7 @@ function hexToRgb(hex) {
   if (s.length === 3) s = s.split('').map(ch => ch+ch).join('');
   const n = parseInt(s, 16);
   return [(n>>16)&255, (n>>8)&255, n&255];
-}
-
-
-// Fuentes visibles en el selector
+}{/* Fuentes visibles en el selector */}
 const FONT_OPTIONS = [
   { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
   { name: 'Georgia', css: 'Georgia, serif' },
@@ -161,8 +136,7 @@ export default function CustomizationOverlay({
   visible = true,
   zoom = 0.6,
   setZoom,
-}) {
-  // ===== Refs y estado =====
+}) {{/* ===== Refs y estado ===== */}
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
   const overlayRef = useRef(null);
@@ -180,23 +154,18 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
 
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
-  const [selType, setSelType] = useState('none'); // 'none'|'text'|'image'
-
-  // Tipografía
+  const [selType, setSelType] = useState('none');{/* 'none'|'text'|'image' */}{/* Tipografía */}
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
   const [fontSize, setFontSize] = useState(60);
   const [isBold, setIsBold] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
   const [isUnderline, setIsUnderline] = useState(false);
   const [textAlign, setTextAlign] = useState('center');
-  const [showAlignMenu, setShowAlignMenu] = useState(false);
-
-    // DOBO CUSTOM FIX: color de forma/texto
-  const [shapeColor, setShapeColor] = useState('#333333');
-// Imagen/relieve
-  const [vecOffset, setVecOffset] = useState(1);     // 0..5
-  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
-  const [vecBias, setVecBias] = useState(0);         // -60..+60
+  const [showAlignMenu, setShowAlignMenu] = useState(false);{/* DOBO CUSTOM FIX: color de forma/texto */}
+  const [shapeColor, setShapeColor] = useState('#333333');{/* Imagen/relieve */}
+  const [vecOffset, setVecOffset] = useState(1);{/* 0..5 */}
+  const [vecInvert, setVecInvert] = useState(false);{/* oscuro/claro */}
+  const [vecBias, setVecBias] = useState(0);{/* -60..+60 */}
 
   const suppressSelectionRef = useRef(false);
   const [anchorRect, setAnchorRect] = useState(null);
@@ -210,25 +179,18 @@ useEffect(() => {
   const upper = c?.upperCanvasEl;
   if (!upper) return;
   upper.style.touchAction = textEditing ? 'auto' : (editing ? 'none' : 'auto');
-}, [textEditing, editing]);
-
-  
-  // Mantén --zoom siempre actualizado para leerlo en tiempo real
+}, [textEditing, editing]);{/* Mantén --zoom siempre actualizado para leerlo en tiempo real */}
   useEffect(() => {
     const v = typeof zoom === 'number' ? zoom : 0.6;
     stageRef?.current?.style.setProperty('--zoom', String(v));
-  }, [zoom, stageRef]);
-
-  // ===== Layout y medidas =====
+  }, [zoom, stageRef]);{/* ===== Layout y medidas ===== */}
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el) return;
     const prev = el.style.position;
     if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
     return () => { try { el.style.position = prev; } catch {} };
-  }, [anchorRef]);
-
-  // Medida exacta del área de la maceta en coords locales del stage
+  }, [anchorRef]);{/* Medida exacta del área de la maceta en coords locales del stage */}
   useLayoutEffect(() => {
     const stage = stageRef?.current;
     const anchor = anchorRef?.current;
@@ -263,9 +225,7 @@ useEffect(() => {
       try { roS.disconnect(); } catch {}
       window.removeEventListener('resize', measure);
     };
-  }, [stageRef, anchorRef]);
-
-  // Posiciona el menú dentro de la columna de carruseles
+  }, [stageRef, anchorRef]);{/* Posiciona el menú dentro de la columna de carruseles */}
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el || typeof window === 'undefined') return;
@@ -280,9 +240,7 @@ useEffect(() => {
       window.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
     };
-  }, [anchorRef]);
-
-  // ===== Helpers de relieve =====
+  }, [anchorRef]);{/* ===== Helpers de relieve ===== */}
   const makeTextGroup = (text, opts = {}) => {
     const base = new fabric.Textbox(text, {
       ...opts,
@@ -355,9 +313,7 @@ useEffect(() => {
     });
     group._kind = 'imgGroup';
     group._imgChildren = { base, shadow, highlight };
-    group._debossOffset = offset;
-
-    // pose inicial desde baseObj
+    group._debossOffset = offset;{/* pose inicial desde baseObj */}
     group.left    = baseObj.left ?? 0;
     group.top     = baseObj.top ?? 0;
     group.scaleX  = baseObj.scaleX ?? 1;
@@ -409,9 +365,7 @@ useEffect(() => {
     highlight.set({ left: +ox, top: +oy });
     g.setCoords();
     g.canvas?.requestRenderAll?.();
-  };
-
-  // ===== Utils imagen/vectorizado =====
+  };{/* ===== Utils imagen/vectorizado ===== */}
   const downscale = (imgEl) => {
     const w = imgEl.naturalWidth || imgEl.width;
     const h = imgEl.naturalHeight || imgEl.height;
@@ -523,9 +477,7 @@ useEffect(() => {
     bm._vecSourceEl = element;
     bm._vecMeta = { w, h };
     return bm;
-  };
-
-  // ===== Historial: helpers seguros =====
+  };{/* ===== Historial: helpers seguros ===== */}
   const getSnapshot = () => {
     const c = fabricCanvasRef.current;
     if (!c) return null;
@@ -555,10 +507,7 @@ useEffect(() => {
         refreshCaps();
       }, 160);
     };
-  })();
-
-
-  // ===== Área de trabajo (bounds) =====
+  })();{/* ===== Área de trabajo (bounds) ===== */}
   const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
 
   const clampObjectToBounds = (obj) => {
@@ -575,10 +524,7 @@ useEffect(() => {
       obj.top  = (obj.top  ?? 0) + dy;
       obj.setCoords();
     }
-  };
-
-
-  // ===== Inicializar Fabric =====
+  };{/* ===== Inicializar Fabric ===== */}
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
@@ -590,16 +536,12 @@ useEffect(() => {
       perPixelTargetFind: true,
       targetFindTolerance: 8,
     });
-    fabricCanvasRef.current = c;
-
-    // DOBO: exponer API global del editor
+    fabricCanvasRef.current = c;{/* DOBO: exponer API global del editor */}
 if (typeof window !== 'undefined') {
-  const api = {
-    // existentes
+  const api = {{/* existentes */}
     toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
     toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    // snapshot
+    getCanvas: () => c,{/* snapshot */}
     exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
     importDesignSnapshot: (snap) => new Promise(res => {
       try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
@@ -614,12 +556,8 @@ if (typeof window !== 'undefined') {
   };
   window.doboDesignAPI = api;
   try { window.dispatchEvent(new CustomEvent('dobo:ready', { detail: api })); } catch {}
-}
-
-    // ===== Delimitar área: margen 40 px por lado (ajustable) =====
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });
-
-    // Overlay visual opcional
+}{/* ===== Delimitar área: margen 40 px por lado (ajustable) ===== */}
+    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 10, h: c.getHeight() - 10 });{/* Overlay visual opcional */}
     const SHOW_BOUNDS = false;
     let __boundsOverlay = null;
     if (SHOW_BOUNDS && designBoundsRef.current) {
@@ -631,9 +569,7 @@ if (typeof window !== 'undefined') {
         selectable: false, evented: false, excludeFromExport: true
       });
       c.add(__boundsOverlay); __boundsOverlay.sendToBack();
-    }
-
-    // Enforcers
+    }{/* Enforcers */}
     const __bounds_onMove   = (e) => clampObjectToBounds(e.target);
     const __bounds_onScale  = (e) => clampObjectToBounds(e.target);
     const __bounds_onRotate = (e) => clampObjectToBounds(e.target);
@@ -641,9 +577,7 @@ if (typeof window !== 'undefined') {
     c.on('object:moving',   __bounds_onMove);
     c.on('object:scaling',  __bounds_onScale);
     c.on('object:rotating', __bounds_onRotate);
-    c.on('object:added',    __bounds_onAdded);
-
-    // Reaccionar a cambios de tamaño
+    c.on('object:added',    __bounds_onAdded);{/* Reaccionar a cambios de tamaño */}
     const __bounds_ro = new ResizeObserver(() => {
       const cw = c.getWidth(), ch = c.getHeight();
       setDesignBounds({ x: 10, y: 10, w: cw - 10, h: ch - 10 });
@@ -654,9 +588,7 @@ if (typeof window !== 'undefined') {
       }
       const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
     });
-    __bounds_ro.observe(c.upperCanvasEl);
-
-    // Historial
+    __bounds_ro.observe(c.upperCanvasEl);{/* Historial */}
     historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
     c.once('after:render', () => {
       const s = getSnapshot(); if (s) historyRef.current.push(s);
@@ -669,11 +601,7 @@ if (typeof window !== 'undefined') {
     c.on('object:added', __hist_onAdded);
     c.on('object:modified', __hist_onModified);
     c.on('object:removed', __hist_onRemoved);
-    c.on('path:created', __hist_onPath);
-
-
-
-    // Helpers de tipo
+    c.on('path:created', __hist_onPath);{/* Helpers de tipo */}
     const classify = (a) => {
       if (!a) return 'none';
       if (a._kind === 'imgGroup')  return 'image';
@@ -723,9 +651,7 @@ if (typeof window !== 'undefined') {
     };
     c.on('selection:created', onSel);
     c.on('selection:updated', onSel);
-    c.on('selection:cleared', () => setSelType('none'));
-
-    // Doble-click (desktop) → editar texto del grupo
+    c.on('selection:cleared', () => setSelType('none'));{/* Doble-click (desktop) → editar texto del grupo */}
     c.on('mouse:dblclick', (e) => {
       const t = e.target;
       if (!t) return;
@@ -758,9 +684,7 @@ if (typeof window !== 'undefined') {
       try { delete window.doboDesignAPI; } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
-
-  // Ajusta tamaño de lienzo
+  }, [visible]);{/* Ajusta tamaño de lienzo */}
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -768,9 +692,7 @@ if (typeof window !== 'undefined') {
     c.setHeight(baseSize.h);
     c.calcOffset?.();
     c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
-
-  // Interactividad según modo
+  }, [baseSize.w, baseSize.h]);{/* Interactividad según modo */}
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -807,9 +729,7 @@ if (typeof window !== 'undefined') {
     };
 
     setAll(!!editing);
-  }, [editing]);
-
-  // Heredar flags al añadir objetos
+  }, [editing]);{/* Heredar flags al añadir objetos */}
   useEffect(() => {
     const c = fabricCanvasRef.current; if (!c) return;
     const apply = (o) => {
@@ -823,15 +743,10 @@ if (typeof window !== 'undefined') {
     const onAdded = (e) => { if (e?.target) apply(e.target); };
     c.on('object:added', onAdded);
     return () => { c.off('object:added', onAdded); };
-  }, [editing]);
-
-  // Anunciar cambio de modo
+  }, [editing]);{/* Anunciar cambio de modo */}
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('dobo-editing', { detail: { editing } }));
-  }, [editing]);
-
-  // === Edición inline de texto (móvil/desktop) ===
-  // Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group.
+  }, [editing]);{/* === Edición inline de texto (móvil/desktop) === */}{/* Sustituye temporalmente el group por un Textbox editable; al terminar, vuelve a crear el group. */}
 const startInlineTextEdit = (group) => {
   const c = fabricCanvasRef.current; if (!c || !group || group._kind !== 'textGroup') return;
   const base = group._textChildren?.base; if (!base) return;
@@ -853,16 +768,11 @@ const startInlineTextEdit = (group) => {
 
   c.add(tb);
   c.setActiveObject(tb);
-  c.requestRenderAll();
-
-  // Estamos editando: libera touch-action y desactiva pinch/zoom
-  setTextEditing(true);
-
-  // iOS: dar tiempo a crear el textarea y luego enfocar
+  c.requestRenderAll();{/* Estamos editando: libera touch-action y desactiva pinch/zoom */}
+  setTextEditing(true);{/* iOS: dar tiempo a crear el textarea y luego enfocar */}
   setTimeout(() => {
     try { tb.enterEditing?.(); } catch {}
-    try { tb.hiddenTextarea?.focus(); } catch {}
-    // reintento corto por si el primero no abre el teclado
+    try { tb.hiddenTextarea?.focus(); } catch {}{/* reintento corto por si el primero no abre el teclado */}
     setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
   }, 0);
 
@@ -883,25 +793,18 @@ const startInlineTextEdit = (group) => {
     c.add(group2);
     c.setActiveObject(group2);
     c.requestRenderAll();
-    setSelType('text');
-
-    // Salimos de edición: reactivar pinch/zoom y volver a touch-action previa
+    setSelType('text');{/* Salimos de edición: reactivar pinch/zoom y volver a touch-action previa */}
     setTextEditing(false);
   };
 
   const onExit = () => { tb.off('editing:exited', onExit); finish(); };
-  tb.on('editing:exited', onExit);
-
-  // Safety net por si no dispara editing:exited (móvil raras veces)
+  tb.on('editing:exited', onExit);{/* Safety net por si no dispara editing:exited (móvil raras veces) */}
   const safety = setTimeout(() => {
     try { tb.off('editing:exited', onExit); } catch {}
     finish();
   }, 15000);
   tb.on('removed', () => { clearTimeout(safety); });
-};
-
-
-  // Doble-tap móvil: detectar y abrir edición de texto
+};{/* Doble-tap móvil: detectar y abrir edición de texto */}
   useEffect(() => {
     const c = fabricCanvasRef.current;
     const upper = c?.upperCanvasEl;
@@ -911,9 +814,7 @@ const startInlineTextEdit = (group) => {
     const onTap = (e) => {
       if (!editing || e.pointerType !== 'touch') return;
       const now = Date.now();
-      if (now - lastTap < 320) {
-        // segundo tap: buscar target de Fabric y editar si es textGroup
-        // Nota: findTarget es método interno pero disponible en runtime.
+      if (now - lastTap < 320) {{/* segundo tap: buscar target de Fabric y editar si es textGroup */}{/* Nota: findTarget es método interno pero disponible en runtime. */}
         try {
           const target = c.findTarget?.(e, false);
           if (target && target._kind === 'textGroup') {
@@ -927,10 +828,7 @@ const startInlineTextEdit = (group) => {
 
     upper.addEventListener('pointerup', onTap, { passive: false, capture: true });
     return () => { upper.removeEventListener('pointerup', onTap, { capture: true }); };
-  }, [editing]);
-
-// Zoom SIEMPRE activo (PC y móvil) sobre el stage.
-// Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta.
+  }, [editing]);{/* Zoom SIEMPRE activo (PC y móvil) sobre el stage. */}{/* Zoom global por rueda y pinch 2 dedos. Un dedo NO se intercepta. */}
 useEffect(() => {
   const c = fabricCanvasRef.current;
   const target = stageRef?.current || c?.upperCanvasEl;
@@ -946,16 +844,12 @@ useEffect(() => {
     const v = Math.max(0.6, Math.min(2.5, z));
     stageRef?.current?.style.setProperty('--zoom', String(v));
     if (typeof setZoom === 'function') setZoom(v);
-  };
-
-  // PC: rueda
+  };{/* PC: rueda */}
   const onWheel = (e) => {
     if (textEditing) return;
     e.preventDefault();
     writeZ(readZ() + (e.deltaY > 0 ? -0.08 : 0.08));
-  };
-
-  // Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric.
+  };{/* Móvil: 2 dedos = zoom. 1 dedo pasa a Fabric. */}
   let pA = null, pB = null, startDist = 0, startScale = 1, parked = false, saved = null;
   const park = () => {
     if (parked || !c) return;
@@ -1022,9 +916,7 @@ useEffect(() => {
     document.removeEventListener('visibilitychange', onCancel);
     window.removeEventListener('blur', onCancel);
   };
-}, [stageRef, setZoom, textEditing]);
-
-  // Bloquear clicks externos mientras se diseña
+}, [stageRef, setZoom, textEditing]);{/* Bloquear clicks externos mientras se diseña */}
   useEffect(() => {
     const hostA = anchorRef?.current;
     const hostS = stageRef?.current;
@@ -1053,9 +945,7 @@ useEffect(() => {
     evs.forEach(ev => host.addEventListener(ev, stop, opts));
 
     return () => { evs.forEach(ev => host.removeEventListener(ev, stop, opts)); };
-  }, [editing, anchorRef, stageRef]);
-
-  // ===== Acciones =====
+  }, [editing, anchorRef, stageRef]);{/* ===== Acciones ===== */}
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const group = makeTextGroup('Nuevo párrafo', {
@@ -1118,9 +1008,7 @@ useEffect(() => {
     };
     imgEl.onerror = () => URL.revokeObjectURL(url);
     imgEl.src = url;
-  };
-
-  // Borrar selección (grupos)
+  };{/* Borrar selección (grupos) */}
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -1165,9 +1053,7 @@ useEffect(() => {
     clearSelectionHard();
     setEditing(false);
     setTimeout(() => { suppressSelectionRef.current = false; }, 150);
-  };
-
-  // Aplicar cambios tipográficos a selección (grupos de texto)
+  };{/* Aplicar cambios tipográficos a selección (grupos de texto) */}
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -1175,8 +1061,7 @@ useEffect(() => {
     const applyToGroup = (g) => {
       if (!g || g._kind !== 'textGroup') return;
       const { base, shadow, highlight } = g._textChildren || {};
-      [base, shadow, highlight].forEach(o => o && mutator(o));
-      // re-sincronizar offsets del relieve
+      [base, shadow, highlight].forEach(o => o && mutator(o));{/* re-sincronizar offsets del relieve */}
       const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
       const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
       const ox = 1 / sx, oy = 1 / sy;
@@ -1193,9 +1078,7 @@ useEffect(() => {
       mutator(a);
     }
     c.requestRenderAll();
-  };
-
-  // Re-vectorizar imagen al cambiar Detalles/Invertir
+  };{/* Re-vectorizar imagen al cambiar Detalles/Invertir */}
   useEffect(() => {
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -1234,9 +1117,7 @@ useEffect(() => {
     } else { rebuild(a); }
 
     c.requestRenderAll();
-  }, [vecBias, vecInvert]);
-
-  // Offset de relieve en caliente
+  }, [vecBias, vecInvert]);{/* Offset de relieve en caliente */}
   useEffect(() => {
     if (!editing || selType !== 'image') return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -1245,9 +1126,7 @@ useEffect(() => {
     if (a.type === 'activeSelection' && a._objects?.length) a._objects.forEach(upd); else upd(a);
   }, [vecOffset, editing, selType]);
 
-  if (!visible) return null;
-
-  // ===== Overlay Canvas dentro de la maceta =====
+  if (!visible) return null;{/* ===== Overlay Canvas dentro de la maceta ===== */}
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -1262,8 +1141,7 @@ useEffect(() => {
         pointerEvents: editing ? "auto" : "none",
         touchAction: editing ? "none" : "auto",
         overscrollBehavior: "contain",
-      }}
-      // Evita que un toque en canvas active botones del menú
+      }}{/* Evita que un toque en canvas active botones del menú */}
       onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
     >
       <canvas
@@ -1280,9 +1158,7 @@ useEffect(() => {
         }}
       />
     </div>
-  );
-
-  // ===== Menú fijo =====
+  );{/* ===== Menú fijo ===== */}
   function Menu() {
     return (
       <div
@@ -1302,8 +1178,7 @@ useEffect(() => {
           maxWidth: '94vw',
           fontSize: 12,
           userSelect: 'none'
-        }}
-        // Los eventos del menú nunca deben tocar el canvas
+        }}{/* Los eventos del menú nunca deben tocar el canvas */}
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
@@ -1373,8 +1248,7 @@ useEffect(() => {
             >
               + Imagen
 </button>
-            </button>
-            // DOBO CUSTOM FIX: botón cámara
+            </button>{/* DOBO CUSTOM FIX: botón cámara */}
             <button type="button" className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={() => document.getElementById('cameraInput')?.click()}
@@ -1544,9 +1418,7 @@ useEffect(() => {
           style={{ display: 'none' }} />
       </div>
     );
-  }
-
-  // ===== Render =====
+  }{/* ===== Render ===== */}
   return (
     <>
       {/* Overlay dentro de la maceta */}
