@@ -1,3 +1,4 @@
+// DOBO CustomizationOverlay.js – versión estable revisada Nov 2025
 // components/CustomizationOverlay.js
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
@@ -132,6 +133,17 @@ const Z_MENU   = 10000;  // menú fijo por encima de todo
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
+// DOBO CUSTOM FIX: conversor HEX → RGB
+function hexToRgb(hex) {
+  const m = String(hex || '').replace('#','').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return [51,51,51];
+  let s = m[1];
+  if (s.length === 3) s = s.split('').map(ch => ch+ch).join('');
+  const n = parseInt(s, 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+
 // Fuentes visibles en el selector
 const FONT_OPTIONS = [
   { name: 'Arial', css: 'Arial, Helvetica, sans-serif' },
@@ -179,7 +191,9 @@ const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [textAlign, setTextAlign] = useState('center');
   const [showAlignMenu, setShowAlignMenu] = useState(false);
 
-  // Imagen/relieve
+    // DOBO CUSTOM FIX: color de forma/texto
+  const [shapeColor, setShapeColor] = useState('#333333');
+// Imagen/relieve
   const [vecOffset, setVecOffset] = useState(1);     // 0..5
   const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
   const [vecBias, setVecBias] = useState(0);         // -60..+60
@@ -1359,6 +1373,14 @@ useEffect(() => {
             >
               + Imagen
             </button>
+            // DOBO CUSTOM FIX: botón cámara
+            <button type="button" className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={() => document.getElementById('cameraInput')?.click()}
+              disabled={!ready}
+              title="Tomar foto con cámara">
+              📷 Cámara
+            </button>
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
@@ -1375,8 +1397,15 @@ useEffect(() => {
         {/* LÍNEA 3: Propiedades por tipo */}
         {editing && (
           <>
-            {selType === 'text' && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {selType === 'text' && (<>
+              {/* DOBO CUSTOM FIX: color para texto */}
+              <div className="input-group input-group-sm" style={{ maxWidth: 150, marginBottom: 6 }}>
+                <span className="input-group-text">Color</span>
+                <input type="color" className="form-control form-control-color"
+                       value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                       onPointerDown={(e)=>e.stopPropagation()} />
+              </div>
+<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                 <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
                   <span className="input-group-text">Fuente</span>
                   <select
@@ -1462,10 +1491,18 @@ useEffect(() => {
                   )}
                 </div>
               </div>
+              </>
             )}
 
-            {selType === 'image' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {selType === 'image' && (<>
+              {/* DOBO CUSTOM FIX: color para imagen vectorizada */}
+              <div className="input-group input-group-sm" style={{ width: 170, marginBottom: 6 }}>
+                <span className="input-group-text">Color</span>
+                <input type="color" className="form-control form-control-color"
+                       value={shapeColor} onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                       onPointerDown={(e)=>e.stopPropagation()} />
+              </div>
+<div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <div className="input-group input-group-sm" style={{ width: 230 }}>
                   <span className="input-group-text">Detalles</span>
                   <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
@@ -1485,11 +1522,17 @@ useEffect(() => {
                   <button type="button" className={`btn ${vecInvert ? 'btn-dark' : 'btn-outline-secondary'}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
                 </div>
               </div>
+              </>
             )}
           </>
         )}
 
         {/* Inputs ocultos */}
+        {/* DOBO CUSTOM FIX: input oculto para cámara */}
+        <input id="cameraInput" type="file" accept="image/*" capture="environment"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
+          onPointerDown={(e)=>e.stopPropagation()}
+          style={{ display: 'none' }} />
         <input ref={addInputRef} type="file" accept="image/*"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageFromFile(f); e.target.value=''; }}
           onPointerDown={(e)=>e.stopPropagation()}
