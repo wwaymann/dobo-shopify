@@ -1372,6 +1372,7 @@ useEffect(() => {
               disabled={!ready}
             >
               + Imagen
+</button>
             </button>
             // DOBO CUSTOM FIX: botón cámara
             <button type="button" className="btn btn-sm btn-outline-secondary"
@@ -1561,3 +1562,6 @@ useEffect(() => {
     </>
   );
 }
+
+
+export default CustomizationOverlay;
