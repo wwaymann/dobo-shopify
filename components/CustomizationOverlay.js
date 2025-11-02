@@ -1195,6 +1195,51 @@ useEffect(() => {
     c.requestRenderAll();
   };
 
+// DOBO CUSTOM FIX: función para aplicar color al objeto activo (texto o imagen vectorizada)
+const applyColorToActive = (hex) => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  const a = c.getActiveObject();
+  if (!a) return;
+
+  const rgb = hexToRgb(hex);
+
+  // === TEXTO (textbox o textGroup) ===
+  if (a._kind === 'textGroup' || a.type === 'textbox' || a.type === 'i-text' || a.type === 'text') {
+    const base = a._textChildren?.base || a;
+    base.set({ fill: hex });
+
+    // Actualizar sombra y brillo del grupo si existen
+    const shadow = a._textChildren?.shadow;
+    const highlight = a._textChildren?.highlight;
+    if (shadow) shadow.set({ stroke: 'rgba(0,0,0,0.25)' });
+    if (highlight) highlight.set({ stroke: 'rgba(255,255,255,0.25)' });
+
+    a.dirty = true;
+    c.requestRenderAll();
+    return;
+  }
+
+  // === IMAGEN VECTORIAL (grupo con relieve) ===
+  if (a._kind === 'imgGroup' && a._imgChildren) {
+    const { base, shadow, highlight } = a._imgChildren;
+    const Tint = fabric.Image.filters.Tint;
+    const tint = new Tint({ color: hex, opacity: 1 });
+
+    [base, shadow, highlight].forEach(img => {
+      if (!img) return;
+      img.filters = img.filters?.filter(f => !(f && f.type === 'Tint')) || [];
+      img.filters.push(tint);
+      img.applyFilters();
+      img.dirty = true;
+    });
+
+    a.dirty = true;
+    c.requestRenderAll();
+  }
+};
+
+  
   // Re-vectorizar imagen al cambiar Detalles/Invertir
   useEffect(() => {
     if (!editing || selType !== 'image') return;
@@ -1373,7 +1418,7 @@ useEffect(() => {
             >
               + Imagen
             </button>
-           
+            // DOBO CUSTOM FIX: botón cámara
             <button type="button" className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={() => document.getElementById('cameraInput')?.click()}
