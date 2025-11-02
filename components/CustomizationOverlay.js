@@ -153,6 +153,14 @@ const FONT_OPTIONS = [
   { name: 'Trebuchet MS', css: '"Trebuchet MS", Tahoma, sans-serif' },
   { name: 'Montserrat', css: 'Montserrat, Arial, sans-serif' },
   { name: 'Poppins', css: 'Poppins, Arial, sans-serif' },
+  { name: 'Inter', css: 'Inter, system-ui, sans-serif' },
+{ name: 'Roboto', css: 'Roboto, system-ui, sans-serif' },
+{ name: 'Lora', css: 'Lora, Georgia, serif' },
+{ name: 'Playfair Display', css: '"Playfair Display", Georgia, serif' },
+{ name: 'Oswald', css: 'Oswald, Arial, sans-serif' },
+{ name: 'Raleway', css: 'Raleway, Arial, sans-serif' },
+{ name: 'Nunito', css: 'Nunito, system-ui, sans-serif' },
+{ name: 'Source Sans 3', css: '"Source Sans 3", system-ui, sans-serif' },
 ];
 
 export default function CustomizationOverlay({
