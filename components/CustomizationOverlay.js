@@ -538,7 +538,7 @@ useEffect(() => {
     });
     fabricCanvasRef.current = c;{/* DOBO: exponer API global del editor */}
 if (typeof window !== 'undefined') {
-  const api = {{/* existentes */}
+  const api = {/* existentes */}
     toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
     toSVG: () => c.toSVG({ suppressPreamble: true }),
     getCanvas: () => c,{/* snapshot */}
