@@ -541,7 +541,8 @@ if (typeof window !== 'undefined') {
   const api = {/* existentes */}
     toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
     toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,{/* snapshot */}
+    getCanvas: () => c,
+    {/* snapshot */}
     exportDesignSnapshot: () => { try { return c.toJSON(); } catch { return null; } },
     importDesignSnapshot: (snap) => new Promise(res => {
       try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
