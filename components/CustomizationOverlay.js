@@ -663,6 +663,7 @@ export default function CustomizationOverlay({
   const reader = new FileReader();
   reader.onload = (e) => {
     const dataUrl = e.target.result;
+
     const ensureCanvasReady = async () => {
       let tries = 0;
       while (!fabricCanvasRef.current && tries < 15) {
@@ -674,30 +675,34 @@ export default function CustomizationOverlay({
 
     ensureCanvasReady().then((c) => {
       if (!c) return;
-      fabric.Image.fromURL(dataUrl, (img) => {
-        if (!img) return;
-        img.set({
-          left: c.width / 2,
-          top: c.height / 2,
-          originX: "center",
-          originY: "center",
-          selectable: true,
-        });
-        const scale = Math.min(
-          (c.width * 0.6) / img.width,
-          (c.height * 0.6) / img.height
-        );
-        img.scale(scale);
-        c.add(img);
-        c.setActiveObject(img);
-        c.requestRenderAll();
-        setSelType("image");
-        setEditing(true);
-      }, { crossOrigin: "anonymous" });
+      fabric.Image.fromURL(
+        dataUrl,
+        (img) => {
+          if (!img) return;
+          img.set({
+            left: c.width / 2,
+            top: c.height / 2,
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            evented: true,
+          });
+          const scale = Math.min(
+            (c.width * 0.6) / img.width,
+            (c.height * 0.6) / img.height
+          );
+          img.scale(scale);
+          c.add(img);
+          c.setActiveObject(img);
+          c.requestRenderAll();
+          setSelType("image");
+          setEditing(true);
+        },
+        { crossOrigin: "anonymous" }
+      );
     });
   };
-
-  reader.readAsDataURL(file); // ← ESTA LÍNEA ES CLAVE
+  reader.readAsDataURL(file); // ← CLAVE para que se vea en Fabric/Next
 }
 
 
@@ -966,28 +971,39 @@ const OverlayCanvas = (
             </button>
 
             {/* Vectorizada (usa sistema de vectorización DOBO) */}
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => { setUploadMode("vector"); addInputRef.current?.click(); }}
-              disabled={!ready}
-              title="Subir imagen vectorizada (monocolor)"
-            >
-              <i className="fa-regular fa-shapes"></i> <span className="ms-1">Vector</span>
-            </button>
+           <button
+  type="button"
+  className="btn btn-sm btn-outline-secondary"
+  onPointerDown={(e)=>e.stopPropagation()}
+  onClick={() => { setUploadMode("vector"); addInputRef.current?.click(); }}
+  disabled={!ready}
+>
+  + Vector
+</button>
+
 
             {/* RGB (fotográfica) */}
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={() => { setUploadMode("rgb"); addInputRef.current?.click(); }}
-              disabled={!ready}
-              title="Subir imagen RGB"
-            >
-              <i className="fa-regular fa-image"></i> <span className="ms-1">RGB</span>
-            </button>
+          <button
+  type="button"
+  className="btn btn-sm btn-outline-secondary"
+  onPointerDown={(e)=>e.stopPropagation()}
+  onClick={() => { setUploadMode("rgb"); addInputRef.current?.click(); }}
+  disabled={!ready}
+>
+  + RGB
+</button>
+
+    <button
+  type="button"
+  className="btn btn-sm btn-outline-secondary"
+  onPointerDown={(e)=>e.stopPropagation()}
+  onClick={() => document.getElementById('cameraInput')?.click()}
+  disabled={!ready}
+  title="Tomar foto con cámara"
+>
+  📷
+</button>
+
 
             <button
               type="button"
@@ -1158,21 +1174,23 @@ const OverlayCanvas = (
         )}
 
         {/* Inputs ocultos */}
-        <input
-          ref={addInputRef}
-          type="file"
-          accept="image/*"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) {
-              if (uploadMode === "vector") addVectorFromFile(f);
-              else addRgbFromFile(f);
-            }
-            e.target.value = "";
-          }}
-          onPointerDown={(e)=>e.stopPropagation()}
-          style={{ display: "none" }}
-        />
+      <input
+  id="cameraInput"
+  type="file"
+  accept="image/*"
+  capture="environment"
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      setUploadMode("rgb"); // la cámara sube RGB
+      addImageFromFile(f);
+    }
+    e.target.value='';
+  }}
+  style={{ display: 'none' }}
+/>
+
+
         <input
           ref={replaceInputRef}
           type="file"
