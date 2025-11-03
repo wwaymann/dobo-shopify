@@ -840,38 +840,33 @@ export default function CustomizationOverlay({
   // ------------------------------------------------------------
   if (!visible) return null;
 
-  const OverlayCanvas = (
-    <div
-      ref={overlayRef}
+const OverlayCanvas = (
+  <div
+    ref={overlayRef}
+    style={{
+      position: "absolute",
+      inset: 0,
+      zIndex: Z_CANVAS,
+      overflow: "visible",
+      pointerEvents: "auto",
+      touchAction: "none",
+    }}
+  >
+    <canvas
+      data-dobo-design="1"
+      ref={canvasRef}
+      width={overlayBox.w}
+      height={overlayBox.h}
       style={{
-        position: "absolute",
-        left: overlayBox.left,
-        top: overlayBox.top,
-        width: overlayBox.w,
-        height: overlayBox.h,
-        zIndex: Z_CANVAS,
-        overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain",
+        width: "100%",
+        height: "100%",
+        display: "block",
+        background: "transparent",
       }}
-      onPointerDown={(e) => { if (editing) { e.stopPropagation(); } }}
-    >
-      <canvas
-        data-dobo-design="1"
-        ref={canvasRef}
-        width={overlayBox.w}
-        height={overlayBox.h}
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "block",
-          background: "transparent",
-          touchAction: editing ? "none" : "auto"
-        }}
-      />
-    </div>
-  );
+    />
+  </div>
+);
+
 
   function Menu() {
     return (
@@ -1166,18 +1161,25 @@ export default function CustomizationOverlay({
     );
   }
 
-  return (
-    <>
-      {/* Overlay dentro de la maceta */}
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+return (
+  <>
+    {createPortal(OverlayCanvas, stageRef?.current || document.body)}
+    {anchorRef?.current ? createPortal(
+      <div style={{
+        position: "relative",
+        width: "100%",
+        display: "flex",
+        justifyContent: "center",
+        pointerEvents: "none",
+        marginTop: 8,
+        zIndex: Z_CANVAS + 1
+      }}>
+        <div style={{ pointerEvents: "auto", display: "inline-flex" }}>
+          <Menu />
+        </div>
+      </div>,
+      document.getElementById("dobo-menu-dock") || document.body
+    ) : null}
+  </>
+);
 
-      {/* Menú fijo abajo */}
-      {anchorRef?.current ? createPortal(
-        <div style={{ position:"relative", width:"100%", display:"flex", justifyContent:"center", pointerEvents:"none", marginTop:8 }}>
-          <div style={{ pointerEvents:"auto", display:"inline-flex" }}><Menu/></div>
-        </div>,
-        document.getElementById("dobo-menu-dock")
-      ) : null}
-    </>
-  );
-}
