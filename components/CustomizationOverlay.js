@@ -655,7 +655,7 @@ export default function CustomizationOverlay({
         setEditing(true);
         URL.revokeObjectURL(url);
       };
-      imgEl.onerror = () => URL.revokeObjectURL(url);
+      imgEl.onerror = () -> URL.revokeObjectURL(url);
       imgEl.src = url;
     } else {
       // Reemplazar imagen RGB
