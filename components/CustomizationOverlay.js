@@ -657,26 +657,27 @@ export default function CustomizationOverlay({
       };
       imgEl.onerror = () => URL.revokeObjectURL(url);
       imgEl.src = url;
-    } else {
-      // Reemplazar imagen RGB
-      fabric.Image.fromURL(url, (img) => {
-        if (!img) { URL.revokeObjectURL(url); return; }
-        const src = downscale(img.getElement());
-        const bitmap = new fabric.Image(src, {
-          originX: "center", originY: "center",
-          objectCaching: false, noScaleCache: true,
-          selectable: true, evented: true
-        });
-        try { c.remove(active); } catch {}
-        bitmap.set(pose);
-        c.add(bitmap);
-        c.setActiveObject(bitmap);
-        setSelType("image");
-        c.requestRenderAll();
-        setEditing(true);
-        URL.revokeObjectURL(url);
-      }, { crossOrigin: "anonymous" });
-    }
+   } else {
+  // Reemplazar imagen RGB
+  const imgEl = new Image();
+  imgEl.onload = () => {
+    const img = new fabric.Image(imgEl, {
+      left: overlayBox.w / 2,
+      top: overlayBox.h / 2,
+      originX: 'center',
+      originY: 'center',
+    });
+    img.scaleToWidth(overlayBox.w * 0.6);
+    c.add(img);
+    c.setActiveObject(img);
+    c.requestRenderAll();
+    URL.revokeObjectURL(url);
+    setEditing(true);
+  };
+  imgEl.onerror = () => URL.revokeObjectURL(url);
+  imgEl.src = url;
+}
+
   };
 
   // Borrar selección
