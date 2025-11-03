@@ -1180,6 +1180,9 @@ return (
       </div>,
       document.getElementById("dobo-menu-dock") || document.body
     ) : null}
-  </>
-);
+   </>
+  );
+}
+
+export default CustomizationOverlay;
 
