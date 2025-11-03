@@ -658,24 +658,44 @@ export default function CustomizationOverlay({
       imgEl.onerror = () => URL.revokeObjectURL(url);
       imgEl.src = url;
    } else {
-  // Reemplazar imagen RGB
-  const imgEl = new Image();
-  imgEl.onload = () => {
-    const img = new fabric.Image(imgEl, {
-      left: overlayBox.w / 2,
-      top: overlayBox.h / 2,
-      originX: 'center',
-      originY: 'center',
-    });
-    img.scaleToWidth(overlayBox.w * 0.6);
-    c.add(img);
-    c.setActiveObject(img);
-    c.requestRenderAll();
-    URL.revokeObjectURL(url);
-    setEditing(true);
+ } else {
+  // --- Cargar imagen RGB ---
+  const ensureCanvasReady = async () => {
+    let tries = 0;
+    while (!fabricCanvasRef.current && tries < 10) {
+      await new Promise(res => setTimeout(res, 100));
+      tries++;
+    }
+    return fabricCanvasRef.current;
   };
-  imgEl.onerror = () => URL.revokeObjectURL(url);
-  imgEl.src = url;
+
+  ensureCanvasReady().then((c) => {
+    if (!c) return;
+    const imgEl = new Image();
+    imgEl.crossOrigin = "anonymous";
+    imgEl.onload = () => {
+      const fabricImg = new fabric.Image(imgEl, {
+        left: c.width / 2,
+        top: c.height / 2,
+        originX: "center",
+        originY: "center",
+        selectable: true,
+      });
+      const scale = Math.min(
+        (c.width * 0.6) / fabricImg.width,
+        (c.height * 0.6) / fabricImg.height
+      );
+      fabricImg.scale(scale);
+      c.add(fabricImg);
+      c.setActiveObject(fabricImg);
+      c.requestRenderAll();
+      setEditing(true);
+      setSelType("image");
+      URL.revokeObjectURL(url);
+    };
+    imgEl.onerror = () => URL.revokeObjectURL(url);
+    imgEl.src = url;
+  });
 }
 
   };
