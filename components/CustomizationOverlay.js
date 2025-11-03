@@ -657,8 +657,8 @@ export default function CustomizationOverlay({
       };
       imgEl.onerror = () => URL.revokeObjectURL(url);
       imgEl.src = url;
-   } else {
- } else {
+
+} else {
   // --- Cargar imagen RGB ---
   const ensureCanvasReady = async () => {
     let tries = 0;
