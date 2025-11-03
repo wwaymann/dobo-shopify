@@ -1184,5 +1184,4 @@ return (
   );
 }
 
-export default CustomizationOverlay;
 
