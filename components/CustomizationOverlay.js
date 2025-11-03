@@ -1,20 +1,26 @@
 // components/CustomizationOverlay.js
-// DOBO – CustomizationOverlay (vectorizada + RGB) – Nov 2025 (versión limpia)
-// Español neutro. Mantiene lo que ya funciona y agrega dos botones separados:
-// 1) Subir Vectorizada (permite elegir color)
-// 2) Subir RGB (imagen fotográfica; no aplica color)
+// DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con “Detalles”
+// Español neutro. No cambia lo que ya funciona, solo corrige y extiende según solicitud.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
 import { createPortal } from "react-dom";
+import HistoryManager from "../lib/history";
 
-// ============================================================
-// Utilidades
-// ============================================================
-const MAX_TEXTURE_DIM = 1600;
-const VECTOR_SAMPLE_DIM = 500;
+// ======= Constantes =======
 const Z_CANVAS = 4000;
-const Z_MENU = 10000;
+const FONT_OPTIONS = [
+  { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
+  { name: "Georgia", css: 'Georgia, serif' },
+  { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
+  { name: "Courier New", css: '"Courier New", Courier, monospace' },
+  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
+  { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
+  { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
+];
+
+const VECTOR_SAMPLE_DIM = 500;
+const MAX_TEXTURE_DIM = 1600;
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
@@ -27,19 +33,7 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-const FONT_OPTIONS = [
-  { name: "Arial", css: "Arial, Helvetica, sans-serif" },
-  { name: "Georgia", css: "Georgia, serif" },
-  { name: "Times New Roman", css: "\"Times New Roman\", Times, serif" },
-  { name: "Courier New", css: "\"Courier New\", Courier, monospace" },
-  { name: "Trebuchet MS", css: "\"Trebuchet MS\", Tahoma, sans-serif" },
-  { name: "Montserrat", css: "Montserrat, Arial, sans-serif" },
-  { name: "Poppins", css: "Poppins, Arial, sans-serif" },
-];
-
-// ============================================================
-// Vectorización (el mismo sistema DOBO que hemos venido usando)
-// ============================================================
+// ======= Otsu =======
 function otsuThreshold(gray, total) {
   if (!gray || !total || total <= 0) return 127;
   const hist = new Uint32Array(256);
@@ -87,13 +81,13 @@ function downscale(imgEl) {
   return cv;
 }
 
-// Convierte una imagen en bitmap vectorizado monocolor con transparencia
+// ======= Vectorización (igual sistema usado antes: binarización con “Detalles/vecBias” y color) =======
 function vectorizeElementToBitmap(element, opts = {}) {
   const {
-    maxDim   = VECTOR_SAMPLE_DIM,
+    maxDim = VECTOR_SAMPLE_DIM,
     makeDark = true,
     drawColor = [51, 51, 51],
-    thrBias  = 0
+    thrBias = 0
   } = opts;
 
   const iw = element?.width, ih = element?.height;
@@ -111,7 +105,12 @@ function vectorizeElementToBitmap(element, opts = {}) {
   ctx.drawImage(element, 0, 0, w, h);
 
   let img;
-  try { img = ctx.getImageData(0, 0, w, h); } catch { return null; }
+  try {
+    img = ctx.getImageData(0, 0, w, h);
+  } catch {
+    return null;
+  }
+
   const data = img?.data;
   const total = w * h;
   if (!data || data.length < total * 4) return null;
@@ -122,17 +121,17 @@ function vectorizeElementToBitmap(element, opts = {}) {
     gray[j] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
   }
   const thr0 = otsuThreshold(gray, total);
-  const thr  = clamp(thr0 + thrBias, 0, 255);
+  const thr = clamp(thr0 + thrBias, 0, 255);
 
   for (let j = 0, i = 0; j < total; j++, i += 4) {
     const keep = makeDark ? (gray[j] <= thr) : (gray[j] > thr);
     if (keep) {
-      data[i]   = drawColor[0];
-      data[i+1] = drawColor[1];
-      data[i+2] = drawColor[2];
-      data[i+3] = 255;
+      data[i] = drawColor[0];
+      data[i + 1] = drawColor[1];
+      data[i + 2] = drawColor[2];
+      data[i + 3] = 255;
     } else {
-      data[i+3] = 0;
+      data[i + 3] = 0;
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -143,39 +142,43 @@ function vectorizeElementToBitmap(element, opts = {}) {
     objectCaching: false,
     noScaleCache: true,
     selectable: true,
-    evented: true,
+    evented: true
   });
-  bm._vecSourceEl = element;
+  bm._vecSourceEl = element; // importante para recolorear y re-vectorizar
   bm._vecMeta = { w, h };
+  bm._doboKind = "vector"; // etiqueta para el menú
   return bm;
 }
 
-// Grupo de texto con pseudo-relieve (sombra + luz)
+// ======= Texto con pseudo-relieve plano (sólo capas visuales) y editable =======
 function makeTextGroup(text, opts = {}) {
+  // Grupo simple: base es el que define estilo/tamaño; sin relieve real.
   const base = new fabric.Textbox(text, {
     ...opts,
     originX: "center", originY: "center",
-    selectable: false, evented: false,
-    objectCaching: false, shadow: null, stroke: null,
-    fill: "rgba(35,35,35,1)", globalCompositeOperation: "multiply"
+    selectable: true, evented: true,
+    objectCaching: false,
+    fill: opts.fill ?? "rgba(35,35,35,1)"
   });
+
+  // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
   const shadow = new fabric.Textbox(text, {
     ...opts,
     originX: "center", originY: "center",
     left: -1, top: -1,
     selectable: false, evented: false,
-    objectCaching: false, fill: "",
-    stroke: "rgba(0,0,0,0.48)", strokeWidth: 1,
-    globalCompositeOperation: "multiply"
+    objectCaching: false,
+    fill: "",
+    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
   });
   const highlight = new fabric.Textbox(text, {
     ...opts,
     originX: "center", originY: "center",
     left: +1, top: +1,
     selectable: false, evented: false,
-    objectCaching: false, fill: "",
-    stroke: "rgba(255,255,255,0.65)", strokeWidth: 0.6,
-    globalCompositeOperation: "screen"
+    objectCaching: false,
+    fill: "",
+    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
   });
 
   const group = new fabric.Group([shadow, highlight, base], {
@@ -186,7 +189,7 @@ function makeTextGroup(text, opts = {}) {
     scaleX: 1, scaleY: 1
   });
   group._kind = "textGroup";
-  group._textChildren = { shadow, highlight, base };
+  group._textChildren = { base, shadow, highlight };
 
   const sync = () => {
     const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
@@ -197,98 +200,27 @@ function makeTextGroup(text, opts = {}) {
     group.setCoords();
     group.canvas?.requestRenderAll?.();
   };
-  group.on("scaling",  sync);
+  group.on("scaling", sync);
   group.on("modified", sync);
   sync();
-  return group;
-}
-
-// Grupo imagen con relieve simple (doble capa: sombra + luz)
-function attachDebossToBase(c, baseObj, { offset = 1 } = {}) {
-  const cloneFrom = () => {
-    const el = typeof baseObj.getElement === "function" ? baseObj.getElement() : baseObj._element;
-    return new fabric.Image(el, {
-      originX: "center", originY: "center",
-      objectCaching: false, noScaleCache: true, selectable: false, evented: false,
-    });
-  };
-
-  const base = cloneFrom();
-  const shadow = cloneFrom();
-  const highlight = cloneFrom();
-
-  const group = new fabric.Group([shadow, highlight, base], {
-    originX: "center", originY: "center",
-    objectCaching: false, selectable: true, evented: true,
-    subTargetCheck: false,
-  });
-  group._kind = "imgGroup";
-  group._imgChildren = { base, shadow, highlight };
-  group._debossOffset = offset;
-
-  const srcEl = typeof baseObj.getElement === "function" ? baseObj.getElement() : baseObj._element;
-  const applyElement = (img) => {
-    base.setElement(img); shadow.setElement(img); highlight.setElement(img);
-  };
-  applyElement(srcEl);
-
-  shadow.set({ globalCompositeOperation: "multiply", opacity: 1 });
-  highlight.set({ globalCompositeOperation: "screen", opacity: 1 });
-
-  const normalizeImgOffsets = () => {
-    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-    const ox = group._debossOffset / sx;
-    const oy = group._debossOffset / sy;
-    shadow.set({ left: -ox, top: -oy });
-    highlight.set({ left: +ox, top: +oy });
-    base.set({ left: 0, top: 0 });
-    group.setCoords?.();
-    group.canvas?.requestRenderAll?.();
-  };
-  group._debossSync = normalizeImgOffsets;
-
-  group.on("scaling", normalizeImgOffsets);
-  group.on("modified", normalizeImgOffsets);
-  normalizeImgOffsets();
 
   return group;
 }
 
-function updateDebossVisual(obj, { offset }) {
-  const g = obj && obj._kind === "imgGroup" ? obj : null;
-  if (!g) return;
-  g._debossOffset = offset;
-
-  const { shadow, highlight } = g._imgChildren || {};
-  if (!shadow || !highlight) return;
-
-  const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-  const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-  const ox = g._debossOffset / sx;
-  const oy = g._debossOffset / sy;
-  shadow.set({ left: -ox, top: -oy });
-  highlight.set({ left: +ox, top: +oy });
-  g.setCoords();
-  g.canvas?.requestRenderAll?.();
-}
-
-// ============================================================
-// Componente principal
-// ============================================================
 export default function CustomizationOverlay({
   stageRef,
   anchorRef,
   visible = true,
   zoom = 0.6,
-  setZoom,
+  setZoom
 }) {
   // ---- Refs y estado ----
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
   const overlayRef = useRef(null);
-  const addInputRef = useRef(null);
-  const replaceInputRef = useRef(null);
+  const addInputVectorRef = useRef(null);
+  const addInputRgbRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const menuRef = useRef(null);
 
   const [uploadMode, setUploadMode] = useState(null); // "vector" | "rgb"
@@ -298,6 +230,10 @@ export default function CustomizationOverlay({
   const [ready, setReady] = useState(false);
   const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
 
+  // Historial
+  const historyRef = useRef(null);
+  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
+
   // Tipografía
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
   const [fontSize, setFontSize] = useState(60);
@@ -305,28 +241,56 @@ export default function CustomizationOverlay({
   const [isItalic, setIsItalic] = useState(false);
   const [isUnderline, setIsUnderline] = useState(false);
   const [textAlign, setTextAlign] = useState("center");
+  const [textEditing, setTextEditing] = useState(false);
 
+  // UI
   const [showAlignMenu, setShowAlignMenu] = useState(false);
 
-  // Color (para texto y vector; no afecta RGB)
+  // Color (texto y vector)
   const [shapeColor, setShapeColor] = useState("#333333");
 
-  // Vector/relieve
-  const [vecOffset, setVecOffset] = useState(1);   // 0..5
-  const [vecInvert, setVecInvert] = useState(false); // oscuro/claro
-  const [vecBias, setVecBias] = useState(0);       // -60..+60
+  // Vector
+  const [vecBias, setVecBias] = useState(0); // -60..+60
 
-  const [textEditing, setTextEditing] = useState(false);
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
 
-  // ---- Zoom CSS en el stage ----
-  useEffect(() => {
-    const v = typeof zoom === "number" ? zoom : 0.6;
-    stageRef?.current?.style.setProperty("--zoom", String(v));
-  }, [zoom, stageRef]);
+  // ====== helpers de historial
+  const getSnapshot = () => {
+    const c = fabricCanvasRef.current;
+    if (!c) return null;
+    return c.toJSON(["_kind", "_textChildren", "_vecSourceEl", "_vecMeta", "_doboKind"]);
+  };
 
-  // ---- Layout: medir anchor y stage ----
+  const applySnapshot = (snap) => {
+    const c = fabricCanvasRef.current;
+    if (!c || !snap) return;
+    c._skipHistory = true;
+    c.loadFromJSON(snap, () => {
+      c._skipHistory = false;
+      c.requestRenderAll();
+    });
+  };
+
+  const refreshCaps = () => setHistCaps({
+    canUndo: !!historyRef.current?.canUndo(),
+    canRedo: !!historyRef.current?.canRedo()
+  });
+
+  const recordChange = (() => {
+    let t = null;
+    return () => {
+      if (fabricCanvasRef.current?._skipHistory) return;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const s = getSnapshot();
+        if (s && historyRef.current) historyRef.current.push(s);
+        refreshCaps();
+      }, 140);
+    };
+  })();
+
+  // ====== layout a partir de anchor y stage
   useLayoutEffect(() => {
     const el = anchorRef?.current;
     if (!el) return;
@@ -347,7 +311,7 @@ export default function CustomizationOverlay({
       let el = anchor;
       while (el && el !== stage) {
         left += el.offsetLeft || 0;
-        top  += el.offsetTop  || 0;
+        top += el.offsetTop || 0;
         el = el.offsetParent;
       }
       setBaseSize({ w, h });
@@ -371,7 +335,12 @@ export default function CustomizationOverlay({
     };
   }, [stageRef, anchorRef]);
 
-  // ---- Inicializar Fabric ----
+  useEffect(() => {
+    const v = typeof zoom === "number" ? zoom : 0.6;
+    stageRef?.current?.style.setProperty("--zoom", String(v));
+  }, [zoom, stageRef]);
+
+  // ====== init Fabric
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
@@ -381,38 +350,38 @@ export default function CustomizationOverlay({
       preserveObjectStacking: true,
       selection: true,
       perPixelTargetFind: true,
-      targetFindTolerance: 8,
+      targetFindTolerance: 8
     });
     fabricCanvasRef.current = c;
 
-    // Área de diseño con un pequeño margen
+    // Delimitar bounds (margen 10 px)
     const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
+    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
+
+    // Enforcers de límites
     const clampObjectToBounds = (obj) => {
       const b = designBoundsRef.current; if (!b || !obj) return;
       obj.setCoords();
       const r = obj.getBoundingRect(true);
       let dx = 0, dy = 0;
       if (r.left < b.x) dx = b.x - r.left;
-      if (r.top  < b.y) dy = b.y - r.top;
-      if (r.left + r.width  > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
-      if (r.top  + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top  + r.height);
+      if (r.top < b.y) dy = b.y - r.top;
+      if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
+      if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
       if (dx || dy) {
         obj.left = (obj.left ?? 0) + dx;
-        obj.top  = (obj.top  ?? 0) + dy;
+        obj.top = (obj.top ?? 0) + dy;
         obj.setCoords();
       }
     };
-
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
-
-    const __bounds_onMove   = (e) => clampObjectToBounds(e.target);
-    const __bounds_onScale  = (e) => clampObjectToBounds(e.target);
-    const __bounds_onRotate = (e) => clampObjectToBounds(e.target);
-    const __bounds_onAdded  = (e) => clampObjectToBounds(e.target);
-    c.on("object:moving",   __bounds_onMove);
-    c.on("object:scaling",  __bounds_onScale);
+    const __bounds_onMove = e => clampObjectToBounds(e.target);
+    const __bounds_onScale = e => clampObjectToBounds(e.target);
+    const __bounds_onRotate = e => clampObjectToBounds(e.target);
+    const __bounds_onAdded = e => clampObjectToBounds(e.target);
+    c.on("object:moving", __bounds_onMove);
+    c.on("object:scaling", __bounds_onScale);
     c.on("object:rotating", __bounds_onRotate);
-    c.on("object:added",    __bounds_onAdded);
+    c.on("object:added", __bounds_onAdded);
 
     const __bounds_ro = new ResizeObserver(() => {
       const cw = c.getWidth(), ch = c.getHeight();
@@ -421,16 +390,26 @@ export default function CustomizationOverlay({
     });
     __bounds_ro.observe(c.upperCanvasEl);
 
-    // Selección/estado
+    // Historial
+    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
+    c.once("after:render", () => {
+      const s = getSnapshot(); if (s) historyRef.current.push(s);
+      refreshCaps();
+    });
+    const __hist_onAdded = () => recordChange();
+    const __hist_onModified = () => recordChange();
+    const __hist_onRemoved = () => recordChange();
+    const __hist_onPath = () => recordChange();
+    c.on("object:added", __hist_onAdded);
+    c.on("object:modified", __hist_onModified);
+    c.on("object:removed", __hist_onRemoved);
+    c.on("path:created", __hist_onPath);
+
+    // Selección: clasificar
     const classify = (a) => {
       if (!a) return "none";
-      if (a._kind === "imgGroup")  return "image";
       if (a._kind === "textGroup") return "text";
-      if (a.type === "activeSelection" && a._objects?.length) {
-        if (a._objects.every(o => o._kind === "textGroup")) return "text";
-        if (a._objects.some(o => o._kind === "imgGroup"))    return "image";
-        return "none";
-      }
+      if (a._doboKind === "vector") return "image";
       if (a.type === "image") return "image";
       if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
       return "none";
@@ -473,23 +452,41 @@ export default function CustomizationOverlay({
     c.on("selection:updated", onSel);
     c.on("selection:cleared", () => setSelType("none"));
 
+    // Doble-clic para texto editable
+    c.on("mouse:dblclick", (e) => {
+      const t = e.target;
+      if (!t) return;
+      if (t._kind === "textGroup") {
+        startInlineTextEdit(t);
+      } else if (isTextObj(t) && typeof t.enterEditing === "function") {
+        t.enterEditing();
+        c.requestRenderAll();
+      }
+    });
+
     setReady(true);
 
     return () => {
+      c.off("mouse:dblclick");
       c.off("selection:created", onSel);
       c.off("selection:updated", onSel);
       c.off("selection:cleared");
-      c.off("object:moving",   __bounds_onMove);
-      c.off("object:scaling",  __bounds_onScale);
+      c.off("object:added", __hist_onAdded);
+      c.off("object:modified", __hist_onModified);
+      c.off("object:removed", __hist_onRemoved);
+      c.off("path:created", __hist_onPath);
+
+      c.off("object:moving", __bounds_onMove);
+      c.off("object:scaling", __bounds_onScale);
       c.off("object:rotating", __bounds_onRotate);
-      c.off("object:added",    __bounds_onAdded);
+      c.off("object:added", __bounds_onAdded);
       try { __bounds_ro.disconnect(); } catch {}
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
   }, [visible]);
 
-  // Ajuste de tamaño si cambia el contenedor
+  // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -499,22 +496,22 @@ export default function CustomizationOverlay({
     c.requestRenderAll?.();
   }, [baseSize.w, baseSize.h]);
 
-  // Interactividad según modo
+  // Interactividad segun "editing"
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
 
     const enableNode = (o, on) => {
       if (!o) return;
-      const isGroup = o._kind === "imgGroup" || o._kind === "textGroup";
-      o.selectable   = on;
-      o.evented      = on;
+      const isGroup = o._kind === "textGroup";
+      o.selectable = on;
+      o.evented = on;
       o.lockMovementX = !on;
       o.lockMovementY = !on;
-      o.hasControls  = on;
-      o.hasBorders   = on;
+      o.hasControls = on;
+      o.hasBorders = on;
       if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) o.editable = on;
-      o.hoverCursor  = on ? "move" : "default";
+      o.hoverCursor = on ? "move" : "default";
       if (isGroup) return;
       const children = o._objects || (typeof o.getObjects === "function" ? o.getObjects() : null);
       if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
@@ -525,9 +522,11 @@ export default function CustomizationOverlay({
       c.selection = on;
       (c.getObjects?.() || []).forEach(o => enableNode(o, on));
       const upper = c.upperCanvasEl;
-      const lower = c.lowerCanvasEl;
-      if (upper) { upper.style.pointerEvents = on ? "auto" : "none"; upper.style.touchAction = on ? "none" : "auto"; upper.tabIndex = on ? 0 : -1; }
-      if (lower) { lower.style.pointerEvents = "none"; lower.style.touchAction = "none"; }
+      if (upper) {
+        upper.style.pointerEvents = on ? "auto" : "none";
+        upper.style.touchAction = on ? "none" : "auto";
+        upper.tabIndex = on ? 0 : -1;
+      }
       c.defaultCursor = on ? "move" : "default";
       try { c.discardActiveObject(); } catch {}
       c.calcOffset?.();
@@ -538,52 +537,141 @@ export default function CustomizationOverlay({
     setAll(!!editing);
   }, [editing]);
 
-  // ------------------------------------------------------------
-  // Acciones
-  // ------------------------------------------------------------
+  // ======= Edición inline de texto (grupo) =======
+  const startInlineTextEdit = (group) => {
+    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== "textGroup") return;
+    const base = group._textChildren?.base; if (!base) return;
+
+    const pose = {
+      left: group.left, top: group.top, originX: "center", originY: "center",
+      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
+    };
+
+    try { c.remove(group); } catch {}
+
+    const tb = new fabric.Textbox(base.text || "Texto", {
+      left: pose.left, top: pose.top, originX: "center", originY: "center",
+      width: Math.min(baseSize.w * 0.9, base.width || 240),
+      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
+      fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
+      editable: true, selectable: true, evented: true, objectCaching: false,
+      fill: base.fill || "rgba(35,35,35,1)"
+    });
+
+    c.add(tb);
+    c.setActiveObject(tb);
+    c.requestRenderAll();
+    setTextEditing(true);
+
+    setTimeout(() => {
+      try { tb.enterEditing?.(); } catch {}
+      try { tb.hiddenTextarea?.focus(); } catch {}
+      setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
+    }, 0);
+
+    const finish = () => {
+      const newText = tb.text || "";
+      const finalPose = {
+        left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
+        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
+      };
+      try { c.remove(tb); } catch {}
+
+      const group2 = makeTextGroup(newText, {
+        width: tb.width,
+        fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
+        fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
+        fill: tb.fill
+      });
+      group2.set(finalPose);
+      c.add(group2);
+      c.setActiveObject(group2);
+      c.requestRenderAll();
+      setSelType("text");
+      setTextEditing(false);
+    };
+
+    const onExit = () => { tb.off("editing:exited", onExit); finish(); };
+    tb.on("editing:exited", onExit);
+    const safety = setTimeout(() => {
+      try { tb.off("editing:exited", onExit); } catch {}
+      finish();
+    }, 15000);
+    tb.on("removed", () => { clearTimeout(safety); });
+  };
+
+  // ======= Acciones =======
   const addText = () => {
     const c = fabricCanvasRef.current; if (!c) return;
-    const group = makeTextGroup("Nuevo párrafo", {
-      width: Math.min(baseSize.w * 0.9, 220),
+    const group = makeTextGroup("Nuevo texto", {
+      width: Math.min(baseSize.w * 0.9, 240),
       fontSize, fontFamily, fontWeight: isBold ? "700" : "normal",
       fontStyle: isItalic ? "italic" : "normal",
       underline: isUnderline, textAlign,
+      fill: `rgba(${hexToRgb(shapeColor).join(",")},1)`
     });
     group.set({ left: baseSize.w / 2, top: baseSize.h / 2, originX: "center", originY: "center" });
-    c.add(group);
+    const cobj = c.add(group);
     c.setActiveObject(group);
     setSelType("text");
     c.requestRenderAll();
     setEditing(true);
+    return cobj;
   };
 
-  // Subir como VECTOR (permite color)
-  const addVectorFromFile = (file) => {
+  const addImageFromFile = (file, mode) => {
     const c = fabricCanvasRef.current; if (!c || !file) return;
     const url = URL.createObjectURL(file);
-    const imgEl = new Image(); imgEl.crossOrigin = "anonymous";
+    const imgEl = new Image();
+    imgEl.crossOrigin = "anonymous";
+
     imgEl.onload = () => {
       const src = downscale(imgEl);
-      const [r,g,b] = hexToRgb(shapeColor);
-      const baseImg = vectorizeElementToBitmap(src, {
-        maxDim: VECTOR_SAMPLE_DIM,
-        makeDark: !vecInvert,
-        drawColor: [r,g,b],
-        thrBias: vecBias
-      });
-      if (!baseImg) { URL.revokeObjectURL(url); return; }
-      const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
-      const s = Math.min(maxW / (baseImg._vecMeta?.w || 1), maxH / (baseImg._vecMeta?.h || 1));
-      baseImg.set({
-        originX: "center", originY: "center",
-        left: c.getWidth()/2, top: c.getHeight()/2,
-        scaleX: s, scaleY: s,
-        selectable: false, evented: false, objectCaching: false
-      });
-      const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-      c.add(group);
-      c.setActiveObject(group);
-      setSelType("image");
+      if (mode === "vector") {
+        const rgb = hexToRgb(shapeColor);
+        const vectorImg = vectorizeElementToBitmap(src, {
+          maxDim: VECTOR_SAMPLE_DIM,
+          makeDark: true,
+          drawColor: rgb,
+          thrBias: vecBias
+        });
+        if (!vectorImg) { URL.revokeObjectURL(url); return; }
+        // Ubicar centrado y escalado
+        const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
+        const s = Math.min(maxW / vectorImg._vecMeta.w, maxH / vectorImg._vecMeta.h);
+        vectorImg.set({
+          originX: "center", originY: "center",
+          left: c.getWidth() / 2, top: c.getHeight() / 2,
+          scaleX: s, scaleY: s,
+          selectable: true, evented: true, objectCaching: false
+        });
+        c.add(vectorImg);
+        c.setActiveObject(vectorImg);
+        setSelType("image");
+      } else {
+        // RGB plano
+        fabric.Image.fromObject
+        ? fabric.Image.fromObject // safeguard older fabric builds
+        : null;
+
+        fabric.Image.fromURL(url, (img) => {
+          if (!img) { URL.revokeObjectURL(url); return; }
+          img._doboKind = "rgb";
+          const maxW = c.getWidth() * 0.85, maxH = c.getHeight() * 0.85;
+          const s = Math.min(maxW / img.width, maxH / img.height, 1);
+          img.set({
+            originX: "center", originY: "center",
+            left: c.getWidth() / 2, top: c.getHeight() / 2,
+            scaleX: s, scaleY: s,
+            selectable: true, evented: true, objectCaching: false
+          });
+          c.add(img);
+          c.setActiveObject(img);
+          setSelType("image");
+          c.requestRenderAll();
+        }, { crossOrigin: "anonymous" });
+      }
+
       c.requestRenderAll();
       setEditing(true);
       URL.revokeObjectURL(url);
@@ -592,123 +680,6 @@ export default function CustomizationOverlay({
     imgEl.src = url;
   };
 
-  // Subir como RGB (no aplica color)
-  const addRgbFromFile = (file) => {
-    const c = fabricCanvasRef.current; if (!c || !file) return;
-    const url = URL.createObjectURL(file);
-    fabric.Image.fromURL(url, (img) => {
-      if (!img) { URL.revokeObjectURL(url); return; }
-      // Limitar tamaño
-      const src = downscale(img.getElement());
-      const bitmap = new fabric.Image(src, {
-        originX: "center", originY: "center",
-        objectCaching: false, noScaleCache: true,
-        selectable: true, evented: true
-      });
-      const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
-      const s = Math.min(maxW / (src.width || 1), maxH / (src.height || 1));
-      bitmap.set({
-        left: c.getWidth()/2, top: c.getHeight()/2,
-        scaleX: s, scaleY: s
-      });
-      c.add(bitmap);
-      c.setActiveObject(bitmap);
-      setSelType("image");
-      c.requestRenderAll();
-      setEditing(true);
-      URL.revokeObjectURL(url);
-    }, { crossOrigin: "anonymous" });
-  };
-
-  // Reemplazar activo (mantiene pose)
-  const replaceActiveFromFile = (file) => {
-    const c = fabricCanvasRef.current; if (!c || !file) return;
-    const active = c.getActiveObject(); if (!active) return;
-    const url = URL.createObjectURL(file);
-    const pose = {
-      left: active.left, top: active.top,
-      originX: active.originX, originY: active.originY,
-      scaleX: active.scaleX, scaleY: active.scaleY, angle: active.angle || 0
-    };
-
-    if (active._kind === "imgGroup") {
-      // Reemplazar grupo vectorizado
-      const imgEl = new Image(); imgEl.crossOrigin = "anonymous";
-      imgEl.onload = () => {
-        const src = downscale(imgEl);
-        const [r,g,b] = hexToRgb(shapeColor);
-        const baseImg = vectorizeElementToBitmap(src, {
-          maxDim: VECTOR_SAMPLE_DIM,
-          makeDark: !vecInvert,
-          drawColor: [r,g,b],
-          thrBias: vecBias
-        });
-        if (!baseImg) { URL.revokeObjectURL(url); return; }
-        baseImg.set({ selectable: false, evented: false, objectCaching: false });
-        try { c.remove(active); } catch {}
-        const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-        group.set(pose);
-        c.add(group);
-        c.setActiveObject(group);
-        setSelType("image");
-        c.requestRenderAll();
-        setEditing(true);
-        URL.revokeObjectURL(url);
-      };
-      imgEl.onerror = () => URL.revokeObjectURL(url);
-      imgEl.src = url;
-
-} else {
-  // --- Cargar imagen RGB ---
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const dataUrl = e.target.result;
-
-    const ensureCanvasReady = async () => {
-      let tries = 0;
-      while (!fabricCanvasRef.current && tries < 15) {
-        await new Promise(res => setTimeout(res, 100));
-        tries++;
-      }
-      return fabricCanvasRef.current;
-    };
-
-    ensureCanvasReady().then((c) => {
-      if (!c) return;
-      fabric.Image.fromURL(
-        dataUrl,
-        (img) => {
-          if (!img) return;
-          img.set({
-            left: c.width / 2,
-            top: c.height / 2,
-            originX: "center",
-            originY: "center",
-            selectable: true,
-            evented: true,
-          });
-          const scale = Math.min(
-            (c.width * 0.6) / img.width,
-            (c.height * 0.6) / img.height
-          );
-          img.scale(scale);
-          c.add(img);
-          c.setActiveObject(img);
-          c.requestRenderAll();
-          setSelType("image");
-          setEditing(true);
-        },
-        { crossOrigin: "anonymous" }
-      );
-    });
-  };
-  reader.readAsDataURL(file); // ← CLAVE para que se vea en Fabric/Next
-}
-
-
-  };
-
-  // Borrar selección
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -727,67 +698,6 @@ export default function CustomizationOverlay({
     setSelType("none");
   };
 
-  // Color para texto o vector (no RGB)
-  const applyColorToActive = (hex) => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-    const [r, g, b] = hexToRgb(hex);
-
-    const paintVectorGroup = (g) => {
-      if (!g || g._kind !== "imgGroup") return false;
-      const base = g._imgChildren?.base;
-      if (!base) return false;
-      const el = base._vecSourceEl || (typeof base.getElement === "function" ? base.getElement() : base._element);
-      if (!el) return false;
-      const vec = vectorizeElementToBitmap(el, {
-        maxDim: VECTOR_SAMPLE_DIM,
-        makeDark: !vecInvert,
-        drawColor: [r,g,b],
-        thrBias: vecBias
-      });
-      if (!vec) return false;
-      vec.set({ selectable: false, evented: false, objectCaching: false });
-      const pose = { left: g.left, top: g.top, originX: g.originX, originY: g.originY, scaleX: g.scaleX, scaleY: g.scaleY, angle: g.angle || 0 };
-      try { c.remove(g); } catch {}
-      const group = attachDebossToBase(c, vec, { offset: vecOffset });
-      group.set(pose);
-      c.add(group);
-      c.setActiveObject(group);
-      return true;
-    };
-
-    if (a._kind === "imgGroup") {
-      if (paintVectorGroup(a)) c.requestRenderAll();
-      return;
-    }
-    if (a.type === "activeSelection" && a._objects?.length) {
-      let any = false;
-      a._objects.slice().forEach(o => { if (o._kind === "imgGroup") { any = paintVectorGroup(o) || any; } });
-      if (any) c.requestRenderAll();
-      return;
-    }
-
-    // Texto (grupo)
-    if (a._kind === "textGroup") {
-      const { base } = a._textChildren || {};
-      if (base) {
-        base.set({ fill: `rgb(${r},${g},${b})` });
-        a.canvas?.requestRenderAll?.();
-      }
-      return;
-    }
-
-    // Texto suelto
-    if (a.type === "textbox" || a.type === "i-text" || a.type === "text") {
-      a.set({ fill: `rgb(${r},${g},${b})` });
-      a.canvas?.requestRenderAll?.();
-      return;
-    }
-
-    // Imágenes RGB: ignorar color
-  };
-
-  // Aplicar cambios tipográficos a selección (texto)
   const applyToSelection = (mutator) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
@@ -814,90 +724,158 @@ export default function CustomizationOverlay({
     c.requestRenderAll();
   };
 
-  // Re-vectorizar al cambiar parámetros (bias/invert) con selección vector
-  useEffect(() => {
-    if (!editing || selType !== "image") return;
+  // Cambiar color a vector (re-vectoriza con el color actual)
+  const applyColorToActive = (hex) => {
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
+    const rgb = hexToRgb(hex);
 
-    const rebuild = (obj) => {
+    const rebuildVector = (obj) => {
       let element = null;
       let pose = null;
 
-      if (obj?._kind === "imgGroup") {
-        const base = obj._imgChildren?.base;
-        if (!base) return;
-        element = base._vecSourceEl || (typeof base.getElement === "function" ? base.getElement() : base._element);
-        pose = { left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0 };
+      if (obj?._doboKind === "vector") {
+        const baseEl = obj._vecSourceEl || (typeof obj.getElement === "function" ? obj.getElement() : obj._element);
+        if (!baseEl) return;
+        element = baseEl;
+        pose = {
+          left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
+          scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0
+        };
         try { obj.canvas.remove(obj); } catch {}
-      } else if (obj?._vecSourceEl || obj?.type === "image") {
-        // RGB → no re-vectorizamos
-        return;
       } else {
+        // texto normal (si llegó acá)
         return;
       }
 
-      const [r,g,b] = hexToRgb(shapeColor);
-      const baseImg = vectorizeElementToBitmap(element, { maxDim: VECTOR_SAMPLE_DIM, makeDark: !vecInvert, drawColor: [r,g,b], thrBias: vecBias });
+      const baseImg = vectorizeElementToBitmap(element, {
+        maxDim: VECTOR_SAMPLE_DIM,
+        makeDark: true,
+        drawColor: rgb,
+        thrBias: vecBias
+      });
       if (!baseImg) return;
-      baseImg.set({ selectable: false, evented: false, objectCaching: false });
-
-      const group = attachDebossToBase(c, baseImg, { offset: vecOffset });
-      group.set(pose);
-      c.add(group);
-      c.setActiveObject(group);
+      baseImg._doboKind = "vector";
+      baseImg.set({
+        selectable: true, evented: true, objectCaching: false
+      });
+      baseImg.set(pose);
+      c.add(baseImg);
+      c.setActiveObject(baseImg);
     };
 
     if (a.type === "activeSelection" && a._objects?.length) {
-      const arr = a._objects.slice(); a.discard(); arr.forEach(rebuild);
-    } else { rebuild(a); }
+      const arr = a._objects.slice(); a.discard(); arr.forEach(rebuildVector);
+    } else if (a._doboKind === "vector") {
+      rebuildVector(a);
+    } else if (a._kind === "textGroup" || a.type === "textbox" || a.type === "i-text" || a.type === "text") {
+      // Cambiar color del texto
+      applyToSelection(o => o.set({ fill: `rgba(${rgb.join(",")},1)` }));
+    }
 
     c.requestRenderAll();
-  }, [vecBias, vecInvert]); // vecOffset se trata aparte
+  };
 
-  // Offset de relieve en caliente
+  // Re-vectorizar cuando cambia “Detalles” (vecBias) SOLO si hay vector seleccionado
   useEffect(() => {
     if (!editing || selType !== "image") return;
     const c = fabricCanvasRef.current; if (!c) return;
     const a = c.getActiveObject(); if (!a) return;
-    const upd = (obj) => { if (obj._kind === "imgGroup") updateDebossVisual(obj, { offset: vecOffset }); };
-    if (a.type === "activeSelection" && a._objects?.length) a._objects.forEach(upd); else upd(a);
-  }, [vecOffset, editing, selType]);
 
-  // ------------------------------------------------------------
-  // Render
-  // ------------------------------------------------------------
+    const maybeRebuild = (obj) => {
+      if (obj?._doboKind !== "vector") return;
+      const element = obj._vecSourceEl || (typeof obj.getElement === "function" ? obj.getElement() : obj._element);
+      if (!element) return;
+      const pose = {
+        left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
+        scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0
+      };
+      try { obj.canvas.remove(obj); } catch {}
+
+      const rgb = hexToRgb(shapeColor);
+      const baseImg = vectorizeElementToBitmap(element, {
+        maxDim: VECTOR_SAMPLE_DIM,
+        makeDark: true,
+        drawColor: rgb,
+        thrBias: vecBias
+      });
+      if (!baseImg) return;
+      baseImg._doboKind = "vector";
+      baseImg.set({ selectable: true, evented: true, objectCaching: false });
+      baseImg.set(pose);
+      c.add(baseImg);
+      c.setActiveObject(baseImg);
+    };
+
+    if (a.type === "activeSelection" && a._objects?.length) {
+      const arr = a._objects.slice(); a.discard(); arr.forEach(maybeRebuild);
+    } else {
+      maybeRebuild(a);
+    }
+    c.requestRenderAll();
+  }, [vecBias]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ====== Zoom de rueda básico (opcional)
+  useEffect(() => {
+    const host = stageRef?.current || fabricCanvasRef.current?.upperCanvasEl;
+    if (!host) return;
+    const onWheel = (e) => {
+      if (textEditing) return;
+      e.preventDefault();
+      const current = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
+      const next = clamp(current + (e.deltaY > 0 ? -0.08 : 0.08), 0.6, 2.5);
+      stageRef?.current?.style.setProperty("--zoom", String(next));
+      if (typeof setZoom === "function") setZoom(next);
+    };
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
+  }, [stageRef, setZoom, textEditing]);
+
   if (!visible) return null;
 
-const OverlayCanvas = (
-  <div
-    ref={overlayRef}
-    style={{
-      position: "absolute",
-      inset: 0,
-      zIndex: Z_CANVAS,
-      overflow: "visible",
-      pointerEvents: "auto",
-      touchAction: "none",
-    }}
-  >
-    <canvas
-      data-dobo-design="1"
-      ref={canvasRef}
-      width={overlayBox.w}
-      height={overlayBox.h}
+  // ====== Overlay Canvas (posicionado dentro del anchor/stage)
+  const OverlayCanvas = (
+    <div
+      ref={overlayRef}
       style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        background: "transparent",
+        position: "absolute",
+        left: overlayBox.left,
+        top: overlayBox.top,
+        width: overlayBox.w,
+        height: overlayBox.h,
+        zIndex: Z_CANVAS,
+        overflow: "hidden",
+        pointerEvents: editing ? "auto" : "none",
+        touchAction: editing ? "none" : "auto",
+        overscrollBehavior: "contain"
       }}
-    />
-  </div>
-);
+      onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
+    >
+      <canvas
+        data-dobo-design="1"
+        ref={canvasRef}
+        width={overlayBox.w}
+        height={overlayBox.h}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          background: "transparent",
+          touchAction: editing ? "none" : "auto"
+        }}
+      />
+    </div>
+  );
 
+  // ====== Menú ======
+  const Menu = () => {
+    const c = fabricCanvasRef.current;
+    const a = c?.getActiveObject();
+    const isVectorSelected =
+      selType === "image" && a && a._doboKind === "vector";
+    const isRgbSelected =
+      selType === "image" && a && a._doboKind === "rgb";
 
-  function Menu() {
     return (
       <div
         ref={menuRef}
@@ -921,17 +899,40 @@ const OverlayCanvas = (
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
       >
-        {/* Línea 1: Zoom + modos */}
+        {/* Línea 1: historial + zoom + modos */}
         <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+            <button
+              type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
+              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás"
+            >
+              <i className="fa fa-undo" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
+              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante"
+            >
+              <i className="fa fa-repeat" aria-hidden="true"></i>
+            </button>
+          </div>
+
           {typeof setZoom === "function" && (
             <div className="input-group input-group-sm" style={{ width: 180 }}>
               <span className="input-group-text">Zoom</span>
-              <button type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}>−</button>
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
+              >−</button>
               <input type="text" readOnly className="form-control form-control-sm text-center"
                 value={`${Math.round((zoom || 1) * 100)}%`} />
-              <button type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}>+</button>
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
+              >+</button>
             </div>
           )}
 
@@ -940,7 +941,7 @@ const OverlayCanvas = (
             className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
             onMouseDown={(e)=>e.preventDefault()}
             onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => { suppressSelectionRef.current = true; setEditing(false); setTimeout(() => { suppressSelectionRef.current = false; }, 150); }}
+            onClick={() => setEditing(false)}
             style={{ minWidth: "16ch" }}
           >
             Seleccionar Maceta
@@ -951,91 +952,88 @@ const OverlayCanvas = (
             className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
             onMouseDown={(e)=>e.preventDefault()}
             onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => { suppressSelectionRef.current = true; setEditing(true); setTimeout(() => { suppressSelectionRef.current = false; }, 150); }}
+            onClick={() => setEditing(true)}
             style={{ minWidth: "12ch" }}
           >
             Diseñar
           </button>
         </div>
 
-        {/* Línea 2: Acciones básicas */}
+        {/* Línea 2: acciones básicas */}
         {editing && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            <button type="button" className="btn btn-sm btn-outline-secondary"
+            <button
+              type="button" className="btn btn-sm btn-outline-secondary"
               onPointerDown={(e)=>e.stopPropagation()}
-              onClick={addText}
-              disabled={!ready}
+              onClick={addText} disabled={!ready}
               title="Agregar texto"
             >
-              <i className="fa-regular fa-font"></i> <span className="ms-1">Texto</span>
+              <i className="fa fa-font" aria-hidden="true"></i> Texto
             </button>
 
-            {/* Vectorizada (usa sistema de vectorización DOBO) */}
-           <button
-  type="button"
-  className="btn btn-sm btn-outline-secondary"
-  onPointerDown={(e)=>e.stopPropagation()}
-  onClick={() => { setUploadMode("vector"); addInputRef.current?.click(); }}
-  disabled={!ready}
->
-  + Vector
-</button>
-
-
-            {/* RGB (fotográfica) */}
-          <button
-  type="button"
-  className="btn btn-sm btn-outline-secondary"
-  onPointerDown={(e)=>e.stopPropagation()}
-  onClick={() => { setUploadMode("rgb"); addInputRef.current?.click(); }}
-  disabled={!ready}
->
-  + RGB
-</button>
-
-    <button
-  type="button"
-  className="btn btn-sm btn-outline-secondary"
-  onPointerDown={(e)=>e.stopPropagation()}
-  onClick={() => document.getElementById('cameraInput')?.click()}
-  disabled={!ready}
-  title="Tomar foto con cámara"
->
-  📷
-</button>
-
+            <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
+              {/* Subir Vector */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>e.stopPropagation()}
+                onClick={() => { setUploadMode("vector"); addInputVectorRef.current?.click(); }}
+                disabled={!ready}
+                title="Subir vector (usa Detalles y Color)"
+              >
+                <i className="fa fa-magic" aria-hidden="true"></i> Vector
+              </button>
+              {/* Subir RGB */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>e.stopPropagation()}
+                onClick={() => { setUploadMode("rgb"); addInputRgbRef.current?.click(); }}
+                disabled={!ready}
+                title="Subir imagen RGB (color original)"
+              >
+                <i className="fa fa-image" aria-hidden="true"></i> RGB
+              </button>
+              {/* Cámara */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>e.stopPropagation()}
+                onClick={() => { setUploadMode("rgb"); cameraInputRef.current?.click(); }}
+                disabled={!ready}
+                title="Tomar foto con cámara"
+              >
+                <i className="fa fa-camera" aria-hidden="true"></i>
+              </button>
+            </div>
 
             <button
-              type="button"
-              className="btn btn-sm btn-outline-danger"
+              type="button" className="btn btn-sm btn-outline-danger"
               onPointerDown={(e)=>e.stopPropagation()}
               onClick={onDelete}
               disabled={!ready || selType === "none"}
               title="Eliminar seleccionado"
             >
-              <i className="fa-regular fa-trash-can"></i> <span className="ms-1">Borrar</span>
+              <i className="fa fa-trash" aria-hidden="true"></i> Borrar
             </button>
           </div>
         )}
 
-        {/* Línea 3: Propiedades por tipo */}
+        {/* Línea 3: propiedades */}
         {editing && (
           <>
+            {/* Texto */}
             {selType === "text" && (
               <>
-                <div className="input-group input-group-sm" style={{ maxWidth: 150, marginBottom: 6 }}>
+                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
                   <span className="input-group-text">Color</span>
                   <input
-                    type="color"
-                    className="form-control form-control-color"
+                    type="color" className="form-control form-control-color"
                     value={shapeColor}
-                    onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                    onChange={(e)=>{ setShapeColor(e.target.value); applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); }}
                     onPointerDown={(e)=>e.stopPropagation()}
                   />
                 </div>
 
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-                  <div className="input-group input-group-sm" style={{ maxWidth: 220 }}>
+                  <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
                     <span className="input-group-text">Fuente</span>
                     <select
                       className="form-select form-select-sm"
@@ -1051,39 +1049,30 @@ const OverlayCanvas = (
 
                   <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
                     <button
-                      type="button"
-                      className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
+                      type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
                       onPointerDown={(e)=>e.stopPropagation()}
                       onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); }}
-                    >
-                      B
-                    </button>
+                      title="Negrita"
+                    >B</button>
                     <button
-                      type="button"
-                      className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
+                      type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
                       onPointerDown={(e)=>e.stopPropagation()}
                       onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); }}
-                    >
-                      I
-                    </button>
+                      title="Cursiva"
+                    >I</button>
                     <button
-                      type="button"
-                      className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
+                      type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
                       onPointerDown={(e)=>e.stopPropagation()}
                       onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
-                    >
-                      U
-                    </button>
+                      title="Subrayado"
+                    >U</button>
                   </div>
 
                   <div className="input-group input-group-sm" style={{ width: 160 }}>
                     <span className="input-group-text">Tamaño</span>
                     <input
-                      type="number"
-                      className="form-control form-control-sm"
-                      min={8}
-                      max={200}
-                      step={1}
+                      type="number" className="form-control form-control-sm"
+                      min={8} max={200} step={1}
                       value={fontSize}
                       onPointerDown={(e)=>e.stopPropagation()}
                       onChange={(e) => {
@@ -1095,10 +1084,10 @@ const OverlayCanvas = (
 
                   <div className="btn-group dropup">
                     <button
-                      type="button"
-                      className="btn btn-outline-secondary btn-sm"
+                      type="button" className="btn btn-outline-secondary btn-sm"
                       onPointerDown={(e)=>e.stopPropagation()}
                       onClick={() => setShowAlignMenu(v => !v)}
+                      title="Alineación"
                     >
                       {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
                     </button>
@@ -1123,50 +1112,45 @@ const OverlayCanvas = (
               </>
             )}
 
+            {/* Imagen */}
             {selType === "image" && (
               <>
-                {/* Si es vector, color habilitado; si es RGB, lo deshabilitamos */}
-                <div className="input-group input-group-sm" style={{ width: 170, marginBottom: 6 }}>
+                {/* Color: solo afecta a vectores */}
+                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
                   <span className="input-group-text">Color</span>
                   <input
-                    type="color"
-                    className="form-control form-control-color"
+                    type="color" className="form-control form-control-color"
                     value={shapeColor}
-                    onChange={(e)=>{ setShapeColor(e.target.value); applyColorToActive(e.target.value); }}
+                    onChange={(e)=>{ setShapeColor(e.target.value); if (isVectorSelected) applyColorToActive(e.target.value); }}
                     onPointerDown={(e)=>e.stopPropagation()}
-                    disabled={(() => {
-                      const c = fabricCanvasRef.current; if (!c) return true;
-                      const a = c.getActiveObject();
-                      if (!a) return true;
-                      if (a._kind === "imgGroup") return false; // vector
-                      if (a.type === "activeSelection" && a._objects?.length) {
-                        // Si todos son grupos vector, permitimos
-                        return !a._objects.every(x => x._kind === "imgGroup");
-                      }
-                      return true; // RGB normal → deshabilitar
-                    })()}
+                    disabled={!isVectorSelected}
+                    title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
                   />
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                  {/* Detalles: solo para vectores */}
                   <div className="input-group input-group-sm" style={{ width: 230 }}>
                     <span className="input-group-text">Detalles</span>
-                    <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}>−</button>
+                    <button
+                      type="button" className="btn btn-outline-secondary"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}
+                      disabled={!isVectorSelected}
+                    >−</button>
                     <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-                    <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}>+</button>
+                    <button
+                      type="button" className="btn btn-outline-secondary"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}
+                      disabled={!isVectorSelected}
+                    >+</button>
                   </div>
 
-                  <div className="input-group input-group-sm" style={{ width: 190 }}>
-                    <span className="input-group-text">Profundidad</span>
-                    <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v - 1, 0, 5))}>−</button>
-                    <input type="text" readOnly className="form-control form-control-sm text-center" value={vecOffset} />
-                    <button type="button" className="btn btn-outline-secondary" onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecOffset(v => clamp(v + 1, 0, 5))}>+</button>
-                  </div>
-
-                  <div className="btn-group btn-group-sm" role="group" aria-label="Invertir">
-                    <button type="button" className={`btn ${!vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(false)}>Oscuro</button>
-                    <button type="button" className={`btn ${vecInvert ? "btn-dark" : "btn-outline-secondary"}`} onPointerDown={(e)=>e.stopPropagation()} onClick={() => setVecInvert(true)}>Claro</button>
-                  </div>
+                  {/* Indicador RGB */}
+                  {isRgbSelected && (
+                    <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
+                  )}
                 </div>
               </>
             )}
@@ -1174,56 +1158,58 @@ const OverlayCanvas = (
         )}
 
         {/* Inputs ocultos */}
-      <input
-  id="cameraInput"
-  type="file"
-  accept="image/*"
-  capture="environment"
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      setUploadMode("rgb"); // la cámara sube RGB
-      addImageFromFile(f);
-    }
-    e.target.value='';
-  }}
-  style={{ display: 'none' }}
-/>
-
-
         <input
-          ref={replaceInputRef}
+          ref={addInputVectorRef}
           type="file"
           accept="image/*"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) replaceActiveFromFile(f); e.target.value=""; }}
-          onPointerDown={(e)=>e.stopPropagation()}
           style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) addImageFromFile(f, "vector");
+            e.target.value = "";
+          }}
+          onPointerDown={(e)=>e.stopPropagation()}
+        />
+        <input
+          ref={addInputRgbRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) addImageFromFile(f, "rgb");
+            e.target.value = "";
+          }}
+          onPointerDown={(e)=>e.stopPropagation()}
+        />
+        <input
+          ref={cameraInputRef}
+          id="cameraInput"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) addImageFromFile(f, "rgb");
+            e.target.value = "";
+          }}
+          onPointerDown={(e)=>e.stopPropagation()}
         />
       </div>
     );
-  }
+  };
 
-return (
-  <>
-    {createPortal(OverlayCanvas, stageRef?.current || document.body)}
-    {anchorRef?.current ? createPortal(
-      <div style={{
-        position: "relative",
-        width: "100%",
-        display: "flex",
-        justifyContent: "center",
-        pointerEvents: "none",
-        marginTop: 8,
-        zIndex: Z_CANVAS + 1
-      }}>
-        <div style={{ pointerEvents: "auto", display: "inline-flex" }}>
-          <Menu />
-        </div>
-      </div>,
-      document.getElementById("dobo-menu-dock") || document.body
-    ) : null}
-   </>
+  return (
+    <>
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+
+      {anchorRef?.current ? createPortal(
+        <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none", marginTop: 8 }}>
+          <div style={{ pointerEvents: "auto", display: "inline-flex" }}><Menu /></div>
+        </div>,
+        document.getElementById("dobo-menu-dock") || document.body
+      ) : null}
+    </>
   );
 }
-
-
