@@ -347,18 +347,7 @@ useEffect(() => {
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-// ====== init Fabric
-useEffect(() => {
-  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
-  const c = new fabric.Canvas(canvasRef.current, {
-    width: 1,
-    height: 1,
-    preserveObjectStacking: true,
-    selection: true,
-    perPixelTargetFind: true,
-    targetFindTolerance: 8
-  });
 
 // ====== init Fabric (corregido y probado)
 useEffect(() => {
