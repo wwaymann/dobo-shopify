@@ -368,10 +368,9 @@ useEffect(() => {
     // 0) Foco y tolerancias táctiles
     if (c.upperCanvasEl) {
       c.upperCanvasEl.setAttribute("tabindex", "0");
-      c.upperCanvasEl.style.touchAction = "none";
+      c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
       c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
     }
-
     c.perPixelTargetFind = false;
     c.targetFindTolerance = 12;
     if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
@@ -384,8 +383,8 @@ useEffect(() => {
       if (!isTextTarget(t)) return;
       requestAnimationFrame(() => {
         if (t.type === "textbox" || t.type === "i-text") {
-          t.selectable = true;
-          t.editable = true;
+          t.selectable = true; 
+          t.editable = true; 
           t.evented = true;
           c.setActiveObject(t);
           t.enterEditing?.();
@@ -398,14 +397,88 @@ useEffect(() => {
       });
     };
 
-    // ... (mantén aquí tu lógica de eventos mouse:down, mouse:up, dblclick, etc.)
+    // 2) Tap vs Drag + candado anti-doble-disparo
+    let downInfo = null;
+    let moved = false;
+    let editLockUntil = 0;
+
+    const TAP_MAX_MS = 220;
+    const TAP_MAX_MOVE = 6;
+    const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
+
+    c.on("mouse:down", (opt) => {
+      const now = performance.now();
+      moved = false;
+      downInfo = {
+        x: opt.pointer?.x ?? 0,
+        y: opt.pointer?.y ?? 0,
+        t: now,
+        target: opt.target || null
+      };
+    });
+
+    c.on("mouse:move", (opt) => {
+      if (!downInfo) return;
+      const p = opt.pointer || { x: 0, y: 0 };
+      if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
+        moved = true;
+      }
+    });
+
+    c.on("mouse:up", (opt) => {
+      const now = performance.now();
+      if (!downInfo) return;
+
+      const t = downInfo.target;
+      const duration = now - downInfo.t;
+      if (now < editLockUntil) { downInfo = null; return; }
+
+      // TAP corto sobre texto => editar
+      if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+        opt.e?.preventDefault?.();
+        opt.e?.stopPropagation?.();
+        enterEdit(t);
+        editLockUntil = now + 300;
+      }
+
+      downInfo = null;
+    });
+
+    // Doble clic / doble tap => editar (respetando candado)
+    c.on("mouse:dblclick", (opt) => {
+      const now = performance.now();
+      const t = opt.target;
+      if (!isTextTarget(t)) return;
+      if (now < editLockUntil) return;
+
+      opt.e?.preventDefault?.();
+      opt.e?.stopPropagation?.();
+      enterEdit(t);
+      editLockUntil = now + 300;
+    });
+
+    // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
+    c.on("text:editing:exited", (opt) => {
+      const t = opt?.target;
+      if (!t) return;
+
+      t.editable = true;
+      t.selectable = true;
+      t.evented = true;
+      t.hasControls = true;
+      t.lockMovementX = false;
+      t.lockMovementY = false;
+
+      c.setActiveObject(t);
+      c.requestRenderAll();
+    });
   })();
 
-  // ✅ IMPORTANTE: marcar el diseñador como listo para checkout
+  // ✅ Marcar el diseñador como listo para checkout
   console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
   setReady(true);
 
-  // ✅ cleanup al desmontar el overlay
+  // ✅ Cleanup al desmontar el overlay
   return () => {
     try {
       c.dispose();
@@ -415,86 +488,6 @@ useEffect(() => {
   };
 }, [visible]);
 
-
-  // 2) Tap vs Drag + candado anti-doble-disparo
-  let downInfo = null;
-  let moved = false;
-  let editLockUntil = 0; // ms timestamp: previene doble disparo
-
-  const TAP_MAX_MS = 220;
-  const TAP_MAX_MOVE = 6; // px
-  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
-
-  c.on("mouse:down", (opt) => {
-    const now = performance.now();
-    moved = false;
-    downInfo = {
-      x: opt.pointer?.x ?? 0,
-      y: opt.pointer?.y ?? 0,
-      t: now,
-      target: opt.target || null
-    };
-  });
-
-  c.on("mouse:move", (opt) => {
-    if (!downInfo) return;
-    const p = opt.pointer || { x: 0, y: 0 };
-    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-      moved = true;
-    }
-  });
-
-  c.on("mouse:up", (opt) => {
-    const now = performance.now();
-    if (!downInfo) return;
-
-    const t = downInfo.target;
-    const duration = now - downInfo.t;
-
-    // Candado activo → nada
-    if (now < editLockUntil) { downInfo = null; return; }
-
-    // TAP corto sobre texto => editar
-    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
-      opt.e?.preventDefault?.();
-      opt.e?.stopPropagation?.();
-      enterEdit(t);
-      editLockUntil = now + 300; // evita doble disparo inmediato
-    }
-
-    downInfo = null;
-  });
-
-  // Doble clic / doble tap → editar (respetando candado)
-  c.on("mouse:dblclick", (opt) => {
-    const now = performance.now();
-    const t = opt.target;
-    if (!isTextTarget(t)) return;
-    if (now < editLockUntil) return;
-
-    opt.e?.preventDefault?.();
-    opt.e?.stopPropagation?.();
-    enterEdit(t);
-    editLockUntil = now + 300;
-  });
-
-  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
-  c.on("text:editing:exited", (opt) => {
-    const t = opt?.target;
-    if (!t) return;
-
-    // Asegura movimiento/selección otra vez
-    t.editable = true;
-    t.selectable = true;
-    t.evented = true;
-    t.hasControls = true;
-    t.lockMovementX = false;
-    t.lockMovementY = false;
-
-    c.setActiveObject(t);
-    c.requestRenderAll();
-  });
-})();
 
 
     // Delimitar bounds (margen 10 px)
