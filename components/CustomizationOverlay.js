@@ -230,10 +230,14 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
-  // ✅ Notifica al padre cuando cambia el estado del canvas
+// 🔄 Comunica el estado "ready" al padre
 useEffect(() => {
-  if (typeof onReadyChange === "function") onReadyChange(ready);
+  if (typeof onReadyChange === "function") {
+    onReadyChange(ready);
+    console.log("[DOBO] Estado ready notificado al padre →", ready);
+  }
 }, [ready, onReadyChange]);
+
 
   const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
 
