@@ -357,6 +357,7 @@ export default function CustomizationOverlay({
    // === Texto activo en móvil (iOS/Android) ===
 // === Activación táctil de texto (móvil y escritorio) ===
 // === Activación de edición de texto (móvil + escritorio) SIN duplicaciones ===
+// === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
   const c = fabricCanvasRef.current;
   if (!c) return;
@@ -376,7 +377,6 @@ export default function CustomizationOverlay({
     !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
   const enterEdit = (t) => {
-    // Solo editar, nunca crear/duplicar aquí
     if (!isTextTarget(t)) return;
     requestAnimationFrame(() => {
       if (t.type === "textbox" || t.type === "i-text") {
@@ -395,11 +395,10 @@ export default function CustomizationOverlay({
   // 2) Tap vs Drag + candado anti-doble-disparo
   let downInfo = null;
   let moved = false;
-  let editLockUntil = 0; // ms timestamp: previene que se dispare dos veces seguido
+  let editLockUntil = 0; // ms timestamp: previene doble disparo
 
   const TAP_MAX_MS = 220;
   const TAP_MAX_MOVE = 6; // px
-
   const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
 
   c.on("mouse:down", (opt) => {
@@ -428,7 +427,7 @@ export default function CustomizationOverlay({
     const t = downInfo.target;
     const duration = now - downInfo.t;
 
-    // si hay candado activo, no hacemos nada
+    // Candado activo → nada
     if (now < editLockUntil) { downInfo = null; return; }
 
     // TAP corto sobre texto => editar
@@ -436,27 +435,40 @@ export default function CustomizationOverlay({
       opt.e?.preventDefault?.();
       opt.e?.stopPropagation?.();
       enterEdit(t);
-      // candado breve para evitar que un dblclick dispare dos veces
-      editLockUntil = now + 300;
+      editLockUntil = now + 300; // evita doble disparo inmediato
     }
 
     downInfo = null;
   });
 
-  // 3) Doble clic / doble tap => editar (y activar candado)
+  // Doble clic / doble tap → editar (respetando candado)
   c.on("mouse:dblclick", (opt) => {
     const now = performance.now();
     const t = opt.target;
     if (!isTextTarget(t)) return;
+    if (now < editLockUntil) return;
 
     opt.e?.preventDefault?.();
     opt.e?.stopPropagation?.();
-
-    // si el candado ya está activo, no repetir
-    if (now < editLockUntil) return;
-
     enterEdit(t);
     editLockUntil = now + 300;
+  });
+
+  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
+  c.on("text:editing:exited", (opt) => {
+    const t = opt?.target;
+    if (!t) return;
+
+    // Asegura movimiento/selección otra vez
+    t.editable = true;
+    t.selectable = true;
+    t.evented = true;
+    t.hasControls = true;
+    t.lockMovementX = false;
+    t.lockMovementY = false;
+
+    c.setActiveObject(t);
+    c.requestRenderAll();
   });
 })();
 
