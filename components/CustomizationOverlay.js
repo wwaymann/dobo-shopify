@@ -352,16 +352,11 @@ export default function CustomizationOverlay({
       perPixelTargetFind: true,
       targetFindTolerance: 8
     });
-    fabricCanvasRef.current = c;
-
-    
- // === Texto activo en móvil (iOS/Android) ===
+   // === Texto activo en móvil (iOS/Android) ===
 try {
-  // 1) El canvas debe poder recibir foco y no robar gestos (scroll/zoom)
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
     c.upperCanvasEl.style.touchAction = "none";
-    // En el primer toque, enfoca el canvas (iOS necesita foco para abrir teclado)
     c.upperCanvasEl.addEventListener(
       "touchstart",
       () => c.upperCanvasEl && c.upperCanvasEl.focus(),
@@ -369,51 +364,55 @@ try {
     );
   }
 
-  // 2) Aumenta tolerancias para acertar al texto con el dedo
   c.perPixelTargetFind = false;
   c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) {
-    fabric.Object.prototype.padding = 8;
-  }
+  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  // 3) Forzar edición cuando el objetivo es texto (sin depender de doble-tap)
-  const enterEditIfText = (opt) => {
+  // --- Distinción entre tocar y arrastrar ---
+  let touchTimer = null;
+  let moved = false;
+
+  c.on("touch:drag", () => {
+    moved = true;
+    clearTimeout(touchTimer);
+  });
+
+  c.on("touch:start", (opt) => {
+    moved = false;
     const t = opt?.target;
     if (!t) return;
 
-    const isNativeText = t.type === "textbox" || t.type === "i-text";
-    const isGroupText = t._kind === "textGroup" && typeof startInlineTextEdit === "function";
-    if (!isNativeText && !isGroupText) return;
+    // Solo para texto
+    const isText = t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup";
+    if (!isText) return;
 
-    // Evitar que el gesto se convierta en drag/scroll
-    opt.e?.preventDefault?.();
-    opt.e?.stopPropagation?.();
+    // Espera 250 ms: si no se arrastra, se asume tap y entra en edición
+    clearTimeout(touchTimer);
+    touchTimer = setTimeout(() => {
+      if (!moved) {
+        opt.e?.preventDefault?.();
+        opt.e?.stopPropagation?.();
 
-    requestAnimationFrame(() => {
-      if (isNativeText) {
-        t.selectable = true;
-        t.editable = true;
-        t.evented = true;
-
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.(); // abre el teclado en iOS/Android
-      } else {
-        // Grupo de texto propio
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
+        requestAnimationFrame(() => {
+          if (t.type === "textbox" || t.type === "i-text") {
+            t.selectable = true;
+            t.editable = true;
+            c.setActiveObject(t);
+            t.enterEditing?.();
+            t.hiddenTextarea?.focus?.();
+          } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+            startInlineTextEdit(t);
+            c.setActiveObject(t);
+          }
+          c.requestRenderAll();
+        });
       }
-      c.requestRenderAll();
-    });
-  };
-
-  // Usamos mouse:* porque Fabric mapea touch -> mouse en móvil
-  c.on("mouse:down", enterEditIfText);
-  c.on("mouse:dblclick", enterEditIfText);
-  c.on("selection:created", enterEditIfText);
+    }, 250);
+  });
 } catch (err) {
   console.warn("[DOBO] Patch texto móvil:", err);
 }
+
 
 
     // Delimitar bounds (margen 10 px)
