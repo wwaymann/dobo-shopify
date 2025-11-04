@@ -356,33 +356,31 @@ export default function CustomizationOverlay({
     fabricCanvasRef.current = c;
    // === Texto activo en móvil (iOS/Android) ===
 // === Activación táctil de texto (móvil y escritorio) ===
-try {
+// === Activación de edición de texto (móvil + escritorio) SIN duplicaciones ===
+(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+
+  // 0) Foco y tolerancias táctiles
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none";
-    c.upperCanvasEl.addEventListener(
-      "touchstart",
-      () => c.upperCanvasEl.focus(),
-      { passive: false }
-    );
+    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
   }
-
   c.perPixelTargetFind = false;
   c.targetFindTolerance = 12;
   if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  let moved = false;
-  let pressTimer = null;
+  // 1) Utilidades
+  const isTextTarget = (t) =>
+    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
-  // Detecta tap o doble tap sobre texto
-  const handleTapOrDoubleTap = (t) => {
-    if (!t) return;
-    if (t.type !== "textbox" && t.type !== "i-text" && t._kind !== "textGroup") return;
-
+  const enterEdit = (t) => {
+    // Solo editar, nunca crear/duplicar aquí
+    if (!isTextTarget(t)) return;
     requestAnimationFrame(() => {
       if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true;
-        t.editable = true;
+        t.selectable = true; t.editable = true; t.evented = true;
         c.setActiveObject(t);
         t.enterEditing?.();
         t.hiddenTextarea?.focus?.();
@@ -394,30 +392,74 @@ try {
     });
   };
 
-  // TAP corto (≈200 ms) → editar
+  // 2) Tap vs Drag + candado anti-doble-disparo
+  let downInfo = null;
+  let moved = false;
+  let editLockUntil = 0; // ms timestamp: previene que se dispare dos veces seguido
+
+  const TAP_MAX_MS = 220;
+  const TAP_MAX_MOVE = 6; // px
+
+  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
+
   c.on("mouse:down", (opt) => {
+    const now = performance.now();
     moved = false;
+    downInfo = {
+      x: opt.pointer?.x ?? 0,
+      y: opt.pointer?.y ?? 0,
+      t: now,
+      target: opt.target || null
+    };
+  });
+
+  c.on("mouse:move", (opt) => {
+    if (!downInfo) return;
+    const p = opt.pointer || { x: 0, y: 0 };
+    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
+      moved = true;
+    }
+  });
+
+  c.on("mouse:up", (opt) => {
+    const now = performance.now();
+    if (!downInfo) return;
+
+    const t = downInfo.target;
+    const duration = now - downInfo.t;
+
+    // si hay candado activo, no hacemos nada
+    if (now < editLockUntil) { downInfo = null; return; }
+
+    // TAP corto sobre texto => editar
+    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+      opt.e?.preventDefault?.();
+      opt.e?.stopPropagation?.();
+      enterEdit(t);
+      // candado breve para evitar que un dblclick dispare dos veces
+      editLockUntil = now + 300;
+    }
+
+    downInfo = null;
+  });
+
+  // 3) Doble clic / doble tap => editar (y activar candado)
+  c.on("mouse:dblclick", (opt) => {
+    const now = performance.now();
     const t = opt.target;
-    if (!t) return;
+    if (!isTextTarget(t)) return;
 
-    clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => {
-      if (!moved) handleTapOrDoubleTap(t);
-    }, 200);
+    opt.e?.preventDefault?.();
+    opt.e?.stopPropagation?.();
+
+    // si el candado ya está activo, no repetir
+    if (now < editLockUntil) return;
+
+    enterEdit(t);
+    editLockUntil = now + 300;
   });
+})();
 
-  c.on("mouse:move", () => {
-    moved = true;
-    clearTimeout(pressTimer);
-  });
-
-  c.on("mouse:up", () => clearTimeout(pressTimer));
-
-  // DOBLE TAP o DOBLE CLIC → editar también
-  c.on("mouse:dblclick", (opt) => handleTapOrDoubleTap(opt.target));
-} catch (err) {
-  console.warn("[DOBO] Patch texto móvil:", err);
-}
 
 
 
