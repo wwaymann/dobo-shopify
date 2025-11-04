@@ -622,7 +622,6 @@ export default function CustomizationOverlay({
 const addImageFromFile = (file, mode) => {
   const c = fabricCanvasRef.current; if (!c || !file) return;
 
-  // Cargamos el archivo en memoria (Data URL) para evitar el error "fabric: Error loading blob:"
   const reader = new FileReader();
   reader.onload = () => {
     const dataUrl = reader.result;
@@ -630,11 +629,9 @@ const addImageFromFile = (file, mode) => {
     imgEl.crossOrigin = "anonymous";
 
     imgEl.onload = () => {
-      // downscale ya existe en tu archivo y puede devolver <img> o <canvas>
       const src = downscale(imgEl);
 
       if (mode === "vector") {
-        // Vector: tu flujo actual, pero usando el "src" ya rasterizado localmente
         const rgb = hexToRgb(shapeColor);
         const vectorImg = vectorizeElementToBitmap(src, {
           maxDim: VECTOR_SAMPLE_DIM,
@@ -652,11 +649,18 @@ const addImageFromFile = (file, mode) => {
           scaleX: s, scaleY: s,
           selectable: true, evented: true, objectCaching: false
         });
+
         c.add(vectorImg);
         c.setActiveObject(vectorImg);
         setSelType("image");
+
+        // 🔧 Render forzado para que cargue a la primera (VECTOR)
+        setTimeout(() => {
+          // en algunas builds ayuda recalcular offsets antes
+          if (c.calcOffset) c.calcOffset();
+          c.requestRenderAll();
+        }, 10);
       } else {
-        // RGB plano: evitamos fromURL(blob) y creamos la imagen de Fabric desde el elemento (img o canvas)
         const baseEl = (src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)) ? src : imgEl;
         const img = new fabric.Image(baseEl, {
           originX: "center", originY: "center",
@@ -665,7 +669,6 @@ const addImageFromFile = (file, mode) => {
         });
         img._doboKind = "rgb";
 
-        // Ajuste de escala igual que antes
         const maxW = c.getWidth() * 0.85, maxH = c.getHeight() * 0.85;
         const naturalW = baseEl.naturalWidth || baseEl.width || img.width || 1;
         const naturalH = baseEl.naturalHeight || baseEl.height || img.height || 1;
@@ -675,10 +678,14 @@ const addImageFromFile = (file, mode) => {
         c.add(img);
         c.setActiveObject(img);
         setSelType("image");
-        c.requestRenderAll();
+
+        // 🔧 Render forzado para que cargue a la primera (RGB / Cámara)
+        setTimeout(() => {
+          if (c.calcOffset) c.calcOffset();
+          c.requestRenderAll();
+        }, 10);
       }
 
-      c.requestRenderAll();
       setEditing(true);
     };
 
@@ -686,16 +693,19 @@ const addImageFromFile = (file, mode) => {
       console.error("[DOBO] Error al cargar Data URL en <img>.");
     };
 
-    imgEl.src = dataUrl; // Carga la imagen desde memoria (sin blobs, sin CORS)
+    imgEl.src = dataUrl;
   };
 
   reader.onerror = () => {
     console.error("[DOBO] FileReader error al leer la imagen.");
   };
 
-  // Importante: Data URL, no createObjectURL(blob)
   reader.readAsDataURL(file);
+
+  // (Opcional) Si usas un <input type="file"> con ref, limpia su valor para futuros picks
+  // if (fileInputRef?.current) fileInputRef.current.value = "";
 };
+
 
 
   const onDelete = () => {
