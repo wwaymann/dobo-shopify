@@ -556,27 +556,11 @@ useEffect(() => {
   c.on("selection:cleared", () => setSelType("none"));
 
   // ✅ IMPORTANTE: marcar el diseñador como listo para checkout y correo
-  setReady(true);
+// ✅ IMPORTANTE: marcar el diseñador como listo para checkout y correo
+if (!ready) {
+  setTimeout(() => setReady(true), 200);
+}
 
-  return () => {
-    c.off("mouse:dblclick");
-    c.off("selection:created", onSel);
-    c.off("selection:updated", onSel);
-    c.off("selection:cleared");
-    c.off("object:added", __hist_onAdded);
-    c.off("object:modified", __hist_onModified);
-    c.off("object:removed", __hist_onRemoved);
-    c.off("path:created", __hist_onPath);
-    c.off("object:moving", __bounds_onMove);
-    c.off("object:scaling", __bounds_onScale);
-    c.off("object:rotating", __bounds_onRotate);
-    c.off("object:added", __bounds_onAdded);
-    try { __bounds_ro.disconnect(); } catch {}
-    try { c.dispose(); } catch {}
-    fabricCanvasRef.current = null;
-    // Deja explícito que el diseñador ya no está listo
-    setReady(false);
-  };
 }, [visible]);
 
 
