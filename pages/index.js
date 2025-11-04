@@ -605,6 +605,10 @@ function Home() {
   const userPickedSizeRef = useRef(false);
   const appliedMetaOnceRef = useRef(false);
 
+  // Dentro de Home, junto a tus otros useState:
+const [designerReady, setDesignerReady] = useState(false);
+
+
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
   const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -1856,8 +1860,16 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
        
         </div>
 
-        {/* Overlay de edición (restaurado) */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+       {/* Overlay de edición (restaurado) */}
+<CustomizationOverlay
+  mode="both"
+  stageRef={stageRef}
+  anchorRef={potScrollRef}
+  containerRef={sceneWrapRef}
+  docked={false}
+  onReadyChange={setDesignerReady}   // ← clave
+/>
+
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
