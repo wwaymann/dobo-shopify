@@ -584,7 +584,29 @@ useEffect(() => {
   // No pongas fabricCanvasRef.current en deps para evitar lint warnings/inestabilidad
 }, [ready, visible]);
 
-  
+  // === Forzar sincronización del flag READY para checkout/correos ===
+useEffect(() => {
+  // Si el canvas ya está creado y aún no se ha marcado listo, forzamos ready = true
+  if (fabricCanvasRef.current && !ready) {
+    console.log("[DOBO] Canvas detectado, activando ready=true");
+    setReady(true);
+  }
+}, [fabricCanvasRef.current, ready]);
+
+  // Reintento en caso de montaje tardío o ref nula
+useEffect(() => {
+  if (!ready) {
+    const checkInterval = setInterval(() => {
+      if (fabricCanvasRef.current) {
+        console.log("[DOBO] Forzando ready por timeout de seguridad");
+        setReady(true);
+        clearInterval(checkInterval);
+      }
+    }, 500);
+    return () => clearInterval(checkInterval);
+  }
+}, [ready]);
+
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
