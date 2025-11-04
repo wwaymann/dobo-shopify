@@ -1236,48 +1236,56 @@ const addImageFromFile = (file, mode, attempt = 0) => {
           </>
         )}
 
-        {/* Inputs ocultos */}
-        <input
-          ref={addInputVectorRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) addImageFromFile(f, "vector");
-            e.target.value = "";
-          }}
-          onPointerDown={(e)=>e.stopPropagation()}
-        />
-        <input
-          ref={addInputRgbRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) addImageFromFile(f, "rgb");
-            e.target.value = "";
-          }}
-          onPointerDown={(e)=>e.stopPropagation()}
-        />
-        <input
-          ref={cameraInputRef}
-          id="cameraInput"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) addImageFromFile(f, "rgb");
-            e.target.value = "";
-          }}
-          onPointerDown={(e)=>e.stopPropagation()}
-        />
-      </div>
-    );
-  };
+     {/* Inputs ocultos */}
+<input
+  ref={addInputVectorRef}
+  type="file"
+  accept="image/*"
+  style={{ display: "none" }}
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      addImageFromFile(f, "vector");
+    }
+    // 🔧 limpiar inmediatamente para permitir reusar el input
+    e.target.value = null;
+  }}
+  onPointerDown={(e) => e.stopPropagation()}
+/>
+
+<input
+  ref={addInputRgbRef}
+  type="file"
+  accept="image/*"
+  style={{ display: "none" }}
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      addImageFromFile(f, "rgb");
+    }
+    // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
+    e.target.value = null;
+  }}
+  onPointerDown={(e) => e.stopPropagation()}
+/>
+
+<input
+  ref={cameraInputRef}
+  id="cameraInput"
+  type="file"
+  accept="image/*"
+  capture="environment"
+  style={{ display: "none" }}
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
+    }
+    e.target.value = null;
+  }}
+  onPointerDown={(e) => e.stopPropagation()}
+/>
+
 
   return (
     <>
