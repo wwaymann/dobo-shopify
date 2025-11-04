@@ -1036,7 +1036,9 @@ const addImageFromFile = (file, mode) => {
               <button
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("vector"); addInputVectorRef.current?.click(); }}
+                onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
+  addInputVectorRef.current?.click();
+}); }}
                 disabled={!ready}
                 title="Subir vector (usa Detalles y Color)"
               >
@@ -1046,7 +1048,9 @@ const addImageFromFile = (file, mode) => {
               <button
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("rgb"); addInputRgbRef.current?.click(); }}
+                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
+  addInputRgbRef.current?.click();
+}); }}
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
               >
@@ -1056,7 +1060,9 @@ const addImageFromFile = (file, mode) => {
               <button
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("rgb"); cameraInputRef.current?.click(); }}
+                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
+  cameraInputRef.current?.click();
+}); }}
                 disabled={!ready}
                 title="Tomar foto con cámara"
               >
