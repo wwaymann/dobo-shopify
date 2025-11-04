@@ -1285,7 +1285,9 @@ const addImageFromFile = (file, mode, attempt = 0) => {
   }}
   onPointerDown={(e) => e.stopPropagation()}
 />
-
+</div>
+  ); 
+};
 
   return (
     <>
