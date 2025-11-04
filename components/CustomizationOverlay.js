@@ -357,40 +357,65 @@ export default function CustomizationOverlay({
     
     // === Activación de texto en móvil (iOS/Android) ===
     // Evita que el navegador “robe” el gesto táctil (scroll/zoom) sobre el canvas
-    if (c.upperCanvasEl && c.upperCanvasEl.style) {
-      c.upperCanvasEl.style.touchAction = "none";
-    }
+// === Texto activo en móvil (iOS/Android) ===
+try {
+  // 1) Habilita foco en el canvas y evita que el navegador “robe” el gesto
+  if (c.upperCanvasEl) {
+    c.upperCanvasEl.setAttribute("tabindex", "0");
+    c.upperCanvasEl.style.touchAction = "none";
+    // Asegura foco en el primer toque (iOS necesita foco para abrir teclado)
+    c.upperCanvasEl.addEventListener(
+      "touchstart",
+      () => c.upperCanvasEl && c.upperCanvasEl.focus(),
+      { passive: false }
+    );
+  }
 
-    // Forzar edición al tocar un textbox o tu grupo de texto
-    c.on("touchstart", (e) => {
-      const t = e.target;
-      if (!t) return;
+  // 2) Aumenta tolerancias de toque para acertar al texto con el dedo
+  c.perPixelTargetFind = false;
+  c.targetFindTolerance = 12;
+  if (fabric?.Object?.prototype) {
+    fabric.Object.prototype.padding = 8;
+  }
 
-      // Si usas grupos de texto propios
-      if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        e.e?.preventDefault?.();
-        e.e?.stopPropagation?.();
-        requestAnimationFrame(() => {
-          startInlineTextEdit(t);
-          c.setActiveObject(t);
-          c.requestRenderAll();
-        });
-        return;
+  // 3) Entra en edición cuando se toca/selecciona un texto (sin depender de doble-tap)
+  const enterEditIfText = (opt) => {
+    const t = opt?.target;
+    if (!t) return;
+
+    const isNativeText = t.type === "textbox" || t.type === "i-text";
+    const isGroupText = t._kind === "textGroup" && typeof startInlineTextEdit === "function";
+    if (!isNativeText && !isGroupText) return;
+
+    opt.e?.preventDefault?.();
+    opt.e?.stopPropagation?.();
+
+    requestAnimationFrame(() => {
+      if (isNativeText) {
+        t.selectable = true;
+        t.editable = true;
+        t.evented = true;
+
+        c.setActiveObject(t);
+        t.enterEditing?.();
+        t.hiddenTextarea?.focus?.();
+      } else {
+        // Grupo de texto personalizado
+        startInlineTextEdit(t);
+        c.setActiveObject(t);
       }
+      c.requestRenderAll();
+    });
+  };
 
-      // Textbox nativo de Fabric
-      if (t.type === "textbox") {
-        e.e?.preventDefault?.();
-        e.e?.stopPropagation?.();
-        requestAnimationFrame(() => {
-          if (typeof t.enterEditing === "function") {
-            t.enterEditing();
-            t.hiddenTextarea?.focus?.();
-          }
-          c.setActiveObject(t);
-          c.requestRenderAll();
-        });
-      }
+  // Usa mouse:* porque Fabric mapea touch -> mouse en móvil
+  c.on("mouse:down", enterEditIfText);
+  c.on("mouse:dblclick", enterEditIfText);
+  c.on("selection:created", enterEditIfText);
+} catch (err) {
+  console.warn("[DOBO] Patch texto móvil:", err);
+}
+
     });
 
 
