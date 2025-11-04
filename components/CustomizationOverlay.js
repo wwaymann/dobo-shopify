@@ -566,11 +566,25 @@ if (!ready) {
 
 }, [visible]);
 
+// ====== asegura el flag "ready" aunque el overlay monte oculto o tarde en montar
 useEffect(() => {
+  // Si el canvas ya existe y aún no marcamos listo, márcalo ahora
   if (fabricCanvasRef.current && !ready) {
     setReady(true);
   }
-}, [fabricCanvasRef.current]);
+}, [visible]); // se re-evalúa cuando "visible" cambia
+
+  // ====== redundancia segura: en el próximo frame, si hay canvas, marca listo
+useEffect(() => {
+  if (!ready) {
+    requestAnimationFrame(() => {
+      if (fabricCanvasRef.current) setReady(true);
+    });
+  }
+  // No pongas fabricCanvasRef.current en deps para evitar lint warnings/inestabilidad
+}, [ready, visible]);
+
+  
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
