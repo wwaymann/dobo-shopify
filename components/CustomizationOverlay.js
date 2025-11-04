@@ -669,7 +669,8 @@ export default function CustomizationOverlay({
           c.setActiveObject(img);
           setSelType("image");
           c.requestRenderAll();
-        }, { crossOrigin: "anonymous" });
+          URL.revokeObjectURL(url);
+       }, { crossOrigin: "anonymous" });
       }
 
       c.requestRenderAll();
