@@ -228,7 +228,12 @@ export default function CustomizationOverlay({
   const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [editing, setEditing] = useState(false);
-  const [ready, setReady] = useState(false);
+if (typeof onReadyChange === "function") {
+  useEffect(() => {
+    onReadyChange(ready);
+  }, [ready]);
+}
+
   const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
 
   // Historial
