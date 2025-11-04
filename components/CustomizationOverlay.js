@@ -485,155 +485,136 @@ useEffect(() => {
   // Ejecutar inicialización de edición de texto
   initTextEditing();
 
-  // ✅ IMPORTANTE: marcar el diseñador como listo para checkout
-  console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
-  setReady(true);
+  // ====== Delimitar bounds (margen 10 px)
+  const setDesignBounds = ({ x, y, w, h }) => {
+    designBoundsRef.current = { x, y, w, h };
+  };
+  setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
 
-  // ✅ cleanup al desmontar el overlay
+  // Enforcers de límites
+  const clampObjectToBounds = (obj) => {
+    const b = designBoundsRef.current;
+    if (!b || !obj) return;
+    obj.setCoords();
+    const r = obj.getBoundingRect(true);
+    let dx = 0,
+      dy = 0;
+    if (r.left < b.x) dx = b.x - r.left;
+    if (r.top < b.y) dy = b.y - r.top;
+    if (r.left + r.width > b.x + b.w) dx = b.x + b.w - (r.left + r.width);
+    if (r.top + r.height > b.y + b.h) dy = b.y + b.h - (r.top + r.height);
+    if (dx || dy) {
+      obj.left = (obj.left ?? 0) + dx;
+      obj.top = (obj.top ?? 0) + dy;
+      obj.setCoords();
+    }
+  };
+  c.on("object:moving", (e) => clampObjectToBounds(e.target));
+  c.on("object:scaling", (e) => clampObjectToBounds(e.target));
+  c.on("object:rotating", (e) => clampObjectToBounds(e.target));
+  c.on("object:added", (e) => clampObjectToBounds(e.target));
+
+  const __bounds_ro = new ResizeObserver(() => {
+    const cw = c.getWidth(),
+      ch = c.getHeight();
+    setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
+    const a = c.getActiveObject();
+    if (a) clampObjectToBounds(a);
+  });
+  __bounds_ro.observe(c.upperCanvasEl);
+
+  // ====== Historial
+  historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
+  c.once("after:render", () => {
+    const s = getSnapshot();
+    if (s) historyRef.current.push(s);
+    refreshCaps();
+  });
+  c.on("object:added", () => recordChange());
+  c.on("object:modified", () => recordChange());
+  c.on("object:removed", () => recordChange());
+  c.on("path:created", () => recordChange());
+
+  // ====== Selección
+  const classify = (a) => {
+    if (!a) return "none";
+    if (a._kind === "textGroup") return "text";
+    if (a._doboKind === "vector") return "image";
+    if (a.type === "image") return "image";
+    if (["i-text", "textbox", "text"].includes(a.type)) return "text";
+    return "none";
+  };
+
+  const reflectTypo = () => {
+    const a = c.getActiveObject();
+    if (!a) return;
+    let first = null;
+    if (a._kind === "textGroup") first = a._textChildren?.base || null;
+    else if (a.type === "activeSelection")
+      first = a._objects?.find((x) => x._kind === "textGroup")?._textChildren?.base || null;
+    else if (["i-text", "textbox", "text"].includes(a.type)) first = a;
+    if (first) {
+      setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
+      setFontSize(first.fontSize || 60);
+      setIsBold(first.fontWeight === "bold" || first.fontWeight + "" === "700");
+      setIsItalic(first.fontStyle === "italic");
+      setIsUnderline(!!first.underline);
+      setTextAlign(first.textAlign || "center");
+    }
+  };
+
+  const onSel = () => {
+    const cobj = c.getActiveObject();
+    if (suppressSelectionRef.current) {
+      try {
+        if (cobj?.type === "activeSelection") cobj.discard();
+        c.discardActiveObject();
+        c.setActiveObject(null);
+        c._activeObject = null;
+      } catch {}
+      setSelType("none");
+      c.requestRenderAll();
+      return;
+    }
+    setSelType(classify(cobj));
+    reflectTypo();
+  };
+  c.on("selection:created", onSel);
+  c.on("selection:updated", onSel);
+  c.on("selection:cleared", () => setSelType("none"));
+
+  // Doble-clic texto editable
+  c.on("mouse:dblclick", (e) => {
+    const t = e.target;
+    if (!t) return;
+    if (t._kind === "textGroup") startInlineTextEdit(t);
+    else if (["i-text", "textbox"].includes(t.type)) {
+      t.enterEditing();
+      c.requestRenderAll();
+    }
+  });
+
+  // ✅ Marcar diseñador como listo
+  setReady(true);
+  console.log("[DOBO] Fabric canvas inicializado, diseñador listo para checkout.");
+
   return () => {
+    c.off("mouse:dblclick");
+    c.off("selection:created", onSel);
+    c.off("selection:updated", onSel);
+    c.off("selection:cleared");
+    c.off("object:added");
+    c.off("object:modified");
+    c.off("object:removed");
+    c.off("path:created");
     try {
+      __bounds_ro.disconnect();
       c.dispose();
     } catch {}
     fabricCanvasRef.current = null;
-    setReady(false);
   };
 }, [visible]);
 
-
-
-
-
-    // Delimitar bounds (margen 10 px)
-    const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
-
-    // Enforcers de límites
-    const clampObjectToBounds = (obj) => {
-      const b = designBoundsRef.current; if (!b || !obj) return;
-      obj.setCoords();
-      const r = obj.getBoundingRect(true);
-      let dx = 0, dy = 0;
-      if (r.left < b.x) dx = b.x - r.left;
-      if (r.top < b.y) dy = b.y - r.top;
-      if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
-      if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
-      if (dx || dy) {
-        obj.left = (obj.left ?? 0) + dx;
-        obj.top = (obj.top ?? 0) + dy;
-        obj.setCoords();
-      }
-    };
-    const __bounds_onMove = e => clampObjectToBounds(e.target);
-    const __bounds_onScale = e => clampObjectToBounds(e.target);
-    const __bounds_onRotate = e => clampObjectToBounds(e.target);
-    const __bounds_onAdded = e => clampObjectToBounds(e.target);
-    c.on("object:moving", __bounds_onMove);
-    c.on("object:scaling", __bounds_onScale);
-    c.on("object:rotating", __bounds_onRotate);
-    c.on("object:added", __bounds_onAdded);
-
-    const __bounds_ro = new ResizeObserver(() => {
-      const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
-      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
-    });
-    __bounds_ro.observe(c.upperCanvasEl);
-
-    // Historial
-    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
-    c.once("after:render", () => {
-      const s = getSnapshot(); if (s) historyRef.current.push(s);
-      refreshCaps();
-    });
-    const __hist_onAdded = () => recordChange();
-    const __hist_onModified = () => recordChange();
-    const __hist_onRemoved = () => recordChange();
-    const __hist_onPath = () => recordChange();
-    c.on("object:added", __hist_onAdded);
-    c.on("object:modified", __hist_onModified);
-    c.on("object:removed", __hist_onRemoved);
-    c.on("path:created", __hist_onPath);
-
-    // Selección: clasificar
-    const classify = (a) => {
-      if (!a) return "none";
-      if (a._kind === "textGroup") return "text";
-      if (a._doboKind === "vector") return "image";
-      if (a.type === "image") return "image";
-      if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
-      return "none";
-    };
-
-    const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      if (!a) return;
-      let first = null;
-      if (a._kind === "textGroup") first = a._textChildren?.base || null;
-      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic"));
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || "center");
-      }
-    };
-
-    const onSel = () => {
-      const cobj = c.getActiveObject();
-      if (suppressSelectionRef.current) {
-        try { if (cobj?.type === "activeSelection") cobj.discard(); } catch {}
-        try { c.discardActiveObject(); } catch {}
-        try { c.setActiveObject(null); } catch {}
-        try { c._activeObject = null; } catch {}
-        setSelType("none");
-        c.requestRenderAll();
-        return;
-      }
-      setSelType(classify(cobj));
-      reflectTypo();
-    };
-    c.on("selection:created", onSel);
-    c.on("selection:updated", onSel);
-    c.on("selection:cleared", () => setSelType("none"));
-
-    // Doble-clic para texto editable
-    c.on("mouse:dblclick", (e) => {
-      const t = e.target;
-      if (!t) return;
-      if (t._kind === "textGroup") {
-        startInlineTextEdit(t);
-      } else if (isTextObj(t) && typeof t.enterEditing === "function") {
-        t.enterEditing();
-        c.requestRenderAll();
-      }
-    });
-
-    setReady(true);
-
-    return () => {
-      c.off("mouse:dblclick");
-      c.off("selection:created", onSel);
-      c.off("selection:updated", onSel);
-      c.off("selection:cleared");
-      c.off("object:added", __hist_onAdded);
-      c.off("object:modified", __hist_onModified);
-      c.off("object:removed", __hist_onRemoved);
-      c.off("path:created", __hist_onPath);
-
-      c.off("object:moving", __bounds_onMove);
-      c.off("object:scaling", __bounds_onScale);
-      c.off("object:rotating", __bounds_onRotate);
-      c.off("object:added", __bounds_onAdded);
-      try { __bounds_ro.disconnect(); } catch {}
-      try { c.dispose(); } catch {}
-      fabricCanvasRef.current = null;
-    };
-  }, [visible]);
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
