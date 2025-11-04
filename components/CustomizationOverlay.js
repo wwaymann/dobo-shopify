@@ -212,8 +212,10 @@ export default function CustomizationOverlay({
   anchorRef,
   visible = true,
   zoom = 0.6,
-  setZoom
+  setZoom,
+  onReadyChange,   // ✅ NUEVO
 }) {
+
   // ---- Refs y estado ----
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
@@ -228,6 +230,11 @@ export default function CustomizationOverlay({
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
+  // ✅ Notifica al padre cuando cambia el estado del canvas
+useEffect(() => {
+  if (typeof onReadyChange === "function") onReadyChange(ready);
+}, [ready, onReadyChange]);
+
   const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
 
   // Historial
@@ -340,54 +347,74 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== init Fabric
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+// ====== init Fabric
+useEffect(() => {
+  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8
-    });
-    fabricCanvasRef.current = c;
+  const c = new fabric.Canvas(canvasRef.current, {
+    width: 1,
+    height: 1,
+    preserveObjectStacking: true,
+    selection: true,
+    perPixelTargetFind: true,
+    targetFindTolerance: 8
+  });
+  fabricCanvasRef.current = c;
 
-    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
+  // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+  (() => {
+    if (!c) return;
 
-  // 0) Foco y tolerancias táctiles
-  if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
-    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-  }
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
+    // 0) Foco y tolerancias táctiles
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.setAttribute("tabindex", "0");
+      c.upperCanvasEl.style.touchAction = "none";
+      c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
+    }
 
-  // 1) Utilidades
-  const isTextTarget = (t) =>
-    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+    c.perPixelTargetFind = false;
+    c.targetFindTolerance = 12;
+    if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  const enterEdit = (t) => {
-    if (!isTextTarget(t)) return;
-    requestAnimationFrame(() => {
-      if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true; t.editable = true; t.evented = true;
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
-      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
-      }
-      c.requestRenderAll();
-    });
+    // 1) Utilidades
+    const isTextTarget = (t) =>
+      !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+
+    const enterEdit = (t) => {
+      if (!isTextTarget(t)) return;
+      requestAnimationFrame(() => {
+        if (t.type === "textbox" || t.type === "i-text") {
+          t.selectable = true;
+          t.editable = true;
+          t.evented = true;
+          c.setActiveObject(t);
+          t.enterEditing?.();
+          t.hiddenTextarea?.focus?.();
+        } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+          startInlineTextEdit(t);
+          c.setActiveObject(t);
+        }
+        c.requestRenderAll();
+      });
+    };
+
+    // ... (mantén aquí tu lógica de eventos mouse:down, mouse:up, dblclick, etc.)
+  })();
+
+  // ✅ IMPORTANTE: marcar el diseñador como listo para checkout
+  console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
+  setReady(true);
+
+  // ✅ cleanup al desmontar el overlay
+  return () => {
+    try {
+      c.dispose();
+    } catch {}
+    fabricCanvasRef.current = null;
+    setReady(false);
   };
+}, [visible]);
+
 
   // 2) Tap vs Drag + candado anti-doble-disparo
   let downInfo = null;
