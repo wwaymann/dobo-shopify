@@ -7,6 +7,20 @@ import * as fabric from "fabric";
 import { createPortal } from "react-dom";
 import HistoryManager from "../lib/history";
 
+export default function CustomizationOverlay({
+  visible,
+  /* ...otras props... */
+  onReadyChange,   // ⬅️ NUEVO
+}) {
+
+  const [ready, setReady] = useState(false);
+
+// ⬇️ Notifica al padre cada vez que cambie "ready"
+useEffect(() => {
+  if (typeof onReadyChange === "function") {
+    onReadyChange(ready);
+  }
+}, [ready, onReadyChange]);
 
 // ======= Constantes =======
 const Z_CANVAS = 4000;
