@@ -341,6 +341,9 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
+
+
+  
 // ====== init Fabric
 useEffect(() => {
   if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -563,6 +566,11 @@ if (!ready) {
 
 }, [visible]);
 
+useEffect(() => {
+  if (fabricCanvasRef.current && !ready) {
+    setReady(true);
+  }
+}, [fabricCanvasRef.current]);
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
