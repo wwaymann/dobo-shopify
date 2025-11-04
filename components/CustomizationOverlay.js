@@ -362,13 +362,13 @@ useEffect(() => {
   fabricCanvasRef.current = c;
 
   // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-  (() => {
+  const enableTextEditing = () => {
     if (!c) return;
 
     // 0) Foco y tolerancias táctiles
     if (c.upperCanvasEl) {
       c.upperCanvasEl.setAttribute("tabindex", "0");
-      c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+      c.upperCanvasEl.style.touchAction = "none";
       c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
     }
     c.perPixelTargetFind = false;
@@ -383,8 +383,8 @@ useEffect(() => {
       if (!isTextTarget(t)) return;
       requestAnimationFrame(() => {
         if (t.type === "textbox" || t.type === "i-text") {
-          t.selectable = true; 
-          t.editable = true; 
+          t.selectable = true;
+          t.editable = true;
           t.evented = true;
           c.setActiveObject(t);
           t.enterEditing?.();
@@ -433,7 +433,6 @@ useEffect(() => {
       const duration = now - downInfo.t;
       if (now < editLockUntil) { downInfo = null; return; }
 
-      // TAP corto sobre texto => editar
       if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
         opt.e?.preventDefault?.();
         opt.e?.stopPropagation?.();
@@ -444,7 +443,6 @@ useEffect(() => {
       downInfo = null;
     });
 
-    // Doble clic / doble tap => editar (respetando candado)
     c.on("mouse:dblclick", (opt) => {
       const now = performance.now();
       const t = opt.target;
@@ -457,22 +455,21 @@ useEffect(() => {
       editLockUntil = now + 300;
     });
 
-    // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
     c.on("text:editing:exited", (opt) => {
       const t = opt?.target;
       if (!t) return;
-
       t.editable = true;
       t.selectable = true;
       t.evented = true;
       t.hasControls = true;
       t.lockMovementX = false;
       t.lockMovementY = false;
-
       c.setActiveObject(t);
       c.requestRenderAll();
     });
-  })();
+  };
+
+  enableTextEditing();
 
   // ✅ Marcar el diseñador como listo para checkout
   console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
@@ -487,6 +484,7 @@ useEffect(() => {
     setReady(false);
   };
 }, [visible]);
+
 
 
 
