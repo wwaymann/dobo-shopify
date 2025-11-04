@@ -354,6 +354,55 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
+        const c = new fabric.Canvas(canvasRef.current, {
+      width: 1,
+      height: 1,
+      preserveObjectStacking: true,
+      selection: true,
+      perPixelTargetFind: true,
+      targetFindTolerance: 8
+    });
+    fabricCanvasRef.current = c;
+
+    // === Activación de texto en móvil (iOS/Android) ===
+    // Evita que el navegador “robe” el gesto táctil (scroll/zoom) sobre el canvas
+    if (c.upperCanvasEl && c.upperCanvasEl.style) {
+      c.upperCanvasEl.style.touchAction = "none";
+    }
+
+    // Forzar edición al tocar un textbox o tu grupo de texto
+    c.on("touchstart", (e) => {
+      const t = e.target;
+      if (!t) return;
+
+      // Si usas grupos de texto propios
+      if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+        e.e?.preventDefault?.();
+        e.e?.stopPropagation?.();
+        requestAnimationFrame(() => {
+          startInlineTextEdit(t);
+          c.setActiveObject(t);
+          c.requestRenderAll();
+        });
+        return;
+      }
+
+      // Textbox nativo de Fabric
+      if (t.type === "textbox") {
+        e.e?.preventDefault?.();
+        e.e?.stopPropagation?.();
+        requestAnimationFrame(() => {
+          if (typeof t.enterEditing === "function") {
+            t.enterEditing();
+            t.hiddenTextarea?.focus?.();
+          }
+          c.setActiveObject(t);
+          c.requestRenderAll();
+        });
+      }
+    });
+
+
     // Delimitar bounds (margen 10 px)
     const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
     setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
