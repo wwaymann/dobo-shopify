@@ -371,7 +371,10 @@ useEffect(() => {
       isReady = true;
       setReady(true);
       if (typeof onReadyChange === "function") onReadyChange(true);
-      console.log("[DOBO] Canvas listo → diseñador habilitado para checkout ✅");
+ console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
+setReady(true);
+if (typeof onReadyChange === "function") onReadyChange(true);
+
     }
   };
 
@@ -460,11 +463,13 @@ useEffect(() => {
   });
 
   // Cleanup
-  return () => {
-    try { c.dispose(); } catch {}
-    fabricCanvasRef.current = null;
-    setReady(false);
-    if (typeof onReadyChange === "function") onReadyChange(false);
+return () => {
+  try { c.dispose(); } catch {}
+  fabricCanvasRef.current = null;
+  setReady(false);
+  if (typeof onReadyChange === "function") onReadyChange(false);
+};
+
   };
 }, [visible]);
 
