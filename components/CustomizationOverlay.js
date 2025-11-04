@@ -475,6 +475,27 @@ return () => {
 };
 }, [visible]);
 
+// === Añadir al final del useEffect de inicialización del canvas ===
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  let timer;
+
+  const markReady = () => {
+    window.doboDesignAPI = window.doboDesignAPI || {};
+    window.doboDesignAPI.isReady = true;
+    console.log("[DOBO] Designer marked as ready ✅");
+    if (typeof onReadyChange === "function") onReadyChange(true);
+  };
+
+  // Espera a que el canvas esté completamente inicializado
+  timer = setTimeout(() => {
+    const canvas = window.doboDesignAPI?.getCanvas?.();
+    if (canvas) markReady();
+    else console.warn("[DOBO] Canvas not ready yet");
+  }, 1000);
+
+  return () => clearTimeout(timer);
+}, [onReadyChange]);
 
 
 
