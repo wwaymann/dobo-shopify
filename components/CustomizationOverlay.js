@@ -352,6 +352,8 @@ export default function CustomizationOverlay({
       perPixelTargetFind: true,
       targetFindTolerance: 8
     });
+
+    fabricCanvasRef.current = c;:
    // === Texto activo en móvil (iOS/Android) ===
 try {
   if (c.upperCanvasEl) {
