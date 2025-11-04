@@ -355,13 +355,14 @@ export default function CustomizationOverlay({
 
     fabricCanvasRef.current = c;
    // === Texto activo en móvil (iOS/Android) ===
+// === Activación táctil de texto (móvil y escritorio) ===
 try {
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
     c.upperCanvasEl.style.touchAction = "none";
     c.upperCanvasEl.addEventListener(
       "touchstart",
-      () => c.upperCanvasEl && c.upperCanvasEl.focus(),
+      () => c.upperCanvasEl.focus(),
       { passive: false }
     );
   }
@@ -370,47 +371,50 @@ try {
   c.targetFindTolerance = 12;
   if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  // --- Distinción entre tocar y arrastrar ---
-  let touchTimer = null;
   let moved = false;
+  let pressTimer = null;
 
-  c.on("touch:drag", () => {
-    moved = true;
-    clearTimeout(touchTimer);
-  });
+  // Detecta tap o doble tap sobre texto
+  const handleTapOrDoubleTap = (t) => {
+    if (!t) return;
+    if (t.type !== "textbox" && t.type !== "i-text" && t._kind !== "textGroup") return;
 
-  c.on("touch:start", (opt) => {
+    requestAnimationFrame(() => {
+      if (t.type === "textbox" || t.type === "i-text") {
+        t.selectable = true;
+        t.editable = true;
+        c.setActiveObject(t);
+        t.enterEditing?.();
+        t.hiddenTextarea?.focus?.();
+      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+        startInlineTextEdit(t);
+        c.setActiveObject(t);
+      }
+      c.requestRenderAll();
+    });
+  };
+
+  // TAP corto (≈200 ms) → editar
+  c.on("mouse:down", (opt) => {
     moved = false;
-    const t = opt?.target;
+    const t = opt.target;
     if (!t) return;
 
-    // Solo para texto
-    const isText = t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup";
-    if (!isText) return;
-
-    // Espera 250 ms: si no se arrastra, se asume tap y entra en edición
-    clearTimeout(touchTimer);
-    touchTimer = setTimeout(() => {
-      if (!moved) {
-        opt.e?.preventDefault?.();
-        opt.e?.stopPropagation?.();
-
-        requestAnimationFrame(() => {
-          if (t.type === "textbox" || t.type === "i-text") {
-            t.selectable = true;
-            t.editable = true;
-            c.setActiveObject(t);
-            t.enterEditing?.();
-            t.hiddenTextarea?.focus?.();
-          } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-            startInlineTextEdit(t);
-            c.setActiveObject(t);
-          }
-          c.requestRenderAll();
-        });
-      }
-    }, 250);
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      if (!moved) handleTapOrDoubleTap(t);
+    }, 200);
   });
+
+  c.on("mouse:move", () => {
+    moved = true;
+    clearTimeout(pressTimer);
+  });
+
+  c.on("mouse:up", () => clearTimeout(pressTimer));
+
+  // DOBLE TAP o DOBLE CLIC → editar también
+  c.on("mouse:dblclick", (opt) => handleTapOrDoubleTap(opt.target));
 } catch (err) {
   console.warn("[DOBO] Patch texto móvil:", err);
 }
