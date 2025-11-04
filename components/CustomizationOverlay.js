@@ -7,6 +7,7 @@ import * as fabric from "fabric";
 import { createPortal } from "react-dom";
 import HistoryManager from "../lib/history";
 
+
 // ======= Constantes =======
 const Z_CANVAS = 4000;
 const FONT_OPTIONS = [
@@ -1175,7 +1176,7 @@ const addImageFromFile = (file, mode) => {
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
               >
-                <i className="fa fa-image" aria-hidden="true"></i> RGB
+                <i className="fa fa-image" aria-hidden="true"></i> RGBB
               </button>
               {/* Cámara */}
               <button
