@@ -619,15 +619,22 @@ export default function CustomizationOverlay({
     return cobj;
   };
 
-  const addImageFromFile = (file, mode) => {
-    const c = fabricCanvasRef.current; if (!c || !file) return;
-    const url = URL.createObjectURL(file);
+const addImageFromFile = (file, mode) => {
+  const c = fabricCanvasRef.current; if (!c || !file) return;
+
+  // Cargamos el archivo en memoria (Data URL) para evitar el error "fabric: Error loading blob:"
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
     const imgEl = new Image();
     imgEl.crossOrigin = "anonymous";
 
     imgEl.onload = () => {
+      // downscale ya existe en tu archivo y puede devolver <img> o <canvas>
       const src = downscale(imgEl);
+
       if (mode === "vector") {
+        // Vector: tu flujo actual, pero usando el "src" ya rasterizado localmente
         const rgb = hexToRgb(shapeColor);
         const vectorImg = vectorizeElementToBitmap(src, {
           maxDim: VECTOR_SAMPLE_DIM,
@@ -635,8 +642,8 @@ export default function CustomizationOverlay({
           drawColor: rgb,
           thrBias: vecBias
         });
-        if (!vectorImg) { URL.revokeObjectURL(url); return; }
-        // Ubicar centrado y escalado
+        if (!vectorImg) return;
+
         const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
         const s = Math.min(maxW / vectorImg._vecMeta.w, maxH / vectorImg._vecMeta.h);
         vectorImg.set({
@@ -649,37 +656,47 @@ export default function CustomizationOverlay({
         c.setActiveObject(vectorImg);
         setSelType("image");
       } else {
-        // RGB plano
-        fabric.Image.fromObject
-        ? fabric.Image.fromObject // safeguard older fabric builds
-        : null;
+        // RGB plano: evitamos fromURL(blob) y creamos la imagen de Fabric desde el elemento (img o canvas)
+        const baseEl = (src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)) ? src : imgEl;
+        const img = new fabric.Image(baseEl, {
+          originX: "center", originY: "center",
+          left: c.getWidth() / 2, top: c.getHeight() / 2,
+          selectable: true, evented: true, objectCaching: false
+        });
+        img._doboKind = "rgb";
 
-        fabric.Image.fromURL(url, (img) => {
-          if (!img) { URL.revokeObjectURL(url); return; }
-          img._doboKind = "rgb";
-          const maxW = c.getWidth() * 0.85, maxH = c.getHeight() * 0.85;
-          const s = Math.min(maxW / img.width, maxH / img.height, 1);
-          img.set({
-            originX: "center", originY: "center",
-            left: c.getWidth() / 2, top: c.getHeight() / 2,
-            scaleX: s, scaleY: s,
-            selectable: true, evented: true, objectCaching: false
-          });
-          c.add(img);
-          c.setActiveObject(img);
-          setSelType("image");
-          c.requestRenderAll();
-          URL.revokeObjectURL(url);
-       }, { crossOrigin: "anonymous" });
+        // Ajuste de escala igual que antes
+        const maxW = c.getWidth() * 0.85, maxH = c.getHeight() * 0.85;
+        const naturalW = baseEl.naturalWidth || baseEl.width || img.width || 1;
+        const naturalH = baseEl.naturalHeight || baseEl.height || img.height || 1;
+        const s = Math.min(maxW / naturalW, maxH / naturalH, 1);
+        img.set({ scaleX: s, scaleY: s });
+
+        c.add(img);
+        c.setActiveObject(img);
+        setSelType("image");
+        c.requestRenderAll();
       }
 
       c.requestRenderAll();
       setEditing(true);
-      URL.revokeObjectURL(url);
     };
-    imgEl.onerror = () => URL.revokeObjectURL(url);
-    imgEl.src = url;
+
+    imgEl.onerror = () => {
+      console.error("[DOBO] Error al cargar Data URL en <img>.");
+    };
+
+    imgEl.src = dataUrl; // Carga la imagen desde memoria (sin blobs, sin CORS)
   };
+
+  reader.onerror = () => {
+    console.error("[DOBO] FileReader error al leer la imagen.");
+  };
+
+  // Importante: Data URL, no createObjectURL(blob)
+  reader.readAsDataURL(file);
+};
+
 
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
