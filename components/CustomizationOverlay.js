@@ -469,8 +469,8 @@ return () => {
   setReady(false);
   if (typeof onReadyChange === "function") onReadyChange(false);
 };
-  };
 }, [visible]);
+
 
 
 
