@@ -1054,7 +1054,7 @@ const addImageFromFile = (file, mode) => {
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
               >
-                <i className="fa fa-image" aria-hidden="true"></i> RGB
+                <i className="fa fa-image" aria-hidden="true"></i> Imagen
               </button>
               {/* Cámara */}
               <button
@@ -1066,7 +1066,7 @@ const addImageFromFile = (file, mode) => {
                 disabled={!ready}
                 title="Tomar foto con cámara"
               >
-                <i className="fa fa-camera" aria-hidden="true"></i>
+                <i className="fa fa-camera" aria-hidden="true"></i> Cámara
               </button>
             </div>
 
