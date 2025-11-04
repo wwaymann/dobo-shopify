@@ -619,69 +619,95 @@ export default function CustomizationOverlay({
     return cobj;
   };
 
-const addImageFromFile = (file, mode) => {
-  const c = fabricCanvasRef.current;
-  if (!c || !file) return;
+// Carga imagen (RGB / Cámara / Vector) con espera inteligente a que el canvas esté listo.
+// Evita el error "fabric: Error loading blob:" usando FileReader (DataURL) y sincroniza el render.
+const addImageFromFile = (file, mode, attempt = 0) => {
+  if (!file) return;
 
+  const c = fabricCanvasRef.current;
+
+  // 1) Asegura que el canvas de Fabric esté montado antes de procesar la imagen
+  if (!c) {
+    if (attempt < 5) {
+      console.warn(`[DOBO] Canvas no listo (intento ${attempt + 1}), reintentando...`);
+      setTimeout(() => addImageFromFile(file, mode, attempt + 1), 120);
+    } else {
+      console.error("[DOBO] Canvas no disponible tras varios intentos.");
+    }
+    return;
+  }
+
+  // 2) Lee el archivo en memoria (DataURL) para evitar fetch(blob:...) y CORS
   const reader = new FileReader();
 
   reader.onload = () => {
     const dataUrl = reader.result;
+
     const imgEl = new Image();
     imgEl.crossOrigin = "anonymous";
 
     imgEl.onload = () => {
-      const src = downscale(imgEl);
+      // downscale puede retornar <img> o <canvas> ya escalado
+      const src = typeof downscale === "function" ? downscale(imgEl) : imgEl;
 
+      // --- MODO VECTOR ---
       if (mode === "vector") {
-        // Carga en modo vectorial
-        const rgb = hexToRgb(shapeColor);
-        const vectorImg = vectorizeElementToBitmap(src, {
-          maxDim: VECTOR_SAMPLE_DIM,
-          makeDark: true,
-          drawColor: rgb,
-          thrBias: vecBias
-        });
-        if (!vectorImg) return;
+        try {
+          const rgb = hexToRgb?.(shapeColor) ?? { r: 0, g: 0, b: 0 };
+          const vectorImg = vectorizeElementToBitmap?.(src, {
+            maxDim: typeof VECTOR_SAMPLE_DIM !== "undefined" ? VECTOR_SAMPLE_DIM : 1024,
+            makeDark: true,
+            drawColor: rgb,
+            thrBias: typeof vecBias !== "undefined" ? vecBias : 0
+          });
 
-        const maxW = c.getWidth() * 0.8;
-        const maxH = c.getHeight() * 0.8;
-        const s = Math.min(
-          maxW / vectorImg._vecMeta.w,
-          maxH / vectorImg._vecMeta.h
-        );
+          if (!vectorImg) {
+            console.error("[DOBO] vectorizeElementToBitmap no devolvió imagen.");
+            return;
+          }
 
-        vectorImg.set({
-          originX: "center",
-          originY: "center",
-          left: c.getWidth() / 2,
-          top: c.getHeight() / 2,
-          scaleX: s,
-          scaleY: s,
-          selectable: true,
-          evented: true,
-          objectCaching: false
-        });
+          const maxW = c.getWidth() * 0.8;
+          const maxH = c.getHeight() * 0.8;
+          const vw = vectorImg._vecMeta?.w || vectorImg.width || 1;
+          const vh = vectorImg._vecMeta?.h || vectorImg.height || 1;
+          const s = Math.min(maxW / vw, maxH / vh, 1);
 
-        c.add(vectorImg);
-        c.setActiveObject(vectorImg);
-        setSelType("image");
-        setEditing(true);
+          vectorImg.set({
+            originX: "center",
+            originY: "center",
+            left: c.getWidth() / 2,
+            top: c.getHeight() / 2,
+            scaleX: s,
+            scaleY: s,
+            selectable: true,
+            evented: true,
+            objectCaching: false
+          });
 
-        // ✅ Render estable (carga al primer intento)
-        requestAnimationFrame(() => {
-          if (c.calcOffset) c.calcOffset();
-          if (c.renderAll) c.renderAll();
-        });
-      } else {
-        // Carga en modo RGB o cámara
+          c.add(vectorImg);
+          c.setActiveObject(vectorImg);
+          setSelType?.("image");
+          setEditing?.(true);
+
+          // Render estable en el siguiente frame
+          requestAnimationFrame(() => {
+            if (c.calcOffset) c.calcOffset();
+            if (c.renderAll) c.renderAll();
+          });
+        } catch (e) {
+          console.error("[DOBO] Error en flujo VECTOR:", e);
+        }
+        return;
+      }
+
+      // --- MODO RGB / CÁMARA ---
+      try {
         const baseEl =
-          src &&
-          (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
+          src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
             ? src
             : imgEl;
 
-        const img = new fabric.Image(baseEl, {
+        const fabricImg = new fabric.Image(baseEl, {
           originX: "center",
           originY: "center",
           left: c.getWidth() / 2,
@@ -690,27 +716,28 @@ const addImageFromFile = (file, mode) => {
           evented: true,
           objectCaching: false
         });
-        img._doboKind = "rgb";
+        fabricImg._doboKind = "rgb";
 
+        // Escala inicial respetando límites del lienzo
         const maxW = c.getWidth() * 0.85;
         const maxH = c.getHeight() * 0.85;
-        const naturalW =
-          baseEl.naturalWidth || baseEl.width || img.width || 1;
-        const naturalH =
-          baseEl.naturalHeight || baseEl.height || img.height || 1;
-        const s = Math.min(maxW / naturalW, maxH / naturalH, 1);
-        img.set({ scaleX: s, scaleY: s });
+        const naturalW = baseEl.naturalWidth || baseEl.width || fabricImg.width || 1;
+        const naturalH = baseEl.naturalHeight || baseEl.height || fabricImg.height || 1;
+        const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
+        fabricImg.set({ scaleX: scale, scaleY: scale });
 
-        c.add(img);
-        c.setActiveObject(img);
-        setSelType("image");
-        setEditing(true);
+        c.add(fabricImg);
+        c.setActiveObject(fabricImg);
+        setSelType?.("image");
+        setEditing?.(true);
 
-        // ✅ Render estable (carga al primer intento)
+        // Render estable en el siguiente frame
         requestAnimationFrame(() => {
           if (c.calcOffset) c.calcOffset();
           if (c.renderAll) c.renderAll();
         });
+      } catch (e) {
+        console.error("[DOBO] Error en flujo RGB/Cámara:", e);
       }
     };
 
@@ -718,7 +745,7 @@ const addImageFromFile = (file, mode) => {
       console.error("[DOBO] Error al cargar Data URL en <img>.");
     };
 
-    imgEl.src = dataUrl; // Se carga desde memoria (sin blobs, sin CORS)
+    imgEl.src = dataUrl; // Carga local, sin blobs y sin CORS
   };
 
   reader.onerror = () => {
@@ -727,6 +754,7 @@ const addImageFromFile = (file, mode) => {
 
   reader.readAsDataURL(file);
 };
+
 
 
 
