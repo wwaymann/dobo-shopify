@@ -747,6 +747,9 @@ useEffect(() => {
 const addImageFromFile = (file, mode) => {
   if (!file) return;
 
+  // 🚫 Durante la carga el diseñador no está listo
+  setReady(false);
+
   const waitForCanvasReady = (attempt = 0) => {
     const c = fabricCanvasRef.current;
     if (!c || !c.getContext || !c.getContext()) {
@@ -755,6 +758,7 @@ const addImageFromFile = (file, mode) => {
         setTimeout(() => waitForCanvasReady(attempt + 1), 80);
       } else {
         console.error("[DOBO] Canvas no disponible tras varios intentos.");
+        setReady(true); // Evita bloqueo perpetuo
       }
       return;
     }
@@ -770,16 +774,20 @@ const addImageFromFile = (file, mode) => {
       imgEl.onload = () => {
         const src = typeof downscale === "function" ? downscale(imgEl) : imgEl;
 
-        // vector mode
+        // --- Vector mode ---
         if (mode === "vector") {
           const rgb = hexToRgb?.(shapeColor) ?? { r: 0, g: 0, b: 0 };
           const vectorImg = vectorizeElementToBitmap?.(src, {
             maxDim: typeof VECTOR_SAMPLE_DIM !== "undefined" ? VECTOR_SAMPLE_DIM : 1024,
             makeDark: true,
             drawColor: rgb,
-            thrBias: typeof vecBias !== "undefined" ? vecBias : 0
+            thrBias: typeof vecBias !== "undefined" ? vecBias : 0,
           });
-          if (!vectorImg) return;
+          if (!vectorImg) {
+            console.error("[DOBO] Error creando vector.");
+            setReady(true);
+            return;
+          }
 
           const maxW = c.getWidth() * 0.8;
           const maxH = c.getHeight() * 0.8;
@@ -796,7 +804,7 @@ const addImageFromFile = (file, mode) => {
             scaleY: s,
             selectable: true,
             evented: true,
-            objectCaching: false
+            objectCaching: false,
           });
 
           c.add(vectorImg);
@@ -808,10 +816,13 @@ const addImageFromFile = (file, mode) => {
             c.calcOffset?.();
             c.renderAll?.();
           });
+
+          // ✅ Listo
+          setReady(true);
           return;
         }
 
-        // RGB / Cámara
+        // --- RGB / Cámara ---
         const baseEl =
           src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
             ? src
@@ -824,7 +835,7 @@ const addImageFromFile = (file, mode) => {
           top: c.getHeight() / 2,
           selectable: true,
           evented: true,
-          objectCaching: false
+          objectCaching: false,
         });
         fabricImg._doboKind = mode === "camera" ? "camera" : "rgb";
 
@@ -844,16 +855,29 @@ const addImageFromFile = (file, mode) => {
           c.calcOffset?.();
           c.renderAll?.();
         });
+
+        // ✅ Importante: marcar el diseñador como listo
+        console.log("[DOBO] Imagen cargada correctamente, diseñador listo");
+        setReady(true);
       };
 
-      imgEl.onerror = () => console.error("[DOBO] Error cargando imagen");
+      imgEl.onerror = () => {
+        console.error("[DOBO] Error cargando imagen");
+        setReady(true); // Libera el sistema para que no bloquee checkout
+      };
+
       imgEl.src = dataUrl;
+    };
+
+    reader.onerror = () => {
+      console.error("[DOBO] Error leyendo archivo con FileReader");
+      setReady(true);
     };
 
     reader.readAsDataURL(file);
   };
 
-  // inicia flujo
+  // Inicia flujo
   waitForCanvasReady();
 };
 
