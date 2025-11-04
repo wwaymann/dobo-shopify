@@ -620,9 +620,11 @@ export default function CustomizationOverlay({
   };
 
 const addImageFromFile = (file, mode) => {
-  const c = fabricCanvasRef.current; if (!c || !file) return;
+  const c = fabricCanvasRef.current;
+  if (!c || !file) return;
 
   const reader = new FileReader();
+
   reader.onload = () => {
     const dataUrl = reader.result;
     const imgEl = new Image();
@@ -632,6 +634,7 @@ const addImageFromFile = (file, mode) => {
       const src = downscale(imgEl);
 
       if (mode === "vector") {
+        // Carga en modo vectorial
         const rgb = hexToRgb(shapeColor);
         const vectorImg = vectorizeElementToBitmap(src, {
           maxDim: VECTOR_SAMPLE_DIM,
@@ -641,59 +644,81 @@ const addImageFromFile = (file, mode) => {
         });
         if (!vectorImg) return;
 
-        const maxW = c.getWidth() * 0.8, maxH = c.getHeight() * 0.8;
-        const s = Math.min(maxW / vectorImg._vecMeta.w, maxH / vectorImg._vecMeta.h);
+        const maxW = c.getWidth() * 0.8;
+        const maxH = c.getHeight() * 0.8;
+        const s = Math.min(
+          maxW / vectorImg._vecMeta.w,
+          maxH / vectorImg._vecMeta.h
+        );
+
         vectorImg.set({
-          originX: "center", originY: "center",
-          left: c.getWidth() / 2, top: c.getHeight() / 2,
-          scaleX: s, scaleY: s,
-          selectable: true, evented: true, objectCaching: false
+          originX: "center",
+          originY: "center",
+          left: c.getWidth() / 2,
+          top: c.getHeight() / 2,
+          scaleX: s,
+          scaleY: s,
+          selectable: true,
+          evented: true,
+          objectCaching: false
         });
 
         c.add(vectorImg);
         c.setActiveObject(vectorImg);
         setSelType("image");
+        setEditing(true);
 
-        // 🔧 Render forzado para que cargue a la primera (VECTOR)
-        setTimeout(() => {
-          // en algunas builds ayuda recalcular offsets antes
+        // ✅ Render estable (carga al primer intento)
+        requestAnimationFrame(() => {
           if (c.calcOffset) c.calcOffset();
-          c.requestRenderAll();
-        }, 10);
+          if (c.renderAll) c.renderAll();
+        });
       } else {
-        const baseEl = (src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)) ? src : imgEl;
+        // Carga en modo RGB o cámara
+        const baseEl =
+          src &&
+          (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
+            ? src
+            : imgEl;
+
         const img = new fabric.Image(baseEl, {
-          originX: "center", originY: "center",
-          left: c.getWidth() / 2, top: c.getHeight() / 2,
-          selectable: true, evented: true, objectCaching: false
+          originX: "center",
+          originY: "center",
+          left: c.getWidth() / 2,
+          top: c.getHeight() / 2,
+          selectable: true,
+          evented: true,
+          objectCaching: false
         });
         img._doboKind = "rgb";
 
-        const maxW = c.getWidth() * 0.85, maxH = c.getHeight() * 0.85;
-        const naturalW = baseEl.naturalWidth || baseEl.width || img.width || 1;
-        const naturalH = baseEl.naturalHeight || baseEl.height || img.height || 1;
+        const maxW = c.getWidth() * 0.85;
+        const maxH = c.getHeight() * 0.85;
+        const naturalW =
+          baseEl.naturalWidth || baseEl.width || img.width || 1;
+        const naturalH =
+          baseEl.naturalHeight || baseEl.height || img.height || 1;
         const s = Math.min(maxW / naturalW, maxH / naturalH, 1);
         img.set({ scaleX: s, scaleY: s });
 
         c.add(img);
         c.setActiveObject(img);
         setSelType("image");
+        setEditing(true);
 
-        // 🔧 Render forzado para que cargue a la primera (RGB / Cámara)
-        setTimeout(() => {
+        // ✅ Render estable (carga al primer intento)
+        requestAnimationFrame(() => {
           if (c.calcOffset) c.calcOffset();
-          c.requestRenderAll();
-        }, 10);
+          if (c.renderAll) c.renderAll();
+        });
       }
-
-      setEditing(true);
     };
 
     imgEl.onerror = () => {
       console.error("[DOBO] Error al cargar Data URL en <img>.");
     };
 
-    imgEl.src = dataUrl;
+    imgEl.src = dataUrl; // Se carga desde memoria (sin blobs, sin CORS)
   };
 
   reader.onerror = () => {
@@ -701,10 +726,8 @@ const addImageFromFile = (file, mode) => {
   };
 
   reader.readAsDataURL(file);
-
-  // (Opcional) Si usas un <input type="file"> con ref, limpia su valor para futuros picks
-  // if (fileInputRef?.current) fileInputRef.current.value = "";
 };
+
 
 
 
