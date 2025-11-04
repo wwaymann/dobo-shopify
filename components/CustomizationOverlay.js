@@ -359,18 +359,20 @@ useEffect(() => {
     perPixelTargetFind: true,
     targetFindTolerance: 8
   });
+
   fabricCanvasRef.current = c;
 
   // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-  const enableTextEditing = () => {
+  const initTextEditing = () => {
     if (!c) return;
 
     // 0) Foco y tolerancias táctiles
     if (c.upperCanvasEl) {
       c.upperCanvasEl.setAttribute("tabindex", "0");
-      c.upperCanvasEl.style.touchAction = "none";
+      c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
       c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
     }
+
     c.perPixelTargetFind = false;
     c.targetFindTolerance = 12;
     if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
@@ -400,10 +402,10 @@ useEffect(() => {
     // 2) Tap vs Drag + candado anti-doble-disparo
     let downInfo = null;
     let moved = false;
-    let editLockUntil = 0;
+    let editLockUntil = 0; // ms timestamp: previene doble disparo
 
     const TAP_MAX_MS = 220;
-    const TAP_MAX_MOVE = 6;
+    const TAP_MAX_MOVE = 6; // px
     const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
 
     c.on("mouse:down", (opt) => {
@@ -431,18 +433,25 @@ useEffect(() => {
 
       const t = downInfo.target;
       const duration = now - downInfo.t;
-      if (now < editLockUntil) { downInfo = null; return; }
 
+      // Candado activo → nada
+      if (now < editLockUntil) {
+        downInfo = null;
+        return;
+      }
+
+      // TAP corto sobre texto => editar
       if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
         opt.e?.preventDefault?.();
         opt.e?.stopPropagation?.();
         enterEdit(t);
-        editLockUntil = now + 300;
+        editLockUntil = now + 300; // evita doble disparo inmediato
       }
 
       downInfo = null;
     });
 
+    // Doble clic / doble tap → editar (respetando candado)
     c.on("mouse:dblclick", (opt) => {
       const now = performance.now();
       const t = opt.target;
@@ -455,27 +464,32 @@ useEffect(() => {
       editLockUntil = now + 300;
     });
 
+    // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
     c.on("text:editing:exited", (opt) => {
       const t = opt?.target;
       if (!t) return;
+
+      // Asegura movimiento/selección otra vez
       t.editable = true;
       t.selectable = true;
       t.evented = true;
       t.hasControls = true;
       t.lockMovementX = false;
       t.lockMovementY = false;
+
       c.setActiveObject(t);
       c.requestRenderAll();
     });
   };
 
-  enableTextEditing();
+  // Ejecutar inicialización de edición de texto
+  initTextEditing();
 
-  // ✅ Marcar el diseñador como listo para checkout
+  // ✅ IMPORTANTE: marcar el diseñador como listo para checkout
   console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
   setReady(true);
 
-  // ✅ Cleanup al desmontar el overlay
+  // ✅ cleanup al desmontar el overlay
   return () => {
     try {
       c.dispose();
@@ -484,6 +498,7 @@ useEffect(() => {
     setReady(false);
   };
 }, [visible]);
+
 
 
 
