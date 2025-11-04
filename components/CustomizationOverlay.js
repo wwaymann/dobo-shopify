@@ -354,16 +354,7 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-        const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8
-    });
-    fabricCanvasRef.current = c;
-
+    
     // === Activación de texto en móvil (iOS/Android) ===
     // Evita que el navegador “robe” el gesto táctil (scroll/zoom) sobre el canvas
     if (c.upperCanvasEl && c.upperCanvasEl.style) {
