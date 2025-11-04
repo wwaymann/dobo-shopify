@@ -1126,7 +1126,7 @@ const addImageFromFile = (file, mode) => {
             onClick={() => setEditing(false)}
             style={{ minWidth: "16ch" }}
           >
-            Seleccionar Maceta
+            Seleccionar
           </button>
 
           <button
@@ -1176,7 +1176,7 @@ const addImageFromFile = (file, mode) => {
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
               >
-                <i className="fa fa-image" aria-hidden="true"></i> Galeria
+                <i className="fa fa-image" aria-hidden="true"></i> Imagen
               </button>
               {/* Cámara */}
               <button
