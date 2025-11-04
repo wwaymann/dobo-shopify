@@ -341,272 +341,244 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== init Fabric
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+// ====== init Fabric
+useEffect(() => {
+  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8
-    });
-
-    fabricCanvasRef.current = c;
-   // === Texto activo en móvil (iOS/Android) ===
-// === Activación táctil de texto (móvil y escritorio) ===
-// === Activación de edición de texto (móvil + escritorio) SIN duplicaciones ===
-// === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-
-  // 0) Foco y tolerancias táctiles
-  if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
-    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-  }
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
-
-  // 1) Utilidades
-  const isTextTarget = (t) =>
-    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
-
-  const enterEdit = (t) => {
-    if (!isTextTarget(t)) return;
-    requestAnimationFrame(() => {
-      if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true; t.editable = true; t.evented = true;
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
-      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
-      }
-      c.requestRenderAll();
-    });
-  };
-
-  // 2) Tap vs Drag + candado anti-doble-disparo
-  let downInfo = null;
-  let moved = false;
-  let editLockUntil = 0; // ms timestamp: previene doble disparo
-
-  const TAP_MAX_MS = 220;
-  const TAP_MAX_MOVE = 6; // px
-  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
-
-  c.on("mouse:down", (opt) => {
-    const now = performance.now();
-    moved = false;
-    downInfo = {
-      x: opt.pointer?.x ?? 0,
-      y: opt.pointer?.y ?? 0,
-      t: now,
-      target: opt.target || null
-    };
+  const c = new fabric.Canvas(canvasRef.current, {
+    width: 1,
+    height: 1,
+    preserveObjectStacking: true,
+    selection: true,
+    perPixelTargetFind: true,
+    targetFindTolerance: 8,
   });
 
-  c.on("mouse:move", (opt) => {
-    if (!downInfo) return;
-    const p = opt.pointer || { x: 0, y: 0 };
-    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-      moved = true;
+  fabricCanvasRef.current = c;
+
+  // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+  (() => {
+    if (!c) return;
+
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.setAttribute("tabindex", "0");
+      c.upperCanvasEl.style.touchAction = "none";
+      c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
     }
-  });
 
-  c.on("mouse:up", (opt) => {
-    const now = performance.now();
-    if (!downInfo) return;
+    c.perPixelTargetFind = false;
+    c.targetFindTolerance = 12;
+    if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-    const t = downInfo.target;
-    const duration = now - downInfo.t;
+    const isTextTarget = (t) =>
+      !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
-    // Candado activo → nada
-    if (now < editLockUntil) { downInfo = null; return; }
+    const enterEdit = (t) => {
+      if (!isTextTarget(t)) return;
+      requestAnimationFrame(() => {
+        if (t.type === "textbox" || t.type === "i-text") {
+          t.selectable = true; t.editable = true; t.evented = true;
+          c.setActiveObject(t);
+          t.enterEditing?.();
+          t.hiddenTextarea?.focus?.();
+        } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+          startInlineTextEdit(t);
+          c.setActiveObject(t);
+        }
+        c.requestRenderAll();
+      });
+    };
 
-    // TAP corto sobre texto => editar
-    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+    let downInfo = null;
+    let moved = false;
+    let editLockUntil = 0;
+    const TAP_MAX_MS = 220;
+    const TAP_MAX_MOVE = 6;
+    const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
+
+    c.on("mouse:down", (opt) => {
+      const now = performance.now();
+      moved = false;
+      downInfo = {
+        x: opt.pointer?.x ?? 0,
+        y: opt.pointer?.y ?? 0,
+        t: now,
+        target: opt.target || null,
+      };
+    });
+
+    c.on("mouse:move", (opt) => {
+      if (!downInfo) return;
+      const p = opt.pointer || { x: 0, y: 0 };
+      if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) moved = true;
+    });
+
+    c.on("mouse:up", (opt) => {
+      const now = performance.now();
+      if (!downInfo) return;
+
+      const t = downInfo.target;
+      const duration = now - downInfo.t;
+      if (now < editLockUntil) { downInfo = null; return; }
+
+      if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+        opt.e?.preventDefault?.();
+        opt.e?.stopPropagation?.();
+        enterEdit(t);
+        editLockUntil = now + 300;
+      }
+
+      downInfo = null;
+    });
+
+    c.on("mouse:dblclick", (opt) => {
+      const now = performance.now();
+      const t = opt.target;
+      if (!isTextTarget(t) || now < editLockUntil) return;
+
       opt.e?.preventDefault?.();
       opt.e?.stopPropagation?.();
       enterEdit(t);
-      editLockUntil = now + 300; // evita doble disparo inmediato
-    }
-
-    downInfo = null;
-  });
-
-  // Doble clic / doble tap → editar (respetando candado)
-  c.on("mouse:dblclick", (opt) => {
-    const now = performance.now();
-    const t = opt.target;
-    if (!isTextTarget(t)) return;
-    if (now < editLockUntil) return;
-
-    opt.e?.preventDefault?.();
-    opt.e?.stopPropagation?.();
-    enterEdit(t);
-    editLockUntil = now + 300;
-  });
-
-  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
-  c.on("text:editing:exited", (opt) => {
-    const t = opt?.target;
-    if (!t) return;
-
-    // Asegura movimiento/selección otra vez
-    t.editable = true;
-    t.selectable = true;
-    t.evented = true;
-    t.hasControls = true;
-    t.lockMovementX = false;
-    t.lockMovementY = false;
-
-    c.setActiveObject(t);
-    c.requestRenderAll();
-  });
-})();
-
-
-
-
-    // Delimitar bounds (margen 10 px)
-    const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
-
-    // Enforcers de límites
-    const clampObjectToBounds = (obj) => {
-      const b = designBoundsRef.current; if (!b || !obj) return;
-      obj.setCoords();
-      const r = obj.getBoundingRect(true);
-      let dx = 0, dy = 0;
-      if (r.left < b.x) dx = b.x - r.left;
-      if (r.top < b.y) dy = b.y - r.top;
-      if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
-      if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
-      if (dx || dy) {
-        obj.left = (obj.left ?? 0) + dx;
-        obj.top = (obj.top ?? 0) + dy;
-        obj.setCoords();
-      }
-    };
-    const __bounds_onMove = e => clampObjectToBounds(e.target);
-    const __bounds_onScale = e => clampObjectToBounds(e.target);
-    const __bounds_onRotate = e => clampObjectToBounds(e.target);
-    const __bounds_onAdded = e => clampObjectToBounds(e.target);
-    c.on("object:moving", __bounds_onMove);
-    c.on("object:scaling", __bounds_onScale);
-    c.on("object:rotating", __bounds_onRotate);
-    c.on("object:added", __bounds_onAdded);
-
-    const __bounds_ro = new ResizeObserver(() => {
-      const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
-      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
+      editLockUntil = now + 300;
     });
-    __bounds_ro.observe(c.upperCanvasEl);
 
-    // Historial
-    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
-    c.once("after:render", () => {
-      const s = getSnapshot(); if (s) historyRef.current.push(s);
-      refreshCaps();
-    });
-    const __hist_onAdded = () => recordChange();
-    const __hist_onModified = () => recordChange();
-    const __hist_onRemoved = () => recordChange();
-    const __hist_onPath = () => recordChange();
-    c.on("object:added", __hist_onAdded);
-    c.on("object:modified", __hist_onModified);
-    c.on("object:removed", __hist_onRemoved);
-    c.on("path:created", __hist_onPath);
-
-    // Selección: clasificar
-    const classify = (a) => {
-      if (!a) return "none";
-      if (a._kind === "textGroup") return "text";
-      if (a._doboKind === "vector") return "image";
-      if (a.type === "image") return "image";
-      if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
-      return "none";
-    };
-
-    const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      if (!a) return;
-      let first = null;
-      if (a._kind === "textGroup") first = a._textChildren?.base || null;
-      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic"));
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || "center");
-      }
-    };
-
-    const onSel = () => {
-      const cobj = c.getActiveObject();
-      if (suppressSelectionRef.current) {
-        try { if (cobj?.type === "activeSelection") cobj.discard(); } catch {}
-        try { c.discardActiveObject(); } catch {}
-        try { c.setActiveObject(null); } catch {}
-        try { c._activeObject = null; } catch {}
-        setSelType("none");
-        c.requestRenderAll();
-        return;
-      }
-      setSelType(classify(cobj));
-      reflectTypo();
-    };
-    c.on("selection:created", onSel);
-    c.on("selection:updated", onSel);
-    c.on("selection:cleared", () => setSelType("none"));
-
-    // Doble-clic para texto editable
-    c.on("mouse:dblclick", (e) => {
-      const t = e.target;
+    c.on("text:editing:exited", (opt) => {
+      const t = opt?.target;
       if (!t) return;
-      if (t._kind === "textGroup") {
-        startInlineTextEdit(t);
-      } else if (isTextObj(t) && typeof t.enterEditing === "function") {
-        t.enterEditing();
-        c.requestRenderAll();
-      }
+      t.editable = true;
+      t.selectable = true;
+      t.evented = true;
+      t.hasControls = true;
+      t.lockMovementX = false;
+      t.lockMovementY = false;
+      c.setActiveObject(t);
+      c.requestRenderAll();
     });
+  })();
 
-    setReady(true);
+  // === Límites de diseño ===
+  const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
+  setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
 
-    return () => {
-      c.off("mouse:dblclick");
-      c.off("selection:created", onSel);
-      c.off("selection:updated", onSel);
-      c.off("selection:cleared");
-      c.off("object:added", __hist_onAdded);
-      c.off("object:modified", __hist_onModified);
-      c.off("object:removed", __hist_onRemoved);
-      c.off("path:created", __hist_onPath);
+  const clampObjectToBounds = (obj) => {
+    const b = designBoundsRef.current; if (!b || !obj) return;
+    obj.setCoords();
+    const r = obj.getBoundingRect(true);
+    let dx = 0, dy = 0;
+    if (r.left < b.x) dx = b.x - r.left;
+    if (r.top < b.y) dy = b.y - r.top;
+    if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
+    if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
+    if (dx || dy) {
+      obj.left = (obj.left ?? 0) + dx;
+      obj.top = (obj.top ?? 0) + dy;
+      obj.setCoords();
+    }
+  };
 
-      c.off("object:moving", __bounds_onMove);
-      c.off("object:scaling", __bounds_onScale);
-      c.off("object:rotating", __bounds_onRotate);
-      c.off("object:added", __bounds_onAdded);
-      try { __bounds_ro.disconnect(); } catch {}
-      try { c.dispose(); } catch {}
-      fabricCanvasRef.current = null;
-    };
-  }, [visible]);
+  const __bounds_onMove = (e) => clampObjectToBounds(e.target);
+  const __bounds_onScale = (e) => clampObjectToBounds(e.target);
+  const __bounds_onRotate = (e) => clampObjectToBounds(e.target);
+  const __bounds_onAdded = (e) => clampObjectToBounds(e.target);
+  c.on("object:moving", __bounds_onMove);
+  c.on("object:scaling", __bounds_onScale);
+  c.on("object:rotating", __bounds_onRotate);
+  c.on("object:added", __bounds_onAdded);
+
+  const __bounds_ro = new ResizeObserver(() => {
+    const cw = c.getWidth(), ch = c.getHeight();
+    setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
+    const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
+  });
+  __bounds_ro.observe(c.upperCanvasEl);
+
+  // === Historial ===
+  historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
+  c.once("after:render", () => {
+    const s = getSnapshot(); if (s) historyRef.current.push(s);
+    refreshCaps();
+  });
+
+  const __hist_onAdded = () => recordChange();
+  const __hist_onModified = () => recordChange();
+  const __hist_onRemoved = () => recordChange();
+  const __hist_onPath = () => recordChange();
+  c.on("object:added", __hist_onAdded);
+  c.on("object:modified", __hist_onModified);
+  c.on("object:removed", __hist_onRemoved);
+  c.on("path:created", __hist_onPath);
+
+  const classify = (a) => {
+    if (!a) return "none";
+    if (a._kind === "textGroup") return "text";
+    if (a._doboKind === "vector") return "image";
+    if (a.type === "image") return "image";
+    if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
+    return "none";
+  };
+
+  const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
+
+  const reflectTypo = () => {
+    const a = c.getActiveObject();
+    if (!a) return;
+    let first = null;
+    if (a._kind === "textGroup") first = a._textChildren?.base || null;
+    else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
+    else if (isTextObj(a)) first = a;
+    if (first) {
+      setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
+      setFontSize(first.fontSize || 60);
+      setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
+      setIsItalic((first.fontStyle + "" === "italic"));
+      setIsUnderline(!!first.underline);
+      setTextAlign(first.textAlign || "center");
+    }
+  };
+
+  const onSel = () => {
+    const cobj = c.getActiveObject();
+    if (suppressSelectionRef.current) {
+      try { if (cobj?.type === "activeSelection") cobj.discard(); } catch {}
+      try { c.discardActiveObject(); } catch {}
+      try { c.setActiveObject(null); } catch {}
+      try { c._activeObject = null; } catch {}
+      setSelType("none");
+      c.requestRenderAll();
+      return;
+    }
+    setSelType(classify(cobj));
+    reflectTypo();
+  };
+
+  c.on("selection:created", onSel);
+  c.on("selection:updated", onSel);
+  c.on("selection:cleared", () => setSelType("none"));
+
+  // ✅ IMPORTANTE: marcar el diseñador como listo para checkout y correo
+  setReady(true);
+
+  return () => {
+    c.off("mouse:dblclick");
+    c.off("selection:created", onSel);
+    c.off("selection:updated", onSel);
+    c.off("selection:cleared");
+    c.off("object:added", __hist_onAdded);
+    c.off("object:modified", __hist_onModified);
+    c.off("object:removed", __hist_onRemoved);
+    c.off("path:created", __hist_onPath);
+    c.off("object:moving", __bounds_onMove);
+    c.off("object:scaling", __bounds_onScale);
+    c.off("object:rotating", __bounds_onRotate);
+    c.off("object:added", __bounds_onAdded);
+    try { __bounds_ro.disconnect(); } catch {}
+    try { c.dispose(); } catch {}
+    fabricCanvasRef.current = null;
+    // Deja explícito que el diseñador ya no está listo
+    setReady(false);
+  };
+}, [visible]);
+
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
