@@ -353,7 +353,7 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8
     });
 
-    fabricCanvasRef.current = c;:
+    fabricCanvasRef.current = c;
    // === Texto activo en móvil (iOS/Android) ===
 try {
   if (c.upperCanvasEl) {
