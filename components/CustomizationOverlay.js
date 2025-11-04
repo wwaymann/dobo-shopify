@@ -355,15 +355,13 @@ export default function CustomizationOverlay({
     fabricCanvasRef.current = c;
 
     
-    // === Activación de texto en móvil (iOS/Android) ===
-    // Evita que el navegador “robe” el gesto táctil (scroll/zoom) sobre el canvas
-// === Texto activo en móvil (iOS/Android) ===
+ // === Texto activo en móvil (iOS/Android) ===
 try {
-  // 1) Habilita foco en el canvas y evita que el navegador “robe” el gesto
+  // 1) El canvas debe poder recibir foco y no robar gestos (scroll/zoom)
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
     c.upperCanvasEl.style.touchAction = "none";
-    // Asegura foco en el primer toque (iOS necesita foco para abrir teclado)
+    // En el primer toque, enfoca el canvas (iOS necesita foco para abrir teclado)
     c.upperCanvasEl.addEventListener(
       "touchstart",
       () => c.upperCanvasEl && c.upperCanvasEl.focus(),
@@ -371,14 +369,14 @@ try {
     );
   }
 
-  // 2) Aumenta tolerancias de toque para acertar al texto con el dedo
+  // 2) Aumenta tolerancias para acertar al texto con el dedo
   c.perPixelTargetFind = false;
   c.targetFindTolerance = 12;
   if (fabric?.Object?.prototype) {
     fabric.Object.prototype.padding = 8;
   }
 
-  // 3) Entra en edición cuando se toca/selecciona un texto (sin depender de doble-tap)
+  // 3) Forzar edición cuando el objetivo es texto (sin depender de doble-tap)
   const enterEditIfText = (opt) => {
     const t = opt?.target;
     if (!t) return;
@@ -387,6 +385,7 @@ try {
     const isGroupText = t._kind === "textGroup" && typeof startInlineTextEdit === "function";
     if (!isNativeText && !isGroupText) return;
 
+    // Evitar que el gesto se convierta en drag/scroll
     opt.e?.preventDefault?.();
     opt.e?.stopPropagation?.();
 
@@ -398,9 +397,9 @@ try {
 
         c.setActiveObject(t);
         t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
+        t.hiddenTextarea?.focus?.(); // abre el teclado en iOS/Android
       } else {
-        // Grupo de texto personalizado
+        // Grupo de texto propio
         startInlineTextEdit(t);
         c.setActiveObject(t);
       }
@@ -408,15 +407,13 @@ try {
     });
   };
 
-  // Usa mouse:* porque Fabric mapea touch -> mouse en móvil
+  // Usamos mouse:* porque Fabric mapea touch -> mouse en móvil
   c.on("mouse:down", enterEditIfText);
   c.on("mouse:dblclick", enterEditIfText);
   c.on("selection:created", enterEditIfText);
 } catch (err) {
   console.warn("[DOBO] Patch texto móvil:", err);
 }
-
-    });
 
 
     // Delimitar bounds (margen 10 px)
