@@ -337,7 +337,7 @@ export default function CustomizationOverlay({
 
   useEffect(() => {
     const v = typeof zoom === "number" ? zoom : 0.6;
-    stageRef?.current?.style.setProperty("--zoom", String(v));
+ //   stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
   // ====== init Fabric
@@ -354,6 +354,58 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
+    // === Pinch-to-zoom táctil (solo Fabric.js, sin CSS) ===
+(() => {
+  const upper = c.upperCanvasEl;
+  if (!upper) return;
+
+  let pinch = { active: false, dist0: 0, z0: 1 };
+  const ZMIN = 0.4, ZMAX = 2.5;
+
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
+
+  upper.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      pinch.active = true;
+      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+      pinch.z0 = c.getZoom?.() || 1;
+    }
+  }, { passive: true });
+
+  upper.addEventListener("touchmove", (ev) => {
+    if (!pinch.active || ev.touches.length < 2) return;
+    const d = dist(ev.touches[0], ev.touches[1]);
+    let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
+    // punto medio del gesto en coordenadas del canvas
+    const rect = upper.getBoundingClientRect();
+    const mid = {
+      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+    };
+
+    try {
+      if (typeof fabric?.Point === "function" && typeof c.zoomToPoint === "function") {
+        c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      } else {
+        c.setZoom(newZoom);
+      }
+      setZoom?.(newZoom); // actualiza el estado global si existe
+    } catch (err) {
+      console.warn("zoom error", err);
+    }
+
+    c.requestRenderAll();
+    ev.preventDefault();
+  }, { passive: false });
+
+  upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
+})();
+
+    
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
   const c = fabricCanvasRef.current;
