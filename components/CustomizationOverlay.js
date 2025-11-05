@@ -356,7 +356,7 @@ export default function CustomizationOverlay({
 
 
 
-    const bgUrl = "/ruta/a/tu/fondo.png"; // o una URL dinámica desde Shopify o props
+    const bgUrl = ".../public/images/fondo-dobo.jpg"; // o una URL dinámica desde Shopify o props
 fabric.Image.fromURL(bgUrl, (img) => {
   c.setBackgroundImage(
     img,
