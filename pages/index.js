@@ -605,10 +605,6 @@ function Home() {
   const userPickedSizeRef = useRef(false);
   const appliedMetaOnceRef = useRef(false);
 
-  // Dentro de Home, junto a tus otros useState:
-const [designerReady, setDesignerReady] = useState(false);
-
-
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
   const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -662,29 +658,6 @@ const designMetaRef = useRef(null);
     for (const p of parts) if (COLOR_MAP[p]) return COLOR_MAP[p];
     return '#ccc';
   };
-// Espera tolerante a la inicialización del diseñador
-const ensureDesignerReady = async () => {
-  if (designerReady || window.doboDesignAPI?.isReady) return true;
-  console.warn("[DOBO] diseñador no listo; esperando…");
-  for (let i = 0; i < 5; i++) {
-    await new Promise(r => setTimeout(r, 500)); // 2.5s total
-    if (designerReady || window.doboDesignAPI?.isReady) return true;
-  }
-  alert("El diseñador aún no está listo. Intenta nuevamente en unos segundos.");
-  console.warn("[DOBO] designer-not-ready");
-  return false;
-};
-
-// Wrappers que respetan el guard pero usan TU lógica actual
-const addToCartGuarded = async () => {
-  if (!(await ensureDesignerReady())) return;
-  return addToCart();   // ← tu función existente
-};
-
-const buyNowGuarded = async () => {
-  if (!(await ensureDesignerReady())) return;
-  return buyNow();      // ← tu función existente
-};
 
  useEffect(() => {
     if (typeof window !== "undefined" && window.fabric?.Image) {
@@ -1883,22 +1856,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
        
         </div>
 
-{/* Overlay de edición (restaurado) */}
-<CustomizationOverlay
-  mode="both"
-  stageRef={stageRef}
-  anchorRef={potScrollRef}
-  containerRef={sceneWrapRef}
-  docked={false}
-  visible={designerVisible}   // ❌ ESTA VARIABLE NO EXISTE
-  onReadyChange={(state) => setDesignerReady(state)}
-  onDesignerReady={() => setDesignerReady(true)}
-/>
-
-
-
-
-
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
@@ -2038,11 +1997,10 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                   </div>
                 </div>
 
-              <div className="d-flex gap-3">
-  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCartGuarded}>Añadir al carro</button>
-  <button className="btn btn-dark px-4 py-2" onClick={buyNowGuarded}>Comprar ahora</button>
-</div>
-
+                <div className="d-flex gap-3">
+                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
+                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                </div>
               </div>
             </div>
           )}
