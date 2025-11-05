@@ -1890,8 +1890,11 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   anchorRef={potScrollRef}
   containerRef={sceneWrapRef}
   docked={false}
-  onDesignerReady={() => setDesignerReady(true)}
+  visible={designerVisible}
+  onReadyChange={(state) => setDesignerReady(state)}  // ✅ AÑADIDO
+  onDesignerReady={() => setDesignerReady(true)}     // ✅ Opcional, refuerzo
 />
+
 
 
 
