@@ -214,7 +214,7 @@ export default function CustomizationOverlay({
   containerRef,
   docked,
   visible,
-  baseSize,
+//  baseSize,
   onReadyChange,       // ✅ AÑADIDO
   onDesignerReady      // ✅ Ya lo tienes
 }) {
