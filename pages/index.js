@@ -1937,15 +1937,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   visible
   zoom={zoom}
   setZoom={(z) => {
-    const nz = Math.max(0.4, Math.min(2.5, Number(z) || 0.6)); // límites seguros
+    const nz = Math.max(0.4, Math.min(2.5, Number(z) || 1));
     setZoom(nz);
     zoomRef.current = nz;
-    // sincroniza con CSS si usas la variable --zoom
-    try {
-      stageRef.current?.style.setProperty("--zoom", String(nz));
-    } catch {}
+    // ❌ no modifiques más --zoom aquí
   }}
 />
+
 
 
         {/* Panel derecho */}
