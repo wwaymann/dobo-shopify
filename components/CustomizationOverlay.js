@@ -208,13 +208,15 @@ function makeTextGroup(text, opts = {}) {
 }
 
 export default function CustomizationOverlay({
+  mode,
   stageRef,
   anchorRef,
-  visible = true,
-  zoom = 0.6,
-  setZoom,
-  onReadyChange,   // ✅ NUEVO
+  containerRef,
+  docked,
+  onDesignerReady,        // ← AÑADIDO
+  // ...otras props
 }) {
+
 
   // ---- Refs y estado ----
   const canvasRef = useRef(null);
@@ -494,6 +496,11 @@ useEffect(() => {
     window.doboDesignAPI.isReady = true;
     console.log("[DOBO] Designer marked as ready ✅");
     if (typeof onReadyChange === "function") onReadyChange(true);
+
+     if (typeof onDesignerReady === "function") {
+    onDesignerReady();
+  }
+});
   };
 
   // Espera a que el canvas esté completamente inicializado
