@@ -365,28 +365,33 @@ useEffect(() => {
     preserveObjectStacking: true,
     selection: true,
     perPixelTargetFind: true,
-    targetFindTolerance: 8
+    targetFindTolerance: 8,
   });
   fabricCanvasRef.current = c;
 
   let isReady = false;
 
- // --- Asegura notificación al padre una vez que el canvas realmente está renderizado ---
-const notifyReady = () => {
-  if (!isReady) {
-    isReady = true;
-    setReady(true);
-    if (typeof onReadyChange === "function") onReadyChange(true);
-    console.log("[DOBO] Fabric canvas inicializado, diseñador listo ✅");
+  // --- Asegura notificación al padre una vez que el canvas realmente está renderizado ---
+  const notifyReady = () => {
+    if (!isReady) {
+      isReady = true;
+      setReady(true);
+      onReadyChange?.(true);
+      console.log("[DOBO] Fabric canvas inicializado, diseñador listo ✅");
 
-    // 🔐 Registrar estado global para waitDesignerReady()
-    if (typeof window !== "undefined") {
-      window.doboDesignAPI = window.doboDesignAPI || {};
-      window.doboDesignAPI.isReady = true;
-      window.doboDesignAPI.getCanvas = () => fabricCanvasRef.current;
+      // 🔐 Registrar estado global para waitDesignerReady()
+      if (typeof window !== "undefined") {
+        window.doboDesignAPI = window.doboDesignAPI || {};
+        window.doboDesignAPI.isReady = true;
+        window.doboDesignAPI.getCanvas = () => fabricCanvasRef.current;
+      }
+
+      // Notificar también al index.js
+      if (typeof onDesignerReady === "function") {
+        onDesignerReady();
+      }
     }
-  }
-};
+  };
 
   // Inicializa edición de texto, límites, y demás handlers
   const initTextEditing = () => {
@@ -423,7 +428,6 @@ const notifyReady = () => {
       });
     };
 
-    
     // Manejo de taps y doble clic
     let downInfo = null, moved = false, editLockUntil = 0;
     const TAP_MAX_MS = 220, TAP_MAX_MOVE = 6;
@@ -474,20 +478,20 @@ const notifyReady = () => {
   });
 
   // Cleanup
-return () => {
-  try { c.dispose(); } catch {}
-  fabricCanvasRef.current = null;
-  setReady(false);
-  onReadyChange?.(false);
+  return () => {
+    try { c.dispose(); } catch {}
+    fabricCanvasRef.current = null;
+    setReady(false);
+    onReadyChange?.(false);
 
-  if (typeof window !== "undefined" && window.doboDesignAPI) {
-    window.doboDesignAPI.isReady = false;
-    window.doboDesignAPI.getCanvas = undefined;
-  }
-};
+    if (typeof window !== "undefined" && window.doboDesignAPI) {
+      window.doboDesignAPI.isReady = false;
+      window.doboDesignAPI.getCanvas = undefined;
+    }
+  };
+}, [visible]);
 
-
-// === Añadir al final del useEffect de inicialización del canvas ===
+// ✅ Bloque separado: asegura que DOBO se marque como listo globalmente si el render tarda
 useEffect(() => {
   if (typeof window === "undefined") return;
   let timer;
@@ -496,13 +500,10 @@ useEffect(() => {
     window.doboDesignAPI = window.doboDesignAPI || {};
     window.doboDesignAPI.isReady = true;
     console.log("[DOBO] Designer marked as ready ✅");
-    if (typeof onReadyChange === "function") onReadyChange(true);
+    onReadyChange?.(true);
+    onDesignerReady?.();
+  };
 
-     if (typeof onDesignerReady === "function") {
-    onDesignerReady();
-  }
-
-  // Espera a que el canvas esté completamente inicializado
   timer = setTimeout(() => {
     const canvas = window.doboDesignAPI?.getCanvas?.();
     if (canvas) markReady();
@@ -510,20 +511,18 @@ useEffect(() => {
   }, 1000);
 
   return () => clearTimeout(timer);
-}, [onReadyChange]);
+}, [onReadyChange, onDesignerReady]);
 
+// Ajuste de tamaño si cambian baseSize
+useEffect(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  c.setWidth(baseSize.w);
+  c.setHeight(baseSize.h);
+  c.calcOffset?.();
+  c.requestRenderAll?.();
+}, [baseSize.w, baseSize.h]);
 
-
-
-  // Ajuste de tamaño si cambian baseSize
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
 
   // Interactividad segun "editing"
   useEffect(() => {
