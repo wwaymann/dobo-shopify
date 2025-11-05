@@ -672,18 +672,25 @@ const designMetaRef = useRef(null);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
- useEffect(() => {
-  const s = stageRef.current, c = sceneWrapRef.current;
+useEffect(() => {
+  const s = stageRef.current;
+  const c = sceneWrapRef.current;
   if (!s || !c) return;
-  const ps = s.style.touchAction, pc = c.style.touchAction;
 
-  // ✅ permitir scroll vertical y pinch-zoom cuando NO se está editando texto
-  const touchMode = editing ? "none" : "pan-y pinch-zoom";
-  s.style.touchAction = touchMode;
-  c.style.touchAction = touchMode;
+  const prevS = s.style.touchAction;
+  const prevC = c.style.touchAction;
 
-  return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+  // 🔧 Permitir pinch y scroll vertical
+  const action = editing ? "none" : "pan-y pinch-zoom";
+  s.style.touchAction = action;
+  c.style.touchAction = action;
+
+  return () => {
+    s.style.touchAction = prevS;
+    c.style.touchAction = prevC;
+  };
 }, [editing]);
+
 
 
   // en el efecto de montaje inicial
