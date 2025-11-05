@@ -337,7 +337,7 @@ export default function CustomizationOverlay({
 
   useEffect(() => {
     const v = typeof zoom === "number" ? zoom : 0.6;
-    stageRef?.current?.style.setProperty("--zoom", String(v));
+ //   stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
   // ====== init Fabric
@@ -354,6 +354,25 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
+
+
+   fabric.Image.fromURL("/images/fondo-dobo.jpg", (img) => {
+  if (!img) return;
+  c.setBackgroundImage(
+    img,
+    c.renderAll.bind(c),
+    {
+      originX: "center",
+      originY: "center",
+      left: c.getWidth() / 2,
+      top: c.getHeight() / 2,
+      scaleX: c.getWidth() / img.width,
+      scaleY: c.getHeight() / img.height,
+    }
+  );
+});
+
+
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
   const c = fabricCanvasRef.current;
@@ -362,7 +381,7 @@ export default function CustomizationOverlay({
   // 0) Foco y tolerancias táctiles
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+    c.upperCanvasEl.style.touchAction = "pan-y pinch-zoom"; // evita scroll/zoom del navegador sobre el canvas
     c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
   }
   c.perPixelTargetFind = false;
@@ -605,6 +624,107 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
+// === Pinch-to-zoom coherente con fondo y objetos ===
+(() => {
+  const upper = c.upperCanvasEl;
+  if (!upper) return;
+
+  let pinch = { active: false, dist0: 0, z0: 1 };
+  const ZMIN = 0.4, ZMAX = 2.5;
+
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
+
+  upper.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      pinch.active = true;
+      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+      pinch.z0 = c.getZoom?.() || 1;
+    }
+  }, { passive: true });
+
+  upper.addEventListener("touchmove", (ev) => {
+    if (!pinch.active || ev.touches.length < 2) return;
+
+    const d = dist(ev.touches[0], ev.touches[1]);
+    const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
+    const rect = upper.getBoundingClientRect();
+    const mid = {
+      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+    };
+
+    // Zoom al punto central (afecta fondo y objetos)
+    try {
+      c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      setZoom?.(newZoom);
+    } catch {}
+
+    c.requestRenderAll();
+    ev.preventDefault();
+  }, { passive: false });
+
+  upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
+})();
+
+// === Pinch-to-zoom global (canvas + carruseles + fondo) ===
+(() => {
+  // ✅ Verificación robusta: evita ReferenceError si las refs no existen
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
+
+  const host =
+    (typeof containerRef !== "undefined" && containerRef?.current) ||
+    (typeof anchorRef !== "undefined" && anchorRef?.current) ||
+    canvas.upperCanvasEl?.parentElement ||
+    document.body;
+
+  if (!host) return;
+
+  let pinch = { active: false, dist0: 0, z0: 1 };
+  const ZMIN = 0.4, ZMAX = 2.5;
+
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
+
+  host.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      pinch.active = true;
+      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+      pinch.z0 = canvas.getZoom?.() || 1;
+    }
+  }, { passive: true });
+
+  host.addEventListener("touchmove", (ev) => {
+    if (!pinch.active || ev.touches.length < 2) return;
+
+    const d = dist(ev.touches[0], ev.touches[1]);
+    const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
+    const rect = canvas.upperCanvasEl.getBoundingClientRect();
+    const mid = {
+      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+    };
+
+    try {
+      canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      setZoom?.(newZoom);
+    } catch {}
+
+    canvas.requestRenderAll();
+    ev.preventDefault();
+  }, { passive: false });
+
+  host.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
+})();
+
+    
     return () => {
       c.off("mouse:dblclick");
       c.off("selection:created", onSel);
