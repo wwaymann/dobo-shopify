@@ -362,7 +362,7 @@ export default function CustomizationOverlay({
   // 0) Foco y tolerancias táctiles
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+    c.upperCanvasEl.style.touchAction = "pan-y pinch-zoom"; // evita scroll/zoom del navegador sobre el canvas
     c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
   }
   c.perPixelTargetFind = false;
@@ -606,35 +606,60 @@ if (typeof window !== "undefined") {
 }
 
 // === Soporte multitáctil: pinch-zoom y scroll nativo en móviles ===
+// === Pinch-to-zoom con centro estable (Fabric) ===
 (() => {
   const upper = c.upperCanvasEl;
   if (!upper) return;
-  let pinch = { active: false, dist0: 0, zoom0: zoom, last: 0 };
 
-  const dist = (t0, t1) => Math.hypot(
-    t1.clientX - t0.clientX,
-    t1.clientY - t0.clientY
-  );
+  let pinch = { active: false, dist0: 0, z0: (typeof zoom === "number" ? zoom : 1) };
+  let lastTs = 0;
+
+  // límites seguros (coinciden con tu UX)
+  const ZMIN = 0.5, ZMAX = 2.5;
+
+  const dist = (t0, t1) =>
+    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
 
   upper.addEventListener("touchstart", (ev) => {
     if (ev.touches.length === 2) {
-      pinch.active = true;
-      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
-      pinch.zoom0 = zoom;
-      pinch.last = Date.now();
+      pinch.active  = true;
+      pinch.dist0   = dist(ev.touches[0], ev.touches[1]);
+      pinch.z0      = (typeof zoom === "number" ? zoom : 1);
+      lastTs        = ev.timeStamp || Date.now();
     }
   }, { passive: true });
 
   upper.addEventListener("touchmove", (ev) => {
     if (!pinch.active || ev.touches.length < 2) return;
+
     const d = dist(ev.touches[0], ev.touches[1]);
-    const scale = d / pinch.dist0;
-    const newZoom = Math.max(0.4, Math.min(3.0, pinch.zoom0 * scale));
-    if (Date.now() - pinch.last > 40) {
-      pinch.last = Date.now();
-      setZoom?.(newZoom);
-    }
-    ev.preventDefault();
+    const k = d / (pinch.dist0 || d || 1);
+    let z = pinch.z0 * k;
+    z = Math.max(ZMIN, Math.min(ZMAX, z));
+
+    // punto medio del gesto en coordenadas de canvas
+    const m = {
+      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2,
+      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2,
+    };
+    const rect = upper.getBoundingClientRect();
+    const px = m.x - rect.left;
+    const py = m.y - rect.top;
+
+    // aplica zoom suave alrededor del punto medio
+    try {
+      if (typeof c.zoomToPoint === "function" && window.fabric?.Point) {
+        c.zoomToPoint(new window.fabric.Point(px, py), z);
+      } else {
+        c.setZoom(z);
+      }
+    } catch {}
+
+    // actualiza el prop de zoom para que el resto del layout se entere
+    try { setZoom?.(z); } catch {}
+
+    c.requestRenderAll();
+    ev.preventDefault(); // necesitamos controlar el gesto
   }, { passive: false });
 
   upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
