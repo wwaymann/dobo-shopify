@@ -214,7 +214,7 @@ export default function CustomizationOverlay({
   containerRef,
   docked,
   visible,
-//  baseSize,
+ baseSize,
   onReadyChange,       // ✅ AÑADIDO
   onDesignerReady      // ✅ Ya lo tienes
 }) {
@@ -231,7 +231,7 @@ export default function CustomizationOverlay({
   const menuRef = useRef(null);
 
   const [uploadMode, setUploadMode] = useState(null); // "vector" | "rgb"
-  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
+//  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
   const [editing, setEditing] = useState(false);
   const [ready, setReady] = useState(false);
