@@ -674,10 +674,13 @@ const designMetaRef = useRef(null);
     const s = stageRef.current, c = sceneWrapRef.current;
     if (!s || !c) return;
     const ps = s.style.touchAction, pc = c.style.touchAction;
+      const touchMode = editing ? "none" : "pan-y pinch-zoom";
+  s.style.touchAction = touchMode;
+  c.style.touchAction = touchMode;
     s.style.touchAction = editing ? "none" : "pan-y";
     c.style.touchAction = editing ? "none" : "pan-y";
-    return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
-  }, [editing]);
+   return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+}, [editing]);
 
   // en el efecto de montaje inicial
 useEffect(() => {
