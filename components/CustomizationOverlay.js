@@ -605,6 +605,42 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
+// === Soporte multitáctil: pinch-zoom y scroll nativo en móviles ===
+(() => {
+  const upper = c.upperCanvasEl;
+  if (!upper) return;
+  let pinch = { active: false, dist0: 0, zoom0: zoom, last: 0 };
+
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
+
+  upper.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      pinch.active = true;
+      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+      pinch.zoom0 = zoom;
+      pinch.last = Date.now();
+    }
+  }, { passive: true });
+
+  upper.addEventListener("touchmove", (ev) => {
+    if (!pinch.active || ev.touches.length < 2) return;
+    const d = dist(ev.touches[0], ev.touches[1]);
+    const scale = d / pinch.dist0;
+    const newZoom = Math.max(0.4, Math.min(3.0, pinch.zoom0 * scale));
+    if (Date.now() - pinch.last > 40) {
+      pinch.last = Date.now();
+      setZoom?.(newZoom);
+    }
+    ev.preventDefault();
+  }, { passive: false });
+
+  upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
+})();
+
+    
     return () => {
       c.off("mouse:dblclick");
       c.off("selection:created", onSel);
