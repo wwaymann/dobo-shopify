@@ -356,8 +356,8 @@ export default function CustomizationOverlay({
 
 
 
-    const bgUrl = ".../public/images/fondo-dobo.jpg"; // o una URL dinámica desde Shopify o props
-fabric.Image.fromURL(bgUrl, (img) => {
+   fabric.Image.fromURL("/images/fondo-dobo.jpg", (img) => {
+  if (!img) return;
   c.setBackgroundImage(
     img,
     c.renderAll.bind(c),
@@ -371,6 +371,7 @@ fabric.Image.fromURL(bgUrl, (img) => {
     }
   );
 });
+
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
@@ -669,12 +670,17 @@ if (typeof window !== "undefined") {
 
 // === Pinch-to-zoom global (canvas + carruseles + fondo) ===
 (() => {
-const host = (props?.containerRef?.current) || (props?.anchorRef?.current) || document.body;
+  // ✅ Usar directamente las referencias del componente
+  const host =
+    (containerRef && containerRef.current) ||
+    (anchorRef && anchorRef.current) ||
+    document.body;
 
   if (!host) return;
 
   let pinch = { active: false, dist0: 0, z0: 1 };
   const ZMIN = 0.4, ZMAX = 2.5;
+
   const dist = (t0, t1) => Math.hypot(
     t1.clientX - t0.clientX,
     t1.clientY - t0.clientY
@@ -690,11 +696,13 @@ const host = (props?.containerRef?.current) || (props?.anchorRef?.current) || do
 
   host.addEventListener("touchmove", (ev) => {
     if (!pinch.active || ev.touches.length < 2) return;
+
     const d = dist(ev.touches[0], ev.touches[1]);
     let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
 
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
+
     const rect = canvas.upperCanvasEl.getBoundingClientRect();
     const mid = {
       x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
