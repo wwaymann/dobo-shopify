@@ -478,7 +478,8 @@ return () => {
   try { c.dispose(); } catch {}
   fabricCanvasRef.current = null;
   setReady(false);
-  if (typeof onReadyChange === "function") onReadyChange(false);
+  onReadyChange?.(false);
+
   if (typeof window !== "undefined" && window.doboDesignAPI) {
     window.doboDesignAPI.isReady = false;
     window.doboDesignAPI.getCanvas = undefined;
@@ -500,8 +501,6 @@ useEffect(() => {
      if (typeof onDesignerReady === "function") {
     onDesignerReady();
   }
-});
-  };
 
   // Espera a que el canvas esté completamente inicializado
   timer = setTimeout(() => {
