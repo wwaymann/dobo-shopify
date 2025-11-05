@@ -421,6 +421,7 @@ const notifyReady = () => {
       });
     };
 
+    
     // Manejo de taps y doble clic
     let downInfo = null, moved = false, editLockUntil = 0;
     const TAP_MAX_MS = 220, TAP_MAX_MOVE = 6;
@@ -1310,4 +1311,4 @@ const addImageFromFile = (file, mode) => {
       ) : null}
     </>
   );
-
+}
