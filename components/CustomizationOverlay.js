@@ -584,14 +584,9 @@ export default function CustomizationOverlay({
     
 // === DOBO: exponer API global para correo y checkout ===
 if (typeof window !== "undefined") {
-  const api = {
-    toPNG: (mult = 1.5) =>
-  c.toDataURL({
-    format: "png",
-    multiplier: mult, // antes 3 o más
-    quality: 0.8,
-    backgroundColor: "transparent"
-  }),
+ const api = {
+    // existentes
+    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
 
     toSVG: () => c.toSVG({ suppressPreamble: true }),
     getCanvas: () => c,
