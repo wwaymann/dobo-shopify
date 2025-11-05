@@ -649,7 +649,7 @@ if (typeof window !== "undefined") {
     if (!pinch.active || ev.touches.length < 2) return;
 
     const d = dist(ev.touches[0], ev.touches[1]);
-    let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+    const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
 
     const rect = upper.getBoundingClientRect();
     const mid = {
@@ -658,10 +658,12 @@ if (typeof window !== "undefined") {
     };
 
     // Zoom al punto central (afecta fondo y objetos)
-    c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-    c.requestRenderAll();
+    try {
+      c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      setZoom?.(newZoom);
+    } catch {}
 
-    setZoom?.(newZoom);
+    c.requestRenderAll();
     ev.preventDefault();
   }, { passive: false });
 
@@ -670,10 +672,14 @@ if (typeof window !== "undefined") {
 
 // === Pinch-to-zoom global (canvas + carruseles + fondo) ===
 (() => {
-  // ✅ Usar directamente las referencias del componente
+  // ✅ Verificación robusta: evita ReferenceError si las refs no existen
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
+
   const host =
-    (containerRef && containerRef.current) ||
-    (anchorRef && anchorRef.current) ||
+    (typeof containerRef !== "undefined" && containerRef?.current) ||
+    (typeof anchorRef !== "undefined" && anchorRef?.current) ||
+    canvas.upperCanvasEl?.parentElement ||
     document.body;
 
   if (!host) return;
@@ -690,7 +696,7 @@ if (typeof window !== "undefined") {
     if (ev.touches.length === 2) {
       pinch.active = true;
       pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
-      pinch.z0 = fabricCanvasRef.current?.getZoom?.() || 1;
+      pinch.z0 = canvas.getZoom?.() || 1;
     }
   }, { passive: true });
 
@@ -698,10 +704,7 @@ if (typeof window !== "undefined") {
     if (!pinch.active || ev.touches.length < 2) return;
 
     const d = dist(ev.touches[0], ev.touches[1]);
-    let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
-
-    const canvas = fabricCanvasRef.current;
-    if (!canvas) return;
+    const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
 
     const rect = canvas.upperCanvasEl.getBoundingClientRect();
     const mid = {
