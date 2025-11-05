@@ -1936,13 +1936,9 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   docked={false}
   visible
   zoom={zoom}
-  setZoom={(z) => {
-    const nz = Math.max(0.4, Math.min(2.5, Number(z) || 1));
-    setZoom(nz);
-    zoomRef.current = nz;
-    // ❌ no modifiques más --zoom aquí
-  }}
+  setZoom={setZoom}
 />
+
 
 
 
