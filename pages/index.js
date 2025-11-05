@@ -604,7 +604,8 @@ function Home() {
   const restoredOnceRef = useRef(false);                // <— NUEVO
   const userPickedSizeRef = useRef(false);
   const appliedMetaOnceRef = useRef(false);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.6);
+  
 
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -1936,7 +1937,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   visible
   zoom={zoom}
   setZoom={(z) => {
-    const nz = Math.max(0.5, Math.min(2.5, Number(z) || 1));
+    const nz = Math.max(0.4, Math.min(2.5, Number(z) || 0.6)); // límites seguros
     setZoom(nz);
     zoomRef.current = nz;
     // sincroniza con CSS si usas la variable --zoom
