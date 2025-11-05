@@ -1250,6 +1250,70 @@ const getAccessoryVariantIds = () =>
     .filter((id) => /^\d+$/.test(id));
 
 
+// === DOBO Cloudinary Upload + Checkout seguro ===
+const handleCheckout = async (mode = "checkout") => {
+  try {
+    const api = window.doboDesignAPI;
+    if (!api || !api.toPNG) {
+      alert("El diseñador no está listo. Intenta de nuevo en unos segundos.");
+      return;
+    }
+
+    // Genera el PNG comprimido
+    const dataUrl = api.toPNG(1.8); // menor multiplicador = imagen más liviana
+    const blob = await (await fetch(dataUrl)).blob();
+
+    // Prepara datos para subir a Cloudinary
+    const formData = new FormData();
+    formData.append("file", blob);
+    formData.append("upload_preset", "dobo_uploads"); // tu preset configurado en Cloudinary
+
+    // 🔹 Sube el archivo
+    const uploadResponse = await fetch(
+      "https://api.cloudinary.com/v1_1/dmebjfbwd/image/upload", // cambia por tu cloud name si difiere
+      { method: "POST", body: formData }
+    );
+    const uploadData = await uploadResponse.json();
+
+    if (!uploadData.secure_url) {
+      console.error("Error al subir imagen:", uploadData);
+      alert("No se pudo subir la imagen del diseño. Intenta de nuevo.");
+      return;
+    }
+
+    console.log("[DOBO] Imagen subida correctamente:", uploadData.secure_url);
+
+    // 🔹 Envía al backend para generar checkout y correo
+    const res = await fetch("/api/createCheckout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        designUrl: uploadData.secure_url, // <-- ya no se manda el base64 pesado
+        mode,
+        ...selectedProductData, // tus datos actuales de producto
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("Error en checkout:", text);
+      alert("No se pudo iniciar el checkout. Revisa la consola para más detalles.");
+      return;
+    }
+
+    const data = await res.json();
+
+    if (data.url) {
+      window.location.href = data.url; // redirige al checkout de Shopify
+    } else {
+      console.warn("No se recibió URL de checkout:", data);
+      alert("No se pudo iniciar el checkout correctamente.");
+    }
+  } catch (err) {
+    console.error("[DOBO] Error general en handleCheckout:", err);
+    alert("Hubo un error inesperado al procesar tu compra.");
+  }
+};
 
 
 // —————————————————————————————————————————————
