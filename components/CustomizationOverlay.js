@@ -667,6 +667,50 @@ if (typeof window !== "undefined") {
   upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
 })();
 
+// === Pinch-to-zoom global (canvas + carruseles + fondo) ===
+(() => {
+  const host = containerRef?.current || anchorRef?.current || document.body;
+  if (!host) return;
+
+  let pinch = { active: false, dist0: 0, z0: 1 };
+  const ZMIN = 0.4, ZMAX = 2.5;
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
+
+  host.addEventListener("touchstart", (ev) => {
+    if (ev.touches.length === 2) {
+      pinch.active = true;
+      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+      pinch.z0 = fabricCanvasRef.current?.getZoom?.() || 1;
+    }
+  }, { passive: true });
+
+  host.addEventListener("touchmove", (ev) => {
+    if (!pinch.active || ev.touches.length < 2) return;
+    const d = dist(ev.touches[0], ev.touches[1]);
+    let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.upperCanvasEl.getBoundingClientRect();
+    const mid = {
+      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+    };
+
+    try {
+      canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      setZoom?.(newZoom);
+    } catch {}
+
+    canvas.requestRenderAll();
+    ev.preventDefault();
+  }, { passive: false });
+
+  host.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
+})();
 
     
     return () => {
