@@ -624,15 +624,19 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
-// === Pinch-to-zoom táctil, fondo y objetos ===
+// === Pinch-to-zoom coherente con fondo y objetos ===
 (() => {
   const upper = c.upperCanvasEl;
   if (!upper) return;
+
   let pinch = { active: false, dist0: 0, z0: 1 };
   const ZMIN = 0.4, ZMAX = 2.5;
-  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
 
-  upper.addEventListener("touchstart", ev => {
+  upper.addEventListener("touchstart", (ev) => {
     if (ev.touches.length === 2) {
       pinch.active = true;
       pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
@@ -640,15 +644,18 @@ if (typeof window !== "undefined") {
     }
   }, { passive: true });
 
-  upper.addEventListener("touchmove", ev => {
+  upper.addEventListener("touchmove", (ev) => {
     if (!pinch.active || ev.touches.length < 2) return;
+
     const d = dist(ev.touches[0], ev.touches[1]);
     const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
     const rect = upper.getBoundingClientRect();
     const mid = {
       x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
       y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
     };
+
     c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
     setZoom?.(newZoom);
     c.requestRenderAll();
@@ -658,20 +665,25 @@ if (typeof window !== "undefined") {
   upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
 })();
 
-// === Pinch-to-zoom global (canvas + carruseles + fondo) ===
+// === Pinch-to-zoom extendido (canvas + carruseles + fondo) ===
 (() => {
+  // 🔧 tomamos el nodo padre real del canvas, o el body como fallback
   const canvas = fabricCanvasRef?.current || c;
-  if (!canvas) return;
+  const host =
+    canvas?.upperCanvasEl?.closest(".fabric-container") ||
+    canvas?.upperCanvasEl?.parentElement ||
+    document.body;
 
-  // se usa el padre del canvas como área sensible
-  const host = canvas.upperCanvasEl?.parentElement || document.body;
   if (!host) return;
 
   let pinch = { active: false, dist0: 0, z0: 1 };
   const ZMIN = 0.4, ZMAX = 2.5;
-  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
 
-  host.addEventListener("touchstart", ev => {
+  host.addEventListener("touchstart", (ev) => {
     if (ev.touches.length === 2) {
       pinch.active = true;
       pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
@@ -679,18 +691,24 @@ if (typeof window !== "undefined") {
     }
   }, { passive: true });
 
-  host.addEventListener("touchmove", ev => {
+  host.addEventListener("touchmove", (ev) => {
     if (!pinch.active || ev.touches.length < 2) return;
+
     const d = dist(ev.touches[0], ev.touches[1]);
     const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
     const rect = canvas.upperCanvasEl.getBoundingClientRect();
     const mid = {
       x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
       y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
     };
-    canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-    setZoom?.(newZoom);
-    canvas.requestRenderAll();
+
+    try {
+      canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      setZoom?.(newZoom);
+      canvas.requestRenderAll();
+    } catch {}
+
     ev.preventDefault();
   }, { passive: false });
 
