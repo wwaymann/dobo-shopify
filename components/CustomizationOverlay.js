@@ -354,58 +354,24 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-    // === Pinch-to-zoom táctil (solo Fabric.js, sin CSS) ===
-(() => {
-  const upper = c.upperCanvasEl;
-  if (!upper) return;
 
-  let pinch = { active: false, dist0: 0, z0: 1 };
-  const ZMIN = 0.4, ZMAX = 2.5;
 
-  const dist = (t0, t1) => Math.hypot(
-    t1.clientX - t0.clientX,
-    t1.clientY - t0.clientY
+    const bgUrl = "/ruta/a/tu/fondo.png"; // o una URL dinámica desde Shopify o props
+fabric.Image.fromURL(bgUrl, (img) => {
+  c.setBackgroundImage(
+    img,
+    c.renderAll.bind(c),
+    {
+      originX: "center",
+      originY: "center",
+      left: c.getWidth() / 2,
+      top: c.getHeight() / 2,
+      scaleX: c.getWidth() / img.width,
+      scaleY: c.getHeight() / img.height,
+    }
   );
+});
 
-  upper.addEventListener("touchstart", (ev) => {
-    if (ev.touches.length === 2) {
-      pinch.active = true;
-      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
-      pinch.z0 = c.getZoom?.() || 1;
-    }
-  }, { passive: true });
-
-  upper.addEventListener("touchmove", (ev) => {
-    if (!pinch.active || ev.touches.length < 2) return;
-    const d = dist(ev.touches[0], ev.touches[1]);
-    let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
-
-    // punto medio del gesto en coordenadas del canvas
-    const rect = upper.getBoundingClientRect();
-    const mid = {
-      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
-      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
-    };
-
-    try {
-      if (typeof fabric?.Point === "function" && typeof c.zoomToPoint === "function") {
-        c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-      } else {
-        c.setZoom(newZoom);
-      }
-      setZoom?.(newZoom); // actualiza el estado global si existe
-    } catch (err) {
-      console.warn("zoom error", err);
-    }
-
-    c.requestRenderAll();
-    ev.preventDefault();
-  }, { passive: false });
-
-  upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
-})();
-
-    
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
   const c = fabricCanvasRef.current;
@@ -657,27 +623,24 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
-// === Soporte multitáctil: pinch-zoom y scroll nativo en móviles ===
-// === Pinch-to-zoom con centro estable (Fabric) ===
+// === Pinch-to-zoom coherente con fondo y objetos ===
 (() => {
   const upper = c.upperCanvasEl;
   if (!upper) return;
 
-  let pinch = { active: false, dist0: 0, z0: (typeof zoom === "number" ? zoom : 1) };
-  let lastTs = 0;
+  let pinch = { active: false, dist0: 0, z0: 1 };
+  const ZMIN = 0.4, ZMAX = 2.5;
 
-  // límites seguros (coinciden con tu UX)
-  const ZMIN = 0.5, ZMAX = 2.5;
-
-  const dist = (t0, t1) =>
-    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  const dist = (t0, t1) => Math.hypot(
+    t1.clientX - t0.clientX,
+    t1.clientY - t0.clientY
+  );
 
   upper.addEventListener("touchstart", (ev) => {
     if (ev.touches.length === 2) {
-      pinch.active  = true;
-      pinch.dist0   = dist(ev.touches[0], ev.touches[1]);
-      pinch.z0      = (typeof zoom === "number" ? zoom : 1);
-      lastTs        = ev.timeStamp || Date.now();
+      pinch.active = true;
+      pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+      pinch.z0 = c.getZoom?.() || 1;
     }
   }, { passive: true });
 
@@ -685,37 +648,25 @@ if (typeof window !== "undefined") {
     if (!pinch.active || ev.touches.length < 2) return;
 
     const d = dist(ev.touches[0], ev.touches[1]);
-    const k = d / (pinch.dist0 || d || 1);
-    let z = pinch.z0 * k;
-    z = Math.max(ZMIN, Math.min(ZMAX, z));
+    let newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
 
-    // punto medio del gesto en coordenadas de canvas
-    const m = {
-      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2,
-      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2,
-    };
     const rect = upper.getBoundingClientRect();
-    const px = m.x - rect.left;
-    const py = m.y - rect.top;
+    const mid = {
+      x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+      y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+    };
 
-    // aplica zoom suave alrededor del punto medio
-    try {
-      if (typeof c.zoomToPoint === "function" && window.fabric?.Point) {
-        c.zoomToPoint(new window.fabric.Point(px, py), z);
-      } else {
-        c.setZoom(z);
-      }
-    } catch {}
-
-    // actualiza el prop de zoom para que el resto del layout se entere
-    try { setZoom?.(z); } catch {}
-
+    // Zoom al punto central (afecta fondo y objetos)
+    c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
     c.requestRenderAll();
-    ev.preventDefault(); // necesitamos controlar el gesto
+
+    setZoom?.(newZoom);
+    ev.preventDefault();
   }, { passive: false });
 
   upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
 })();
+
 
     
     return () => {
