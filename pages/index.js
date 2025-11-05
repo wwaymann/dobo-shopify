@@ -604,6 +604,7 @@ function Home() {
   const restoredOnceRef = useRef(false);                // <— NUEVO
   const userPickedSizeRef = useRef(false);
   const appliedMetaOnceRef = useRef(false);
+  const [zoom, setZoom] = useState(1);
 
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -670,17 +671,19 @@ const designMetaRef = useRef(null);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
-  useEffect(() => {
-    const s = stageRef.current, c = sceneWrapRef.current;
-    if (!s || !c) return;
-    const ps = s.style.touchAction, pc = c.style.touchAction;
-      const touchMode = editing ? "none" : "pan-y pinch-zoom";
+ useEffect(() => {
+  const s = stageRef.current, c = sceneWrapRef.current;
+  if (!s || !c) return;
+  const ps = s.style.touchAction, pc = c.style.touchAction;
+
+  // ✅ permitir scroll vertical y pinch-zoom cuando NO se está editando texto
+  const touchMode = editing ? "none" : "pan-y pinch-zoom";
   s.style.touchAction = touchMode;
   c.style.touchAction = touchMode;
-    s.style.touchAction = editing ? "none" : "pan-y";
-    c.style.touchAction = editing ? "none" : "pan-y";
-   return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+
+  return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
 }, [editing]);
+
 
   // en el efecto de montaje inicial
 useEffect(() => {
@@ -1923,8 +1926,26 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
        
         </div>
 
-        {/* Overlay de edición (restaurado) */}
-        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+      {/* Overlay de edición (restaurado y con zoom funcional) */}
+<CustomizationOverlay
+  mode="both"
+  stageRef={stageRef}
+  anchorRef={potScrollRef}
+  containerRef={sceneWrapRef}
+  docked={false}
+  visible
+  zoom={zoom}
+  setZoom={(z) => {
+    const nz = Math.max(0.5, Math.min(2.5, Number(z) || 1));
+    setZoom(nz);
+    zoomRef.current = nz;
+    // sincroniza con CSS si usas la variable --zoom
+    try {
+      stageRef.current?.style.setProperty("--zoom", String(nz));
+    } catch {}
+  }}
+/>
+
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
