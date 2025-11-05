@@ -1718,21 +1718,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 }, []);
 // === /DOBO loader ===
 
-const ensureDesignerReady = async () => {
-  // si ya está listo por estado local o por API global, ok
-  if (designerReady || window.doboDesignAPI?.isReady) return true;
-
-  console.warn("[DOBO] diseñador no listo; esperando…");
-  // espera tolerante (2.5 s) por retardos de montaje
-  for (let i = 0; i < 5; i++) {
-    await new Promise(r => setTimeout(r, 500));
-    if (designerReady || window.doboDesignAPI?.isReady) return true;
-  }
-
-  alert("El diseñador aún no está listo. Espera un momento e inténtalo nuevamente.");
-  console.warn("[DOBO] designer-not-ready");
-  return false;
-};
 
   
   return (
