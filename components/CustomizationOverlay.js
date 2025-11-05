@@ -669,7 +669,8 @@ if (typeof window !== "undefined") {
 
 // === Pinch-to-zoom global (canvas + carruseles + fondo) ===
 (() => {
-  const host = containerRef?.current || anchorRef?.current || document.body;
+const host = (props?.containerRef?.current) || (props?.anchorRef?.current) || document.body;
+
   if (!host) return;
 
   let pinch = { active: false, dist0: 0, z0: 1 };
