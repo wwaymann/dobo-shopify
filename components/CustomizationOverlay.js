@@ -369,18 +369,22 @@ useEffect(() => {
 
   let isReady = false;
 
-  // --- Asegura notificación al padre una vez que el canvas realmente está renderizado ---
-  const notifyReady = () => {
-    if (!isReady) {
-      isReady = true;
-      setReady(true);
-      if (typeof onReadyChange === "function") onReadyChange(true);
- console.log("[DOBO] Fabric canvas inicializado, diseñador listo");
-setReady(true);
-if (typeof onReadyChange === "function") onReadyChange(true);
+ // --- Asegura notificación al padre una vez que el canvas realmente está renderizado ---
+const notifyReady = () => {
+  if (!isReady) {
+    isReady = true;
+    setReady(true);
+    if (typeof onReadyChange === "function") onReadyChange(true);
+    console.log("[DOBO] Fabric canvas inicializado, diseñador listo ✅");
 
+    // 🔐 Registrar estado global para waitDesignerReady()
+    if (typeof window !== "undefined") {
+      window.doboDesignAPI = window.doboDesignAPI || {};
+      window.doboDesignAPI.isReady = true;
+      window.doboDesignAPI.getCanvas = () => fabricCanvasRef.current;
     }
-  };
+  }
+};
 
   // Inicializa edición de texto, límites, y demás handlers
   const initTextEditing = () => {
@@ -472,8 +476,12 @@ return () => {
   fabricCanvasRef.current = null;
   setReady(false);
   if (typeof onReadyChange === "function") onReadyChange(false);
+  if (typeof window !== "undefined" && window.doboDesignAPI) {
+    window.doboDesignAPI.isReady = false;
+    window.doboDesignAPI.getCanvas = undefined;
+  }
 };
-}, [visible]);
+
 
 // === Añadir al final del useEffect de inicialización del canvas ===
 useEffect(() => {
