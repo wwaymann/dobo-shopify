@@ -1310,4 +1310,4 @@ const addImageFromFile = (file, mode) => {
       ) : null}
     </>
   );
-}
+
