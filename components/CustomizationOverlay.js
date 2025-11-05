@@ -213,9 +213,12 @@ export default function CustomizationOverlay({
   anchorRef,
   containerRef,
   docked,
-  onDesignerReady,        // ← AÑADIDO
-  // ...otras props
+  visible,
+  baseSize,
+  onReadyChange,       // ✅ AÑADIDO
+  onDesignerReady      // ✅ Ya lo tienes
 }) {
+
 
 
   // ---- Refs y estado ----
