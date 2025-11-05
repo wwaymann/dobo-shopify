@@ -1890,8 +1890,9 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   anchorRef={potScrollRef}
   containerRef={sceneWrapRef}
   docked={false}
-  onReadyChange={setDesignerReady}   // ← clave
+  onDesignerReady={() => setDesignerReady(true)}
 />
+
 
 
 
