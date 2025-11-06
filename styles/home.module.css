@@ -189,3 +189,8 @@
 @media (min-width: 577px) and (max-width: 768px){
   .sceneScalerInner{ transform: scale(0.92); transform-origin: top center; }
 }
+/* === Permitir eventos táctiles a través del canvas === */
+.fabric-container canvas.upper-canvas {
+  touch-action: none;   /* evita zoom nativo del navegador */
+  pointer-events: none; /* deja pasar los eventos táctiles al fondo */
+}
