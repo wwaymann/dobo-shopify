@@ -624,6 +624,49 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
+// === Zoom global del layout completo ===
+(() => {
+  let pinch = { active: false, dist0: 0, z0: 1 };
+  const ZMIN = 0.5, ZMAX = 2.0;
+  const dist = (t0, t1) =>
+    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+
+  document.addEventListener(
+    "touchstart",
+    (ev) => {
+      if (ev.touches.length === 2) {
+        pinch.active = true;
+        pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
+        pinch.z0 = parseFloat(
+          document.body.dataset.zoom || getComputedStyle(document.body).getPropertyValue("--global-zoom") || 1
+        );
+      }
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "touchmove",
+    (ev) => {
+      if (!pinch.active || ev.touches.length < 2) return;
+      const d = dist(ev.touches[0], ev.touches[1]);
+      const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+
+      document.body.style.transformOrigin = "center center";
+      document.body.style.transform = `scale(${newZoom})`;
+      document.body.dataset.zoom = newZoom;
+
+      ev.preventDefault();
+    },
+    { passive: false }
+  );
+
+  document.addEventListener("touchend", () => {
+    pinch.active = false;
+  });
+})();
+
+    
 // === Pinch-to-zoom unificado (canvas + carruseles + fondo) ===
 (() => {
   const canvas = fabricCanvasRef?.current || c;
