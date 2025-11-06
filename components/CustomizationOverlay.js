@@ -385,13 +385,13 @@ upper.style.touchAction = "pan-y pinch-zoom"; // deja pasar scroll vertical y pi
     return null;
   };
 
-  // 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
-  const host = (overlayRef?.current) ||
+ // 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
 const host =
   (document.querySelector("[data-stage-root]")) ||
   (stageRef?.current) ||
   (anchorRef?.current) ||
   (overlayRef?.current) ||
+  (upper.parentElement) ||
   document.body;
 
 
