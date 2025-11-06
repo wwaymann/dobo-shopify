@@ -353,8 +353,8 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8
     });
     fabricCanvasRef.current = c;
-// === Ajuste de interacción táctil ===
-// === Ajuste de interacción táctil ===
+    
+// === Interacción móvil unificada (scroll + pinch fuera/dentro del canvas) ===
 (() => {
   const canvas = fabricCanvasRef?.current || c;
   if (!canvas) return;
@@ -362,36 +362,106 @@ export default function CustomizationOverlay({
   const upper = canvas.upperCanvasEl;
   if (!upper) return;
 
-  // 🔹 Paso 1 — permitir scroll y gestos fuera del canvas
-  // Esto deja pasar los eventos táctiles al fondo cuando no se está manipulando objetos
-  upper.style.pointerEvents = "none";
-  upper.style.touchAction = "auto";
+  // 1) Por defecto: deja pasar scroll vertical a los carruseles
+  //    y evita gestos nativos del navegador sobre el canvas.
+  upper.style.pointerEvents = "none"; // no bloquea el scroll abajo
+  upper.style.touchAction = "none";   // sin zoom nativo del browser
 
-  // 🔹 Paso 2 — reenviar gestos de pinza (pinch) al canvas si ocurren fuera
-  const forwardTouchEvent = (ev) => {
-    // Evita interferir con scroll vertical de un solo dedo
-    if (ev.touches.length < 2) return;
-
-    const cloned = new TouchEvent(ev.type, {
-      touches: ev.touches,
-      targetTouches: ev.targetTouches,
-      changedTouches: ev.changedTouches,
-      bubbles: true,
-      cancelable: true,
-    });
-    upper.dispatchEvent(cloned);
+  // 2) Detección de “hay objeto debajo del dedo” para habilitar manipulación 1-dedo
+  const hitObjectAt = (clientX, clientY) => {
+    const rect = upper.getBoundingClientRect();
+    const e = { clientX, clientY };
+    const pt = canvas.getPointer(e, true); // coords en canvas
+    // Chequeo simple con containsPoint (suficiente para texto/imagen)
+    const objs = canvas.getObjects() || [];
+    for (let i = objs.length - 1; i >= 0; i--) {
+      const o = objs[i];
+      if (!o || o.excludeFromExport) continue;
+      if (o.selectable !== false && typeof o.containsPoint === "function") {
+        if (o.containsPoint(pt)) return o;
+      }
+    }
+    return null;
   };
 
-  ["touchstart", "touchmove", "touchend"].forEach((type) => {
-    document.addEventListener(type, forwardTouchEvent, { passive: false });
-  });
+  // 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
+  const host = (overlayRef?.current) ||
+               (upper.parentElement) ||
+               document.body;
 
-  // 🔹 Limpieza
-  return () => {
-    ["touchstart", "touchmove", "touchend"].forEach((type) => {
-      document.removeEventListener(type, forwardTouchEvent);
-    });
+  // Estado pinch
+  const PINCH = { active: false, d0: 0, z0: 1 };
+  const ZMIN = 0.4, ZMAX = 2.5;
+  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+
+  // 4) Un dedo: si hay objeto → damos control a Fabric (pointerEvents=auto).
+  //    Si no hay objeto → mantenemos pointerEvents=none y el scroll pasa al DOM.
+  const onTouchStart = (ev) => {
+    if (ev.touches.length === 1) {
+      const t = ev.touches[0];
+      const o = hitObjectAt(t.clientX, t.clientY);
+      if (o) {
+        // Habilitar interacción puntual con el canvas mientras dura el gesto
+        upper.style.pointerEvents = "auto";
+      } else {
+        upper.style.pointerEvents = "none";
+      }
+      return; // no hacemos preventDefault: que el scroll siga libre si no hay objeto
+    }
+
+    if (ev.touches.length === 2) {
+      PINCH.active = true;
+      PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
+      PINCH.z0 = canvas.getZoom?.() || 1;
+    }
   };
+
+  const onTouchMove = (ev) => {
+    if (PINCH.active && ev.touches.length === 2) {
+      const d = dist(ev.touches[0], ev.touches[1]);
+      const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
+
+      const rect = upper.getBoundingClientRect();
+      const mid = {
+        x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+        y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+      };
+
+      try {
+        canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+        setZoom?.(newZoom);
+        canvas.requestRenderAll();
+      } catch {}
+
+      // bloquea el pinch nativo y el “rebote”
+      ev.preventDefault();
+      return;
+    }
+    // Un dedo: no intervenimos → si upper tiene pointerEvents=none, el DOM hace scroll;
+    // si es auto (porque había objeto), Fabric recibe el drag.
+  };
+
+  const onTouchEnd = () => {
+    // Al terminar gesto, devolvemos el canvas a “no bloquear” el scroll
+    upper.style.pointerEvents = "none";
+    PINCH.active = false;
+  };
+
+  host.addEventListener("touchstart", onTouchStart, { passive: true });
+  host.addEventListener("touchmove", onTouchMove, { passive: false });
+  host.addEventListener("touchend", onTouchEnd, { passive: true });
+  host.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+  // Limpieza
+  const cleanup = () => {
+    host.removeEventListener("touchstart", onTouchStart);
+    host.removeEventListener("touchmove", onTouchMove);
+    host.removeEventListener("touchend", onTouchEnd);
+    host.removeEventListener("touchcancel", onTouchEnd);
+  };
+  // Guardamos cleanup para que el return del useEffect padre lo llame si quieres.
+  try { (canvas.__dobo_touch_cleanup = cleanup); } catch {}
+
 })();
 
 
