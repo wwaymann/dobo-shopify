@@ -624,49 +624,47 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
-// === Zoom global del layout completo ===
+
+    // === Delegar eventos táctiles externos al canvas ===
 (() => {
-  let pinch = { active: false, dist0: 0, z0: 1 };
-  const ZMIN = 0.5, ZMAX = 2.0;
-  const dist = (t0, t1) =>
-    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
 
-  document.addEventListener(
-    "touchstart",
-    (ev) => {
-      if (ev.touches.length === 2) {
-        pinch.active = true;
-        pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
-        pinch.z0 = parseFloat(
-          document.body.dataset.zoom || getComputedStyle(document.body).getPropertyValue("--global-zoom") || 1
-        );
-      }
-    },
-    { passive: true }
-  );
+  const upper = canvas.upperCanvasEl;
+  if (!upper) return;
 
-  document.addEventListener(
-    "touchmove",
-    (ev) => {
-      if (!pinch.active || ev.touches.length < 2) return;
-      const d = dist(ev.touches[0], ev.touches[1]);
-      const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
+  // función para reenviar los toques al canvas
+  const forwardTouchEvent = (ev) => {
+    // ignorar si el toque ya está dentro del canvas
+    const rect = upper.getBoundingClientRect();
+    const x = ev.touches[0]?.clientX;
+    const y = ev.touches[0]?.clientY;
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return;
 
-      document.body.style.transformOrigin = "center center";
-      document.body.style.transform = `scale(${newZoom})`;
-      document.body.dataset.zoom = newZoom;
+    // clonar evento y despacharlo sobre el canvas
+    const cloned = new TouchEvent(ev.type, {
+      touches: ev.touches,
+      targetTouches: ev.targetTouches,
+      changedTouches: ev.changedTouches,
+      bubbles: true,
+      cancelable: true,
+    });
+    upper.dispatchEvent(cloned);
+  };
 
-      ev.preventDefault();
-    },
-    { passive: false }
-  );
-
-  document.addEventListener("touchend", () => {
-    pinch.active = false;
+  // escuchar los gestos a nivel documento
+  ["touchstart", "touchmove", "touchend"].forEach((type) => {
+    document.addEventListener(type, forwardTouchEvent, { passive: false });
   });
+
+  // limpieza al desmontar
+  return () => {
+    ["touchstart", "touchmove", "touchend"].forEach((type) => {
+      document.removeEventListener(type, forwardTouchEvent);
+    });
+  };
 })();
 
-    
 // === Pinch-to-zoom unificado (canvas + carruseles + fondo) ===
 (() => {
   const canvas = fabricCanvasRef?.current || c;
