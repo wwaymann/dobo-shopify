@@ -353,6 +353,120 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8
     });
     fabricCanvasRef.current = c;
+
+    // === Interacción móvil: SIN pinch nativo, scroll libre y selección correcta ===
+(() => {
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
+
+  const upper = canvas.upperCanvasEl;
+  if (!upper) return;
+
+  // 1) Por defecto, deja pasar el scroll vertical y desactiva pinch nativo del browser
+  upper.style.pointerEvents = "none";    // no bloquea scroll si tocas zona sin objetos
+  upper.style.touchAction = "none";      // prevenimos pinch nativo sobre el canvas
+
+  // El contenedor donde escuchamos gestos globales (carruseles + fondo)
+  const host =
+    document.querySelector("[data-stage-root]") ||
+    stageRef?.current ||
+    anchorRef?.current ||
+    overlayRef?.current ||
+    upper.parentElement ||
+    document.body;
+
+  // Muy importante: el host NO debe hacer pinch nativo del DOM
+  if (host && host.style) host.style.touchAction = "pan-y";
+
+  // == Utilidades ==
+  const ZMIN = 0.4, ZMAX = 2.5;
+  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+
+  // Detección de objeto bajo el dedo (para habilitar selección/drag por 1 dedo)
+  const hitObjectAt = (clientX, clientY) => {
+    const rect = upper.getBoundingClientRect();
+    const e = { clientX, clientY };
+    const pt = canvas.getPointer(e, true);
+    const objs = canvas.getObjects() || [];
+    for (let i = objs.length - 1; i >= 0; i--) {
+      const o = objs[i];
+      if (!o) continue;
+      if (o.selectable !== false && typeof o.containsPoint === "function") {
+        if (o.containsPoint(pt)) return o;
+      }
+    }
+    return null;
+  };
+
+  // Estado para pinch
+  const PINCH = { active: false, d0: 0, z0: 1 };
+
+  // == Listeners ==
+  const onTouchStart = (ev) => {
+    if (ev.touches.length === 1) {
+      const t = ev.touches[0];
+      const hit = hitObjectAt(t.clientX, t.clientY);
+      // Si tocamos un objeto → habilita eventos del canvas para poder seleccionarlo/moverlo
+      upper.style.pointerEvents = hit ? "auto" : "none";
+      // No prevenimos: si no hay objeto, que el DOM haga scroll vertical
+      return;
+    }
+    if (ev.touches.length === 2) {
+      PINCH.active = true;
+      PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
+      PINCH.z0 = canvas.getZoom?.() || 1;
+    }
+  };
+
+  const onTouchMove = (ev) => {
+    if (PINCH.active && ev.touches.length === 2) {
+      const d = dist(ev.touches[0], ev.touches[1]);
+      const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
+
+      const rect = upper.getBoundingClientRect();
+      const mid = {
+        x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
+        y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+      };
+
+      try {
+        canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+        setZoom?.(newZoom);
+        canvas.requestRenderAll();
+      } catch {}
+
+      // Bloquea el pinch nativo y rebotes
+      ev.preventDefault();
+      return;
+    }
+
+    // Con 1 dedo:
+    // - si upper.pointerEvents="none" → el DOM hace scroll (carruseles/fondo).
+    // - si "auto" (porque había objeto) → Fabric recibe drag/selección.
+  };
+
+  const onTouchEnd = () => {
+    // Al soltar: vuelve a “no bloquear” para que el scroll quede libre
+    upper.style.pointerEvents = "none";
+    PINCH.active = false;
+  };
+
+  host.addEventListener("touchstart", onTouchStart, { passive: true });
+  host.addEventListener("touchmove", onTouchMove, { passive: false });
+  host.addEventListener("touchend", onTouchEnd, { passive: true });
+  host.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+  // Limpieza
+  const cleanup = () => {
+    host.removeEventListener("touchstart", onTouchStart);
+    host.removeEventListener("touchmove", onTouchMove);
+    host.removeEventListener("touchend", onTouchEnd);
+    host.removeEventListener("touchcancel", onTouchEnd);
+  };
+  try { canvas.__dobo_touch_cleanup && canvas.__dobo_touch_cleanup(); } catch {}
+  try { (canvas.__dobo_touch_cleanup = cleanup); } catch {}
+})();
+
     
 // === Interacción móvil unificada (scroll + pinch fuera/dentro del canvas) ===
 (() => {
