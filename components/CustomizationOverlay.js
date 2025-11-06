@@ -372,6 +372,45 @@ export default function CustomizationOverlay({
   );
 });
 
+// === Delegar eventos táctiles externos al canvas ===
+(() => {
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
+
+  const upper = canvas.upperCanvasEl;
+  if (!upper) return;
+
+  // función para reenviar los toques al canvas
+  const forwardTouchEvent = (ev) => {
+    // ignorar si el toque ya está dentro del canvas
+    const rect = upper.getBoundingClientRect();
+    const x = ev.touches[0]?.clientX;
+    const y = ev.touches[0]?.clientY;
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return;
+
+    // clonar evento y despacharlo sobre el canvas
+    const cloned = new TouchEvent(ev.type, {
+      touches: ev.touches,
+      targetTouches: ev.targetTouches,
+      changedTouches: ev.changedTouches,
+      bubbles: true,
+      cancelable: true,
+    });
+    upper.dispatchEvent(cloned);
+  };
+
+  // escuchar los gestos a nivel documento
+  ["touchstart", "touchmove", "touchend"].forEach((type) => {
+    document.addEventListener(type, forwardTouchEvent, { passive: false });
+  });
+
+  // limpieza al desmontar
+  return () => {
+    ["touchstart", "touchmove", "touchend"].forEach((type) => {
+      document.removeEventListener(type, forwardTouchEvent);
+    });
+  };
+})();
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
