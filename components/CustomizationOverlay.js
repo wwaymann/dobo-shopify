@@ -364,8 +364,9 @@ export default function CustomizationOverlay({
 
   // 1) Por defecto: deja pasar scroll vertical a los carruseles
   //    y evita gestos nativos del navegador sobre el canvas.
-  upper.style.pointerEvents = "none"; // no bloquea el scroll abajo
-  upper.style.touchAction = "none";   // sin zoom nativo del browser
+upper.style.pointerEvents = "none";  // no intercepta scroll ni taps fuera de objetos
+upper.style.touchAction = "pan-y pinch-zoom"; // deja pasar scroll vertical y pinch al DOM
+
 
   // 2) Detección de “hay objeto debajo del dedo” para habilitar manipulación 1-dedo
   const hitObjectAt = (clientX, clientY) => {
@@ -386,8 +387,13 @@ export default function CustomizationOverlay({
 
   // 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
   const host = (overlayRef?.current) ||
-               (upper.parentElement) ||
-               document.body;
+const host =
+  (document.querySelector("[data-stage-root]")) ||
+  (stageRef?.current) ||
+  (anchorRef?.current) ||
+  (overlayRef?.current) ||
+  document.body;
+
 
   // Estado pinch
   const PINCH = { active: false, d0: 0, z0: 1 };
