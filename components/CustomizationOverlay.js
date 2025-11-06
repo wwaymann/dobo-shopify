@@ -624,10 +624,10 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
-// === Pinch-to-zoom coherente con fondo y objetos ===
+// === Pinch-to-zoom unificado (canvas + carruseles + fondo) ===
 (() => {
-  const upper = c.upperCanvasEl;
-  if (!upper) return;
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
 
   let pinch = { active: false, dist0: 0, z0: 1 };
   const ZMIN = 0.4, ZMAX = 2.5;
@@ -636,34 +636,42 @@ if (typeof window !== "undefined") {
     t1.clientY - t0.clientY
   );
 
-  upper.addEventListener("touchstart", (ev) => {
+  // 🧠 Escuchar los eventos táctiles en todo el documento
+  document.addEventListener("touchstart", (ev) => {
     if (ev.touches.length === 2) {
       pinch.active = true;
       pinch.dist0 = dist(ev.touches[0], ev.touches[1]);
-      pinch.z0 = c.getZoom?.() || 1;
+      pinch.z0 = canvas.getZoom?.() || 1;
     }
   }, { passive: true });
 
-  upper.addEventListener("touchmove", (ev) => {
+  document.addEventListener("touchmove", (ev) => {
     if (!pinch.active || ev.touches.length < 2) return;
 
     const d = dist(ev.touches[0], ev.touches[1]);
     const newZoom = Math.max(ZMIN, Math.min(ZMAX, pinch.z0 * (d / pinch.dist0)));
 
-    const rect = upper.getBoundingClientRect();
+    // Calcular el punto medio de los dedos relativo al viewport
+    const rect = canvas.upperCanvasEl.getBoundingClientRect();
     const mid = {
       x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
       y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
     };
 
-    c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-    setZoom?.(newZoom);
-    c.requestRenderAll();
+    try {
+      // Aplicar el zoom de forma centralizada al canvas
+      canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+      setZoom?.(newZoom);
+      canvas.requestRenderAll();
+    } catch {}
+
+    // Evita que el navegador haga zoom nativo
     ev.preventDefault();
   }, { passive: false });
 
-  upper.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
+  document.addEventListener("touchend", () => { pinch.active = false; }, { passive: true });
 })();
+
 
 // === Pinch-to-zoom extendido (canvas + carruseles + fondo) ===
 (() => {
