@@ -510,6 +510,35 @@ export default function CustomizationOverlay({
   });
 })();
 
+useEffect(() => {
+  const overlay = document.createElement("div");
+  overlay.style.position = "fixed";
+  overlay.style.top = 0;
+  overlay.style.left = 0;
+  overlay.style.width = "100vw";
+  overlay.style.height = "100vh";
+  overlay.style.zIndex = 1;
+  overlay.style.background = "transparent";
+  overlay.style.touchAction = "none";
+  document.body.appendChild(overlay);
+
+  const handlePinch = (ev) => {
+    if (ev.touches.length < 2) return;
+    const cloned = new TouchEvent(ev.type, ev);
+    c.upperCanvasEl.dispatchEvent(cloned);
+  };
+
+  ["touchstart", "touchmove", "touchend"].forEach((t) =>
+    overlay.addEventListener(t, handlePinch, { passive: false })
+  );
+
+  return () => {
+    ["touchstart", "touchmove", "touchend"].forEach((t) =>
+      overlay.removeEventListener(t, handlePinch)
+    );
+    document.body.removeChild(overlay);
+  };
+}, []);
 
     // Delimitar bounds (margen 10 px)
     const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
