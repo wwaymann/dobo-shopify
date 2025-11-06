@@ -386,9 +386,12 @@ upper.style.touchAction = "pan-y pinch-zoom"; // deja pasar scroll vertical y pi
   };
 
  // 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
-const host = (overlayRef?.current) ||
-             (upper.parentElement) ||
-             document.body;
+const host =
+  (document.querySelector("[data-stage-root]")) ||
+  (stageRef?.current) ||
+  (anchorRef?.current) ||
+  (overlayRef?.current) ||
+  document.body;
 
 
   // Estado pinch
