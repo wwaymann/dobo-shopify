@@ -680,8 +680,9 @@ useEffect(() => {
   const prevS = s.style.touchAction;
   const prevC = c.style.touchAction;
 
-  // 🔧 Permitir pinch y scroll vertical
-  const action = editing ? "none" : "pan-y pinch-zoom";
+  // ✅ Permitimos solo scroll vertical; NO habilitamos pinch nativo del navegador
+  //    para evitar el "doble zoom" (DOM + Fabric).
+  const action = editing ? "none" : "pan-y";
   s.style.touchAction = action;
   c.style.touchAction = action;
 
