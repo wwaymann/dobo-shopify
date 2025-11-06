@@ -353,6 +353,45 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8
     });
     fabricCanvasRef.current = c;
+// === Ajuste de interacción táctil ===
+(() => {
+  const canvas = fabricCanvasRef?.current || c;
+  if (!canvas) return;
+
+  const upper = canvas.upperCanvasEl;
+  if (!upper) return;
+
+  // 🔹 Paso 1 — permitir scroll y gestos fuera del canvas
+  // Esto deja pasar los eventos táctiles al fondo cuando no se está manipulando objetos
+  upper.style.pointerEvents = "none";
+  upper.style.touchAction = "auto";
+
+  // 🔹 Paso 2 — reenviar gestos de pinza (pinch) al canvas si ocurren fuera
+  const forwardTouchEvent = (ev) => {
+    // Evita interferir con scroll vertical de un solo dedo
+    if (ev.touches.length < 2) return;
+
+    const cloned = new TouchEvent(ev.type, {
+      touches: ev.touches,
+      targetTouches: ev.targetTouches,
+      changedTouches: ev.changedTouches,
+      bubbles: true,
+      cancelable: true,
+    });
+    upper.dispatchEvent(cloned);
+  };
+
+  ["touchstart", "touchmove", "touchend"].forEach((type) => {
+    document.addEventListener(type, forwardTouchEvent, { passive: false });
+  });
+
+  // 🔹 Limpieza
+  return () => {
+    ["touchstart", "touchmove", "touchend"].forEach((type) => {
+      document.removeEventListener(type, forwardTouchEvent);
+    });
+  };
+})();
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
