@@ -354,6 +354,7 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 // === Ajuste de interacción táctil ===
+// === Ajuste de interacción táctil ===
 (() => {
   const canvas = fabricCanvasRef?.current || c;
   if (!canvas) return;
@@ -392,6 +393,7 @@ export default function CustomizationOverlay({
     });
   };
 })();
+
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
