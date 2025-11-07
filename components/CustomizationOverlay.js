@@ -353,120 +353,6 @@ export default function CustomizationOverlay({
       targetFindTolerance: 8
     });
     fabricCanvasRef.current = c;
-    
-// === Interacción móvil unificada (scroll + pinch fuera/dentro del canvas) ===
-(() => {
-  const canvas = fabricCanvasRef?.current || c;
-  if (!canvas) return;
-
-  const upper = canvas.upperCanvasEl;
-  if (!upper) return;
-
-  // 1) Por defecto: deja pasar scroll vertical a los carruseles
-  //    y evita gestos nativos del navegador sobre el canvas.
-  upper.style.pointerEvents = "none"; // no bloquea el scroll abajo
-  upper.style.touchAction = "none";   // sin zoom nativo del browser
-
-  // 2) Detección de “hay objeto debajo del dedo” para habilitar manipulación 1-dedo
-  const hitObjectAt = (clientX, clientY) => {
-    const rect = upper.getBoundingClientRect();
-    const e = { clientX, clientY };
-    const pt = canvas.getPointer(e, true); // coords en canvas
-    // Chequeo simple con containsPoint (suficiente para texto/imagen)
-    const objs = canvas.getObjects() || [];
-    for (let i = objs.length - 1; i >= 0; i--) {
-      const o = objs[i];
-      if (!o || o.excludeFromExport) continue;
-      if (o.selectable !== false && typeof o.containsPoint === "function") {
-        if (o.containsPoint(pt)) return o;
-      }
-    }
-    return null;
-  };
-
-  // 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
-  const host = (overlayRef?.current) ||
-               (upper.parentElement) ||
-               document.body;
-
-  // Estado pinch
-  const PINCH = { active: false, d0: 0, z0: 1 };
-  const ZMIN = 0.4, ZMAX = 2.5;
-  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-
-  // 4) Un dedo: si hay objeto → damos control a Fabric (pointerEvents=auto).
-  //    Si no hay objeto → mantenemos pointerEvents=none y el scroll pasa al DOM.
-  const onTouchStart = (ev) => {
-    if (ev.touches.length === 1) {
-      const t = ev.touches[0];
-      const o = hitObjectAt(t.clientX, t.clientY);
-      if (o) {
-        // Habilitar interacción puntual con el canvas mientras dura el gesto
-        upper.style.pointerEvents = "auto";
-      } else {
-        upper.style.pointerEvents = "none";
-      }
-      return; // no hacemos preventDefault: que el scroll siga libre si no hay objeto
-    }
-
-    if (ev.touches.length === 2) {
-      PINCH.active = true;
-      PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
-      PINCH.z0 = canvas.getZoom?.() || 1;
-    }
-  };
-
-const onTouchMove = (ev) => {
-  if (PINCH.active && ev.touches.length === 2) {
-    const d = dist(ev.touches[0], ev.touches[1]);
-    const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
-
-    // 🔧 En lugar de aplicar zoom directamente al canvas, sincroniza con el zoom global
-    setZoom?.(newZoom);
-    stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-
-    // Aplica también a Fabric solo si está visible
-    try {
-      const center = new fabric.Point(
-        c.getWidth() / 2,
-        c.getHeight() / 2
-      );
-      c.zoomToPoint(center, newZoom);
-      c.requestRenderAll();
-    } catch {}
-
-    ev.preventDefault(); // bloquea pinch nativo
-    return;
-  }
-};
-
-
-  const onTouchEnd = () => {
-  // 🔧 No desactivar completamente los eventos del canvas, solo si no se está editando
-  if (!PINCH.active) {
-    upper.style.pointerEvents = "auto"; // permite selección de objetos
-  }
-  PINCH.active = false;
-};
-
-
-  host.addEventListener("touchstart", onTouchStart, { passive: true });
-  host.addEventListener("touchmove", onTouchMove, { passive: false });
-  host.addEventListener("touchend", onTouchEnd, { passive: true });
-  host.addEventListener("touchcancel", onTouchEnd, { passive: true });
-
-  // Limpieza
-  const cleanup = () => {
-    host.removeEventListener("touchstart", onTouchStart);
-    host.removeEventListener("touchmove", onTouchMove);
-    host.removeEventListener("touchend", onTouchEnd);
-    host.removeEventListener("touchcancel", onTouchEnd);
-  };
-  // Guardamos cleanup para que el return del useEffect padre lo llame si quieres.
-  try { (canvas.__dobo_touch_cleanup = cleanup); } catch {}
-
-})();
-
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
@@ -582,7 +468,6 @@ const onTouchMove = (ev) => {
     c.requestRenderAll();
   });
 })();
-
 
 
     // Delimitar bounds (margen 10 px)
@@ -775,103 +660,21 @@ if (typeof window !== "undefined") {
       c.skipTargetFind = !on;
       c.selection = on;
       (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-     // === Gestos táctiles: pinch sincronizado + scroll vertical ===
-const upper = c.upperCanvasEl;
-if (upper) {
-  // Por defecto: que el DOM pueda hacer scroll vertical
-  upper.style.pointerEvents = "none";
-  upper.style.touchAction = "none";
-}
+      const upper = c.upperCanvasEl;
+      if (upper) {
+        upper.style.pointerEvents = on ? "auto" : "none";
+        upper.style.touchAction = on ? "none" : "auto";
+        upper.tabIndex = on ? 0 : -1;
+      }
+      c.defaultCursor = on ? "move" : "default";
+      try { c.discardActiveObject(); } catch {}
+      c.calcOffset?.();
+      c.requestRenderAll?.();
+      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+    };
 
-const host =
-  document.querySelector("[data-stage-root]") ||
-  stageRef?.current ||
-  anchorRef?.current ||
-  overlayRef?.current ||
-  upper?.parentElement ||
-  document.body;
-
-if (host && host.style) host.style.touchAction = "pan-y";
-
-const ZMIN = 0.4, ZMAX = 2.5;
-const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-const hitObjectAt = (clientX, clientY) => {
-  if (!upper) return null;
-  const e = { clientX, clientY };
-  const pt = c.getPointer(e, true);
-  const objs = c.getObjects() || [];
-  for (let i = objs.length - 1; i >= 0; i--) {
-    const o = objs[i];
-    if (o?.selectable !== false && typeof o?.containsPoint === "function") {
-      if (o.containsPoint(pt)) return o;
-    }
-  }
-  return null;
-};
-
-const PINCH = { active: false, d0: 0, z0: 1 };
-
-const onTouchStart = (ev) => {
-  if (ev.touches.length === 1) {
-    const t = ev.touches[0];
-    const hit = hitObjectAt(t.clientX, t.clientY);
-    // Si hay objeto debajo del dedo -> permite edición en canvas
-    // Si no, deja pasar el scroll vertical al DOM
-    if (upper) {
-      upper.style.pointerEvents = hit ? "auto" : "none";
-      upper.style.touchAction   = hit ? "none" : "auto";
-    }
-    return;
-  }
-  if (ev.touches.length === 2) {
-    PINCH.active = true;
-    PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
-    // El zoom base sale de la prop 'zoom' (fuente de verdad)
-    PINCH.z0 = Number(zoom) || 1;
-  }
-};
-
-const onTouchMove = (ev) => {
-  if (PINCH.active && ev.touches.length === 2) {
-    const d = dist(ev.touches[0], ev.touches[1]);
-    const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
-
-    // ✅ No zoomToPoint aquí para evitar “doble zoom”.
-    // Solo actualizamos la FUENTE DE VERDAD (zoom global).
-    setZoom?.(newZoom);
-    stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-
-    // Render rápido para que la sensación sea inmediata
-    try { c.requestRenderAll(); } catch {}
-
-    ev.preventDefault();
-    return;
-  }
-  // 1 dedo: si upper tiene pointerEvents="none", el DOM hace scroll vertical.
-};
-
-const onTouchEnd = () => {
-  // Al terminar gesto, vuelve a “dejar pasar scroll” si no estamos editando
-  if (!PINCH.active && upper) {
-    upper.style.pointerEvents = "none";
-    upper.style.touchAction   = "auto";
-  }
-  PINCH.active = false;
-};
-
-host.addEventListener("touchstart", onTouchStart, { passive: true });
-host.addEventListener("touchmove",  onTouchMove,  { passive: false });
-host.addEventListener("touchend",   onTouchEnd,   { passive: true });
-host.addEventListener("touchcancel",onTouchEnd,   { passive: true });
-
-// Limpieza
-cleanupFns.push(() => {
-  host.removeEventListener("touchstart", onTouchStart);
-  host.removeEventListener("touchmove",  onTouchMove);
-  host.removeEventListener("touchend",   onTouchEnd);
-  host.removeEventListener("touchcancel",onTouchEnd);
-});
-
+    setAll(!!editing);
+  }, [editing]);
 
   // ======= Edición inline de texto (grupo) =======
   const startInlineTextEdit = (group) => {
@@ -1229,20 +1032,6 @@ const addImageFromFile = (file, mode) => {
 
   if (!visible) return null;
 
-      // ====== Sincronización visual del zoom (solo DOM, no Fabric)
-useEffect(() => {
-  const z = Math.max(0.4, Math.min(2.5, Number(zoom) || 1));
-  // Solo aplica al DOM
-  if (stageRef?.current) {
-    stageRef.current.style.setProperty("--zoom", String(z));
-  }
-  const fc = fabricCanvasRef.current;
-  if (fc) {
-    fc.requestRenderAll(); // solo redibuja, no aplica zoom interno
-  }
-}, [zoom]);
-
-      
   // ====== Overlay Canvas (posicionado dentro del anchor/stage)
   const OverlayCanvas = (
     <div
@@ -1606,20 +1395,6 @@ useEffect(() => {
   onPointerDown={(e) => e.stopPropagation()}
 />
 
-
-  useEffect(() => {
-  const z = Math.max(0.4, Math.min(2.5, Number(zoom) || 1));
-  // Solo aplica al DOM, no a Fabric
-  if (stageRef?.current) {
-    stageRef.current.style.setProperty("--zoom", String(z));
-  }
-  // 🔹 Evita aplicar zoom interno en Fabric
-  const fc = fabricCanvasRef.current;
-  if (fc) {
-    fc.requestRenderAll(); // sólo re-renderiza
-  }
-}, [zoom]);
-
 <input
   ref={cameraInputRef}
   id="cameraInput"
@@ -1642,24 +1417,14 @@ useEffect(() => {
 
   return (
     <>
-                {anchorRef?.current ? createPortal(
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            display: "flex",
-            justifyContent: "center",
-            pointerEvents: "none",
-            marginTop: 8
-          }}
-        >
-          <div style={{ pointerEvents: "auto", display: "inline-flex" }}>
-            <Menu />
-          </div>
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+
+      {anchorRef?.current ? createPortal(
+        <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none", marginTop: 8 }}>
+          <div style={{ pointerEvents: "auto", display: "inline-flex" }}><Menu /></div>
         </div>,
         document.getElementById("dobo-menu-dock") || document.body
       ) : null}
     </>
   );
 }
-
