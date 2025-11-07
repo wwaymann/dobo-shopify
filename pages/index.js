@@ -1857,7 +1857,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-        {/* Nodo escalado con carruseles */}
+   {/* Nodo escalado con carruseles */}
 <div
   ref={stageRef}
   data-capture-stage="1"
@@ -1874,7 +1874,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     overflow: "hidden", // evita que el pan saque el canvas de su área
   }}
 >
-  {/* Macetas */}
+  {/* Carrusel de macetas */}
   <div
     className={styles.carouselContainer}
     ref={potScrollRef}
@@ -1914,7 +1914,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     </div>
   </div>
 
-  {/* Plantas */}
+  {/* Carrusel de plantas */}
   <div
     className={styles.carouselContainer}
     ref={plantScrollRef}
@@ -1958,7 +1958,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 </div>
 
 {/* Dock menú DOBO debajo de carruseles */}
-<div id="dobo-menu-dock" className={styles.menuDock} />
+<div id="dobo-menu-dock" className={styles.menuDock}></div>
 
 {/* Overlay de edición (canvas de Fabric) */}
 <CustomizationOverlay
