@@ -1633,9 +1633,7 @@ useEffect(() => {
 
   return (
     <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-
-        {anchorRef?.current ? createPortal(
+           {anchorRef?.current ? createPortal(
         <div
           style={{
             position: "relative",
