@@ -340,54 +340,66 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== init Fabric
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+// ====== init Fabric
+useEffect(() => {
+  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8
-    });
-    fabricCanvasRef.current = c;
+  const c = new fabric.Canvas(canvasRef.current, {
+    width: 1,
+    height: 1,
+    preserveObjectStacking: true,
+    selection: true,
+    perPixelTargetFind: true,
+    targetFindTolerance: 8
+  });
+  fabricCanvasRef.current = c;
 
-    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-
-  // 0) Foco y tolerancias táctiles
+  // ✅ Permite gestos táctiles básicos en móvil sin anular scroll ni swipe fuera del área de edición
   if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
-    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
+    c.upperCanvasEl.addEventListener("touchmove", (e) => {
+      // Solo bloquea movimiento interno si se está editando dentro del canvas
+      if (!editing) return;
+      if (e.touches.length > 1) return; // deja pasar gestos multitouch (pinch-zoom, etc.)
+      e.stopPropagation(); // evita que el canvas bloquee scroll horizontal o vertical
+    }, { passive: false });
   }
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  // 1) Utilidades
-  const isTextTarget = (t) =>
-    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+  // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+  (() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
 
-  const enterEdit = (t) => {
-    if (!isTextTarget(t)) return;
-    requestAnimationFrame(() => {
-      if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true; t.editable = true; t.evented = true;
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
-      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
-      }
-      c.requestRenderAll();
-    });
-  };
+    // 0) Foco y tolerancias táctiles
+    if (c.upperCanvasEl) {
+      c.upperCanvasEl.setAttribute("tabindex", "0");
+      c.upperCanvasEl.style.touchAction = "none"; // evita el zoom del navegador sobre el canvas
+      c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
+    }
+    c.perPixelTargetFind = false;
+    c.targetFindTolerance = 12;
+    if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
+
+    // 1) Utilidades
+    const isTextTarget = (t) =>
+      !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+
+    const enterEdit = (t) => {
+      if (!isTextTarget(t)) return;
+      requestAnimationFrame(() => {
+        if (t.type === "textbox" || t.type === "i-text") {
+          t.selectable = true;
+          t.editable = true;
+          t.evented = true;
+          c.setActiveObject(t);
+          t.enterEditing?.();
+          t.hiddenTextarea?.focus?.();
+        } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+          startInlineTextEdit(t);
+          c.setActiveObject(t);
+        }
+        c.requestRenderAll();
+      });
+    };
 
   // 2) Tap vs Drag + candado anti-doble-disparo
   let downInfo = null;
@@ -663,7 +675,7 @@ if (typeof window !== "undefined") {
       const upper = c.upperCanvasEl;
       if (upper) {
         upper.style.pointerEvents = on ? "auto" : "none";
-        upper.style.touchAction = on ? "none" : "auto";
+        upper.style.touchAction = on ? "manipulation" : "auto";
         upper.tabIndex = on ? 0 : -1;
       }
       c.defaultCursor = on ? "move" : "default";
