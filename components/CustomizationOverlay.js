@@ -775,21 +775,103 @@ if (typeof window !== "undefined") {
       c.skipTargetFind = !on;
       c.selection = on;
       (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      const upper = c.upperCanvasEl;
-      if (upper) {
-        upper.style.pointerEvents = on ? "auto" : "none";
-        upper.style.touchAction = on ? "none" : "auto";
-        upper.tabIndex = on ? 0 : -1;
-      }
-      c.defaultCursor = on ? "move" : "default";
-      try { c.discardActiveObject(); } catch {}
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-    };
+     // === Gestos táctiles: pinch sincronizado + scroll vertical ===
+const upper = c.upperCanvasEl;
+if (upper) {
+  // Por defecto: que el DOM pueda hacer scroll vertical
+  upper.style.pointerEvents = "none";
+  upper.style.touchAction = "none";
+}
 
-    setAll(!!editing);
-  }, [editing]);
+const host =
+  document.querySelector("[data-stage-root]") ||
+  stageRef?.current ||
+  anchorRef?.current ||
+  overlayRef?.current ||
+  upper?.parentElement ||
+  document.body;
+
+if (host && host.style) host.style.touchAction = "pan-y";
+
+const ZMIN = 0.4, ZMAX = 2.5;
+const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+const hitObjectAt = (clientX, clientY) => {
+  if (!upper) return null;
+  const e = { clientX, clientY };
+  const pt = c.getPointer(e, true);
+  const objs = c.getObjects() || [];
+  for (let i = objs.length - 1; i >= 0; i--) {
+    const o = objs[i];
+    if (o?.selectable !== false && typeof o?.containsPoint === "function") {
+      if (o.containsPoint(pt)) return o;
+    }
+  }
+  return null;
+};
+
+const PINCH = { active: false, d0: 0, z0: 1 };
+
+const onTouchStart = (ev) => {
+  if (ev.touches.length === 1) {
+    const t = ev.touches[0];
+    const hit = hitObjectAt(t.clientX, t.clientY);
+    // Si hay objeto debajo del dedo -> permite edición en canvas
+    // Si no, deja pasar el scroll vertical al DOM
+    if (upper) {
+      upper.style.pointerEvents = hit ? "auto" : "none";
+      upper.style.touchAction   = hit ? "none" : "auto";
+    }
+    return;
+  }
+  if (ev.touches.length === 2) {
+    PINCH.active = true;
+    PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
+    // El zoom base sale de la prop 'zoom' (fuente de verdad)
+    PINCH.z0 = Number(zoom) || 1;
+  }
+};
+
+const onTouchMove = (ev) => {
+  if (PINCH.active && ev.touches.length === 2) {
+    const d = dist(ev.touches[0], ev.touches[1]);
+    const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
+
+    // ✅ No zoomToPoint aquí para evitar “doble zoom”.
+    // Solo actualizamos la FUENTE DE VERDAD (zoom global).
+    setZoom?.(newZoom);
+    stageRef?.current?.style.setProperty("--zoom", String(newZoom));
+
+    // Render rápido para que la sensación sea inmediata
+    try { c.requestRenderAll(); } catch {}
+
+    ev.preventDefault();
+    return;
+  }
+  // 1 dedo: si upper tiene pointerEvents="none", el DOM hace scroll vertical.
+};
+
+const onTouchEnd = () => {
+  // Al terminar gesto, vuelve a “dejar pasar scroll” si no estamos editando
+  if (!PINCH.active && upper) {
+    upper.style.pointerEvents = "none";
+    upper.style.touchAction   = "auto";
+  }
+  PINCH.active = false;
+};
+
+host.addEventListener("touchstart", onTouchStart, { passive: true });
+host.addEventListener("touchmove",  onTouchMove,  { passive: false });
+host.addEventListener("touchend",   onTouchEnd,   { passive: true });
+host.addEventListener("touchcancel",onTouchEnd,   { passive: true });
+
+// Limpieza
+cleanupFns.push(() => {
+  host.removeEventListener("touchstart", onTouchStart);
+  host.removeEventListener("touchmove",  onTouchMove);
+  host.removeEventListener("touchend",   onTouchEnd);
+  host.removeEventListener("touchcancel",onTouchEnd);
+});
+
 
   // ======= Edición inline de texto (grupo) =======
   const startInlineTextEdit = (group) => {
