@@ -2161,5 +2161,5 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     </div>
   );
 
-}
+};
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
