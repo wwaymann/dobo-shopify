@@ -354,6 +354,23 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
+    useEffect(() => {
+  const s = stageRef.current;
+  const c = sceneWrapRef.current;
+  if (!s || !c) return;
+
+  // ✅ Solo scroll vertical. Nada de pinch-zoom nativo del navegador.
+  const prevS = s.style.touchAction;
+  const prevC = c.style.touchAction;
+  s.style.touchAction = "pan-y";
+  c.style.touchAction = "pan-y";
+
+  return () => {
+    s.style.touchAction = prevS;
+    c.style.touchAction = prevC;
+  };
+}, []); // sin dependencia de 'editing' para no oscilar el valor
+
     // === Interacción móvil: SIN pinch nativo, scroll libre y selección correcta ===
 (() => {
   const canvas = fabricCanvasRef?.current || c;
