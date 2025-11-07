@@ -1229,6 +1229,20 @@ const addImageFromFile = (file, mode) => {
 
   if (!visible) return null;
 
+      // ====== Sincronización visual del zoom (solo DOM, no Fabric)
+useEffect(() => {
+  const z = Math.max(0.4, Math.min(2.5, Number(zoom) || 1));
+  // Solo aplica al DOM
+  if (stageRef?.current) {
+    stageRef.current.style.setProperty("--zoom", String(z));
+  }
+  const fc = fabricCanvasRef.current;
+  if (fc) {
+    fc.requestRenderAll(); // solo redibuja, no aplica zoom interno
+  }
+}, [zoom]);
+
+      
   // ====== Overlay Canvas (posicionado dentro del anchor/stage)
   const OverlayCanvas = (
     <div
