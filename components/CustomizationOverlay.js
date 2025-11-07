@@ -1,1485 +1,2118 @@
-// components/CustomizationOverlay.js
-// DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con “Detalles”
-// Español neutro. No cambia lo que ya funciona, solo corrige y extiende según solicitud.
+// pages/index.js
+import { useEffect, useState, useRef } from "react";
+import styles from "../styles/home.module.css";
+import "bootstrap/dist/css/bootstrap.min.css";
+import dynamic from "next/dynamic";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import * as fabric from "fabric";
-import { createPortal } from "react-dom";
-import HistoryManager from "../lib/history";
 
-// ======= Constantes =======
-const Z_CANVAS = 4000;
-const FONT_OPTIONS = [
-  { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
-  { name: "Georgia", css: 'Georgia, serif' },
-  { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
-  { name: "Courier New", css: '"Courier New", Courier, monospace' },
-  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
-  { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
-  { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
-];
+// ============ HELPERS DOBO (pegar una sola vez, arriba de pages/index.js) ============
+import * as DS from "../lib/designStore"; // namespace import (sin destructuring)
 
-const VECTOR_SAMPLE_DIM = 500;
-const MAX_TEXTURE_DIM = 1600;
-
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-function hexToRgb(hex) {
-  const m = String(hex || "").replace("#", "").match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (!m) return [51, 51, 51];
-  let s = m[1];
-  if (s.length === 3) s = s.split("").map(ch => ch + ch).join("");
-  const n = parseInt(s, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+// Busca un attr por nombre, ignorando '_' inicial y case-insensitive
+function getAttrCI(attrs, name) {
+  const target = String(name||"").toLowerCase();
+  const hit = (attrs||[]).find(a => String(a?.key||"").toLowerCase().replace(/^_/, "") === target);
+  return hit?.value || "";
 }
 
-// ======= Otsu =======
-function otsuThreshold(gray, total) {
-  if (!gray || !total || total <= 0) return 127;
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < total; i++) hist[gray[i]]++;
 
-  let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
 
-  let sumB = 0, wB = 0;
-  let varMax = -1;
-  let threshold = 127;
-
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = total - wB;
-    if (wF === 0) break;
-
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const diff = mB - mF;
-    const between = wB * wF * diff * diff;
-
-    if (Number.isFinite(between) && between > varMax) {
-      varMax = between;
-      threshold = t;
-    }
-  }
-  return threshold;
+// --- UTIL: marcar dirty hacia arriba (rompe cache de grupos) ---
+function markDirty(o) {
+  if (!o) return;
+  o.dirty = true;
+  if (o.group) markDirty(o.group);
 }
 
-function downscale(imgEl) {
-  const w = imgEl.naturalWidth || imgEl.width;
-  const h = imgEl.naturalHeight || imgEl.height;
-  const r = Math.min(MAX_TEXTURE_DIM / w, MAX_TEXTURE_DIM / h, 1);
-  if (!w || !h || r === 1) return imgEl;
-  const cw = Math.round(w * r), ch = Math.round(h * r);
-  const cv = document.createElement("canvas");
-  cv.width = cw; cv.height = ch;
-  const ctx = cv.getContext("2d");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(imgEl, 0, 0, cw, ch);
-  return cv;
-}
+// ---------- Utils básicos ----------
+const gidToNum = (id) => {
+  const s = String(id || "");
+  return s.includes("gid://") ? s.split("/").pop() : s;
+};
 
-// ======= Vectorización (igual sistema usado antes: binarización con “Detalles/vecBias” y color) =======
-function vectorizeElementToBitmap(element, opts = {}) {
-  const {
-    maxDim = VECTOR_SAMPLE_DIM,
-    makeDark = true,
-    drawColor = [51, 51, 51],
-    thrBias = 0
-  } = opts;
-
-  const iw = element?.width, ih = element?.height;
-  if (!iw || !ih) return null;
-
-  const scale = (iw > ih) ? maxDim / iw : maxDim / ih;
-  const w = Math.max(1, Math.round(iw * scale));
-  const h = Math.max(1, Math.round(ih * scale));
-
-  const cv = document.createElement("canvas");
-  cv.width = w; cv.height = h;
-  const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(element, 0, 0, w, h);
-
-  let img;
+// Sube dataURL/blob/http a https (Cloudinary) mediante tu API local
+async function ensureHttpsUrl(u, namePrefix = "img") {
   try {
-    img = ctx.getImageData(0, 0, w, h);
-  } catch {
-    return null;
-  }
-
-  const data = img?.data;
-  const total = w * h;
-  if (!data || data.length < total * 4) return null;
-
-  const gray = new Uint8Array(total);
-  for (let i = 0, j = 0; j < total; i += 4, j++) {
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    gray[j] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-  }
-  const thr0 = otsuThreshold(gray, total);
-  const thr = clamp(thr0 + thrBias, 0, 255);
-
-  for (let j = 0, i = 0; j < total; j++, i += 4) {
-    const keep = makeDark ? (gray[j] <= thr) : (gray[j] > thr);
-    if (keep) {
-      data[i] = drawColor[0];
-      data[i + 1] = drawColor[1];
-      data[i + 2] = drawColor[2];
-      data[i + 3] = 255;
-    } else {
-      data[i + 3] = 0;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-
-  const bm = new fabric.Image(cv, {
-    left: 0, top: 0,
-    originX: "left", originY: "top",
-    objectCaching: false,
-    noScaleCache: true,
-    selectable: true,
-    evented: true
-  });
-  bm._vecSourceEl = element; // importante para recolorear y re-vectorizar
-  bm._vecMeta = { w, h };
-  bm._doboKind = "vector"; // etiqueta para el menú
-  return bm;
-}
-
-// ======= Texto con pseudo-relieve plano (sólo capas visuales) y editable =======
-function makeTextGroup(text, opts = {}) {
-  // Grupo simple: base es el que define estilo/tamaño; sin relieve real.
-  const base = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    selectable: true, evented: true,
-    objectCaching: false,
-    fill: opts.fill ?? "rgba(35,35,35,1)"
-  });
-
-  // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
-  const shadow = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    left: -1, top: -1,
-    selectable: false, evented: false,
-    objectCaching: false,
-    fill: "",
-    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
-  });
-  const highlight = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    left: +1, top: +1,
-    selectable: false, evented: false,
-    objectCaching: false,
-    fill: "",
-    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
-  });
-
-  const group = new fabric.Group([shadow, highlight, base], {
-    originX: "center", originY: "center",
-    subTargetCheck: false,
-    objectCaching: false,
-    selectable: true, evented: true,
-    scaleX: 1, scaleY: 1
-  });
-  group._kind = "textGroup";
-  group._textChildren = { base, shadow, highlight };
-
-  const sync = () => {
-    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-    const ox = 1 / sx, oy = 1 / sy;
-    shadow.set({ left: -ox, top: -oy });
-    highlight.set({ left: +ox, top: +oy });
-    group.setCoords();
-    group.canvas?.requestRenderAll?.();
-  };
-  group.on("scaling", sync);
-  group.on("modified", sync);
-  sync();
-
-  return group;
-}
-
-export default function CustomizationOverlay({
-  stageRef,
-  anchorRef,
-  visible = true,
-  zoom = 0.6,
-  setZoom
-}) {
-  // ---- Refs y estado ----
-  const canvasRef = useRef(null);
-  const fabricCanvasRef = useRef(null);
-  const overlayRef = useRef(null);
-  const addInputVectorRef = useRef(null);
-  const addInputRgbRef = useRef(null);
-  const cameraInputRef = useRef(null);
-  const menuRef = useRef(null);
-
-  const [uploadMode, setUploadMode] = useState(null); // "vector" | "rgb"
-  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
-  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
-  const [editing, setEditing] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
-
-  // Historial
-  const historyRef = useRef(null);
-  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
-
-  // Tipografía
-  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
-  const [fontSize, setFontSize] = useState(60);
-  const [isBold, setIsBold] = useState(false);
-  const [isItalic, setIsItalic] = useState(false);
-  const [isUnderline, setIsUnderline] = useState(false);
-  const [textAlign, setTextAlign] = useState("center");
-  const [textEditing, setTextEditing] = useState(false);
-
-  // UI
-  const [showAlignMenu, setShowAlignMenu] = useState(false);
-
-  // Color (texto y vector)
-  const [shapeColor, setShapeColor] = useState("#333333");
-
-  // Vector
-  const [vecBias, setVecBias] = useState(0); // -60..+60
-
-  const suppressSelectionRef = useRef(false);
-  const designBoundsRef = useRef(null);
-
-  // ====== helpers de historial
-  const getSnapshot = () => {
-    const c = fabricCanvasRef.current;
-    if (!c) return null;
-    return c.toJSON(["_kind", "_textChildren", "_vecSourceEl", "_vecMeta", "_doboKind"]);
-  };
-
-  const applySnapshot = (snap) => {
-    const c = fabricCanvasRef.current;
-    if (!c || !snap) return;
-    c._skipHistory = true;
-    c.loadFromJSON(snap, () => {
-      c._skipHistory = false;
-      c.requestRenderAll();
-    });
-  };
-
-  const refreshCaps = () => setHistCaps({
-    canUndo: !!historyRef.current?.canUndo(),
-    canRedo: !!historyRef.current?.canRedo()
-  });
-
-  const recordChange = (() => {
-    let t = null;
-    return () => {
-      if (fabricCanvasRef.current?._skipHistory) return;
-      clearTimeout(t);
-      t = setTimeout(() => {
-        const s = getSnapshot();
-        if (s && historyRef.current) historyRef.current.push(s);
-        refreshCaps();
-      }, 140);
-    };
-  })();
-
-  // ====== layout a partir de anchor y stage
-  useLayoutEffect(() => {
-    const el = anchorRef?.current;
-    if (!el) return;
-    const prev = el.style.position;
-    if (getComputedStyle(el).position === "static") el.style.position = "relative";
-    return () => { try { el.style.position = prev; } catch {} };
-  }, [anchorRef]);
-
-  useLayoutEffect(() => {
-    const stage = stageRef?.current;
-    const anchor = anchorRef?.current;
-    if (!stage || !anchor) return;
-
-    const measure = () => {
-      const w = Math.max(1, anchor.clientWidth);
-      const h = Math.max(1, anchor.clientHeight);
-      let left = 0, top = 0;
-      let el = anchor;
-      while (el && el !== stage) {
-        left += el.offsetLeft || 0;
-        top += el.offsetTop || 0;
-        el = el.offsetParent;
-      }
-      setBaseSize({ w, h });
-      setOverlayBox({ left, top, w, h });
-
-      const c = fabricCanvasRef.current;
-      if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
-    };
-
-    measure();
-    const roA = new ResizeObserver(measure);
-    const roS = new ResizeObserver(measure);
-    try { roA.observe(anchor); } catch {}
-    try { roS.observe(stage); } catch {}
-    window.addEventListener("resize", measure, { passive: true });
-
-    return () => {
-      try { roA.disconnect(); } catch {}
-      try { roS.disconnect(); } catch {}
-      window.removeEventListener("resize", measure);
-    };
-  }, [stageRef, anchorRef]);
-
-  useEffect(() => {
-    const v = typeof zoom === "number" ? zoom : 0.6;
-    stageRef?.current?.style.setProperty("--zoom", String(v));
-  }, [zoom, stageRef]);
-
-// ====== init Fabric
-useEffect(() => {
-  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
-
-  const c = new fabric.Canvas(canvasRef.current, {
-    width: 1,
-    height: 1,
-    preserveObjectStacking: true,
-    selection: true,
-    perPixelTargetFind: true,
-    targetFindTolerance: 8,
-  });
-  fabricCanvasRef.current = c;
-
-  // 🔹 1. Bloquear pinch nativo del navegador (solo scroll vertical)
-  document.documentElement.style.touchAction = "pan-y";
-  document.body.style.touchAction = "pan-y";
-
-  // 🔹 2. Configurar área principal para scroll vertical
-  const s = stageRef.current;
-  const scene = sceneWrapRef.current;
-  if (s) s.style.touchAction = "pan-y";
-  if (scene) scene.style.touchAction = "pan-y";
-
-  // 🔹 3. Interacción táctil del canvas
-  const upper = c.upperCanvasEl;
-  if (!upper) return;
-  upper.style.pointerEvents = "none"; // deja pasar scroll
-  upper.style.touchAction = "none"; // sin pinch nativo
-
-  const host =
-    document.querySelector("[data-stage-root]") ||
-    stageRef?.current ||
-    anchorRef?.current ||
-    overlayRef?.current ||
-    upper.parentElement ||
-    document.body;
-
-  if (host && host.style) host.style.touchAction = "pan-y";
-
-  const ZMIN = 0.4,
-    ZMAX = 2.5;
-  const dist = (t0, t1) =>
-    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-
-  const hitObjectAt = (clientX, clientY) => {
-    const rect = upper.getBoundingClientRect();
-    const e = { clientX, clientY };
-    const pt = c.getPointer(e, true);
-    const objs = c.getObjects() || [];
-    for (let i = objs.length - 1; i >= 0; i--) {
-      const o = objs[i];
-      if (!o) continue;
-      if (o.selectable !== false && typeof o.containsPoint === "function") {
-        if (o.containsPoint(pt)) return o;
-      }
-    }
-    return null;
-  };
-
-  const PINCH = { active: false, d0: 0, z0: 1 };
-
-  const onTouchStart = (ev) => {
-    if (ev.touches.length === 1) {
-      const t = ev.touches[0];
-      const hit = hitObjectAt(t.clientX, t.clientY);
-      upper.style.pointerEvents = hit ? "auto" : "none";
-      return;
-    }
-    if (ev.touches.length === 2) {
-      PINCH.active = true;
-      PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
-      PINCH.z0 = c.getZoom?.() || 1;
-    }
-  };
-
-  const onTouchMove = (ev) => {
-    if (PINCH.active && ev.touches.length === 2) {
-      const d = dist(ev.touches[0], ev.touches[1]);
-      const newZoom = Math.max(
-        ZMIN,
-        Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0))
-      );
-      const rect = upper.getBoundingClientRect();
-      const mid = {
-        x:
-          (ev.touches[0].clientX + ev.touches[1].clientX) / 2 -
-          rect.left,
-        y:
-          (ev.touches[0].clientY + ev.touches[1].clientY) / 2 -
-          rect.top,
-      };
-      try {
-        c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-        setZoom?.(newZoom);
-        c.requestRenderAll();
-      } catch {}
-      ev.preventDefault();
-      return;
-    }
-  };
-
-  const onTouchEnd = () => {
-    upper.style.pointerEvents = "none";
-    PINCH.active = false;
-  };
-
-  host.addEventListener("touchstart", onTouchStart, { passive: true });
-  host.addEventListener("touchmove", onTouchMove, { passive: false });
-  host.addEventListener("touchend", onTouchEnd, { passive: true });
-  host.addEventListener("touchcancel", onTouchEnd, { passive: true });
-
-  // 🔹 4. Edición de texto y selección
-  if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none";
-    c.upperCanvasEl.addEventListener(
-      "touchstart",
-      () => c.upperCanvasEl.focus(),
-      { passive: false }
-    );
-  }
-
-  // ✅ Cleanup y cierre del useEffect
-  return () => {
-    host.removeEventListener("touchstart", onTouchStart);
-    host.removeEventListener("touchmove", onTouchMove);
-    host.removeEventListener("touchend", onTouchEnd);
-    host.removeEventListener("touchcancel", onTouchEnd);
-    try { c.dispose(); } catch {}
-    fabricCanvasRef.current = null;
-  };
-}, [visible]); // cierre correcto del useEffect principal
-
-// ====== Ajuste de tamaño si cambian baseSize ======
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-  const { w, h } = baseSize;
-  c.setWidth(w);
-  c.setHeight(h);
-  c.requestRenderAll();
-}, [baseSize]);
-
-// ====== Re-vectorizar cuando cambia "Detalles" (vecBias) SOLO si hay vector seleccionado ======
-useEffect(() => {
-  if (!editing || selType !== "image") return;
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-  const a = c.getActiveObject();
-  if (!a) return;
-
-  const maybeRebuild = (obj) => {
-    if (obj?._doboKind !== "vector") return;
-    const element = obj._vecSourceEl || (typeof obj.getElement === "function" ? obj.getElement() : obj._element);
-    if (!element) return;
-    const pose = {
-      left: obj.left,
-      top: obj.top,
-      originX: obj.originX,
-      originY: obj.originY,
-      scaleX: obj.scaleX,
-      scaleY: obj.scaleY,
-      angle: obj.angle || 0
-    };
-    try { obj.canvas.remove(obj); } catch {}
-
-    const rgb = hexToRgb(shapeColor);
-    const baseImg = vectorizeElementToBitmap(element, {
-      maxDim: VECTOR_SAMPLE_DIM,
-      makeDark: true,
-      drawColor: rgb,
-      thrBias: vecBias
-    });
-    if (!baseImg) return;
-    baseImg._doboKind = "vector";
-    baseImg.set({ selectable: true, evented: true, objectCaching: false });
-    baseImg.set(pose);
-    c.add(baseImg);
-    c.setActiveObject(baseImg);
-  };
-
-  if (a.type === "activeSelection" && a._objects?.length) {
-    const arr = a._objects.slice();
-    a.discard();
-    arr.forEach(maybeRebuild);
-  } else {
-    maybeRebuild(a);
-  }
-  c.requestRenderAll();
-}, [vecBias]);
-
-
-
-
-
-
-    // Delimitar bounds (margen 10 px)
-    const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
-
-    // Enforcers de límites
-    const clampObjectToBounds = (obj) => {
-      const b = designBoundsRef.current; if (!b || !obj) return;
-      obj.setCoords();
-      const r = obj.getBoundingRect(true);
-      let dx = 0, dy = 0;
-      if (r.left < b.x) dx = b.x - r.left;
-      if (r.top < b.y) dy = b.y - r.top;
-      if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
-      if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
-      if (dx || dy) {
-        obj.left = (obj.left ?? 0) + dx;
-        obj.top = (obj.top ?? 0) + dy;
-        obj.setCoords();
-      }
-    };
-    const __bounds_onMove = e => clampObjectToBounds(e.target);
-    const __bounds_onScale = e => clampObjectToBounds(e.target);
-    const __bounds_onRotate = e => clampObjectToBounds(e.target);
-    const __bounds_onAdded = e => clampObjectToBounds(e.target);
-    c.on("object:moving", __bounds_onMove);
-    c.on("object:scaling", __bounds_onScale);
-    c.on("object:rotating", __bounds_onRotate);
-    c.on("object:added", __bounds_onAdded);
-
-    const __bounds_ro = new ResizeObserver(() => {
-      const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
-      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
-    });
-    __bounds_ro.observe(c.upperCanvasEl);
-
-    // Historial
-    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
-    c.once("after:render", () => {
-      const s = getSnapshot(); if (s) historyRef.current.push(s);
-      refreshCaps();
-    });
-    const __hist_onAdded = () => recordChange();
-    const __hist_onModified = () => recordChange();
-    const __hist_onRemoved = () => recordChange();
-    const __hist_onPath = () => recordChange();
-    c.on("object:added", __hist_onAdded);
-    c.on("object:modified", __hist_onModified);
-    c.on("object:removed", __hist_onRemoved);
-    c.on("path:created", __hist_onPath);
-
-    // Selección: clasificar
-    const classify = (a) => {
-      if (!a) return "none";
-      if (a._kind === "textGroup") return "text";
-      if (a._doboKind === "vector") return "image";
-      if (a.type === "image") return "image";
-      if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
-      return "none";
-    };
-
-    const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      if (!a) return;
-      let first = null;
-      if (a._kind === "textGroup") first = a._textChildren?.base || null;
-      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic"));
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || "center");
-      }
-    };
-
-    const onSel = () => {
-      const cobj = c.getActiveObject();
-      if (suppressSelectionRef.current) {
-        try { if (cobj?.type === "activeSelection") cobj.discard(); } catch {}
-        try { c.discardActiveObject(); } catch {}
-        try { c.setActiveObject(null); } catch {}
-        try { c._activeObject = null; } catch {}
-        setSelType("none");
-        c.requestRenderAll();
-        return;
-      }
-      setSelType(classify(cobj));
-      reflectTypo();
-    };
-    c.on("selection:created", onSel);
-    c.on("selection:updated", onSel);
-    c.on("selection:cleared", () => setSelType("none"));
-
-    // Doble-clic para texto editable
-    c.on("mouse:dblclick", (e) => {
-      const t = e.target;
-      if (!t) return;
-      if (t._kind === "textGroup") {
-        startInlineTextEdit(t);
-      } else if (isTextObj(t) && typeof t.enterEditing === "function") {
-        t.enterEditing();
-        c.requestRenderAll();
-      }
-    });
-
-    setReady(true);
-    
-// === DOBO: exponer API global para correo y checkout ===
-if (typeof window !== "undefined") {
- const api = {
-    // existentes
-    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-
-    toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    exportDesignSnapshot: () => {
-      try { return c.toJSON(); } catch { return null; }
-    },
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-  };
-  window.doboDesignAPI = api;
-  try {
-    window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
-    console.log("[DOBO] API global inicializada ✅");
-  } catch {}
-}
-
-    return () => {
-      c.off("mouse:dblclick");
-      c.off("selection:created", onSel);
-      c.off("selection:updated", onSel);
-      c.off("selection:cleared");
-      c.off("object:added", __hist_onAdded);
-      c.off("object:modified", __hist_onModified);
-      c.off("object:removed", __hist_onRemoved);
-      c.off("path:created", __hist_onPath);
-
-      c.off("object:moving", __bounds_onMove);
-      c.off("object:scaling", __bounds_onScale);
-      c.off("object:rotating", __bounds_onRotate);
-      c.off("object:added", __bounds_onAdded);
-      try { __bounds_ro.disconnect(); } catch {}
-      try { c.dispose(); } catch {}
-      fabricCanvasRef.current = null;
-    };
-  }, [visible]);
-
-  // Ajuste de tamaño si cambian baseSize
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
-
-  // Interactividad segun "editing"
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-
-    const enableNode = (o, on) => {
-      if (!o) return;
-      const isGroup = o._kind === "textGroup";
-      o.selectable = on;
-      o.evented = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      o.hasControls = on;
-      o.hasBorders = on;
-      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) o.editable = on;
-      o.hoverCursor = on ? "move" : "default";
-      if (isGroup) return;
-      const children = o._objects || (typeof o.getObjects === "function" ? o.getObjects() : null);
-      if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-    };
-
-    const setAll = (on) => {
-      c.skipTargetFind = !on;
-      c.selection = on;
-      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      const upper = c.upperCanvasEl;
-      if (upper) {
-        upper.style.pointerEvents = on ? "auto" : "none";
-        upper.style.touchAction = on ? "none" : "auto";
-        upper.tabIndex = on ? 0 : -1;
-      }
-      c.defaultCursor = on ? "move" : "default";
-      try { c.discardActiveObject(); } catch {}
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-    };
-
-    setAll(!!editing);
-  }, [editing]);
-
-  // ======= Edición inline de texto (grupo) =======
-  const startInlineTextEdit = (group) => {
-    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== "textGroup") return;
-    const base = group._textChildren?.base; if (!base) return;
-
-    const pose = {
-      left: group.left, top: group.top, originX: "center", originY: "center",
-      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
-    };
-
-    try { c.remove(group); } catch {}
-
-    const tb = new fabric.Textbox(base.text || "Texto", {
-      left: pose.left, top: pose.top, originX: "center", originY: "center",
-      width: Math.min(baseSize.w * 0.9, base.width || 240),
-      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
-      fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
-      editable: true, selectable: true, evented: true, objectCaching: false,
-      fill: base.fill || "rgba(35,35,35,1)"
-    });
-
-    c.add(tb);
-    c.setActiveObject(tb);
-    c.requestRenderAll();
-    setTextEditing(true);
-
-    setTimeout(() => {
-      try { tb.enterEditing?.(); } catch {}
-      try { tb.hiddenTextarea?.focus(); } catch {}
-      setTimeout(() => { try { tb.hiddenTextarea?.focus(); } catch {} }, 60);
-    }, 0);
-
-    const finish = () => {
-      const newText = tb.text || "";
-      const finalPose = {
-        left: tb.left, top: tb.top, originX: tb.originX, originY: tb.originY,
-        scaleX: tb.scaleX, scaleY: tb.scaleY, angle: tb.angle
-      };
-      try { c.remove(tb); } catch {}
-
-      const group2 = makeTextGroup(newText, {
-        width: tb.width,
-        fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
-        fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
-        fill: tb.fill
+    const s = String(u || "");
+    if (!s) return "";
+    if (/^https:\/\//i.test(s)) return s;
+    if (/^data:|^blob:|^http:\/\//i.test(s)) {
+      const r = await fetch("/api/upload-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: s, filename: `${namePrefix}-${Date.now()}.png` })
       });
-      group2.set(finalPose);
-      c.add(group2);
-      c.setActiveObject(group2);
-      c.requestRenderAll();
-      setSelType("text");
-      setTextEditing(false);
-    };
+      const j = await r.json().catch(() => ({}));
+      return j?.url || "";
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
 
-    const onExit = () => { tb.off("editing:exited", onExit); finish(); };
-    tb.on("editing:exited", onExit);
-    const safety = setTimeout(() => {
-      try { tb.off("editing:exited", onExit); } catch {}
-      finish();
-    }, 15000);
-    tb.on("removed", () => { clearTimeout(safety); });
-  };
+// Filtra attrs para el email (incluye DO/NO si existen)
+function shrinkAttrsForEmail(attrs = []) {
+  const keep = new Set([
+    "_designid","designid","_designpreview","designpreview",
+    "overlay:all","layer:image","layer:text"
+  ]);
+  const out = [];
+  for (const a of (attrs || [])) {
+    const k = String(a?.key || "").toLowerCase();
+    const v = String(a?.value ?? "");
+    if (keep.has(k) || k.startsWith("layer:") || k.startsWith("overlay:")) {
+      out.push({ key: a.key, value: v });
+    }
+  }
+  for (const k of ["_DO","_NO"]) {
+    const hit = (attrs || []).find(a => a.key === k);
+    if (hit) out.push({ key: k, value: String(hit.value || "") });
+  }
+  return out.slice(0, 100);
+}
 
-  // ======= Acciones =======
-  const addText = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const group = makeTextGroup("Nuevo texto", {
-      width: Math.min(baseSize.w * 0.9, 240),
-      fontSize, fontFamily, fontWeight: isBold ? "700" : "normal",
-      fontStyle: isItalic ? "italic" : "normal",
-      underline: isUnderline, textAlign,
-      fill: `rgba(${hexToRgb(shapeColor).join(",")},1)`
-    });
-    group.set({ left: baseSize.w / 2, top: baseSize.h / 2, originX: "center", originY: "center" });
-    const cobj = c.add(group);
-    c.setActiveObject(group);
-    setSelType("text");
-    c.requestRenderAll();
-    setEditing(true);
-    return cobj;
-  };
-
-// Carga imagen (RGB / Cámara / Vector) con espera inteligente a que el canvas esté listo.
-// Evita el error "fabric: Error loading blob:" usando FileReader (DataURL) y sincroniza el render.
-// Carga de imágenes robusta (funciona al primer intento, incluso en montajes lentos)
-const addImageFromFile = (file, mode) => {
-  if (!file) return;
-
-  const waitForCanvasReady = (attempt = 0) => {
-    const c = fabricCanvasRef.current;
-    if (!c || !c.getContext || !c.getContext()) {
-      if (attempt < 10) {
-        console.warn(`[DOBO] Canvas aún inicializando (${attempt + 1}/10)...`);
-        setTimeout(() => waitForCanvasReady(attempt + 1), 80);
-      } else {
-        console.error("[DOBO] Canvas no disponible tras varios intentos.");
-      }
+// Envía email sin bloquear navegación
+function sendEmailNow(payload) {
+  try {
+    const url = new URL("/api/send-design-email", location.origin).toString();
+    const json = JSON.stringify(payload);
+    if (navigator.sendBeacon && json.length < 64000) {
+      const blob = new Blob([json], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
       return;
     }
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: json })
+      .then(r => r.json()).then(r => { if (!r?.ok) console.warn("[email] not ok", r); })
+      .catch(err => console.warn("[email] error", err));
+  } catch (e) { console.warn("sendEmailNow failed", e); }
+}
 
-    // --- ya hay canvas listo ---
-    const reader = new FileReader();
+// ---------- Fallbacks de exportación (por si DS no exporta) ----------
+// Overlay completo (texto+imágenes) desde el canvas Fabric
+function exportOverlayAllLocal(canvas, { multiplier = 2 } = {}) {
+  try {
+    const c = canvas || (typeof window !== "undefined" && window.doboDesignAPI?.getCanvas?.());
+    if (!c || !c.toDataURL) return "";
+    return c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+  } catch { return ""; }
+}
 
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      const imgEl = new Image();
-      imgEl.crossOrigin = "anonymous";
+// Oculta/rehabilita objetos por predicado (maneja grupos)
+function maskCanvasByPredicate(canvas, predicate) {
+  const hidden = [];
+  const toggleChild = (g, keepChild) => {
+    if (!g || !Array.isArray(g._objects)) return;
+    for (const ch of g._objects) {
+      const keep = keepChild(ch);
+      if (!keep) { hidden.push(ch); ch.__wasVisible = ch.visible; ch.visible = false; }
+    }
+  };
+  const hasKind = (o, kind) => {
+    const isImg = o.type === "image";
+    const isTxt = (o.type === "i-text" || o.type === "textbox" || o.type === "text");
+    if (kind === "image" && isImg) return true;
+    if (kind === "text"  && isTxt) return true;
+    if (o.type === "group" && Array.isArray(o._objects)) {
+      return o._objects.some(ch => hasKind(ch, kind));
+    }
+    return false;
+  };
+  canvas.getObjects().forEach(o => {
+    const res = predicate(o, { hasKind });
+    if (res === "children") {
+      toggleChild(o, (ch) => predicate(ch, { hasKind }) === true);
+    } else if (res !== true) {
+      hidden.push(o); o.__wasVisible = o.visible; o.visible = false;
+    }
+  });
+  canvas.requestRenderAll();
+  return () => {
+    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; });
+    canvas.requestRenderAll();
+  };
+}
 
-      imgEl.onload = () => {
-        const src = typeof downscale === "function" ? downscale(imgEl) : imgEl;
+// --- SOLO IMAGEN / SOLO TEXTO (con invalidación de cache y grupos) ---
+async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
+  try {
+    const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
+    if (!c?.getObjects) return "";
 
-        // vector mode
-        if (mode === "vector") {
-          const rgb = hexToRgb?.(shapeColor) ?? { r: 0, g: 0, b: 0 };
-          const vectorImg = vectorizeElementToBitmap?.(src, {
-            maxDim: typeof VECTOR_SAMPLE_DIM !== "undefined" ? VECTOR_SAMPLE_DIM : 1024,
-            makeDark: true,
-            drawColor: rgb,
-            thrBias: typeof vecBias !== "undefined" ? vecBias : 0
-          });
-          if (!vectorImg) return;
+    const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
+    const wantText  = names.map(String).some(n => /text|texto/i.test(n));
+    const kind = wantImage ? "image" : wantText ? "text" : "";
 
-          const maxW = c.getWidth() * 0.8;
-          const maxH = c.getHeight() * 0.8;
-          const vw = vectorImg._vecMeta?.w || vectorImg.width || 1;
-          const vh = vectorImg._vecMeta?.h || vectorImg.height || 1;
-          const s = Math.min(maxW / vw, maxH / vh, 1);
+    const isTxt = (o) => o?.type === "i-text" || o?.type === "textbox" || o?.type === "text" || typeof o?.text === "string";
+    const isImg = (o) => o?.type === "image" || (!!o?._element && o._element.tagName === "IMG");
 
-          vectorImg.set({
-            originX: "center",
-            originY: "center",
-            left: c.getWidth() / 2,
-            top: c.getHeight() / 2,
-            scaleX: s,
-            scaleY: s,
-            selectable: true,
-            evented: true,
-            objectCaching: false
-          });
+    const hidden = [];
+    const hide = (o) => { if (!o) return; hidden.push(o); o.__wasVisible = o.visible; o.visible = false; markDirty(o); };
 
-          c.add(vectorImg);
-          c.setActiveObject(vectorImg);
-          setSelType?.("image");
-          setEditing?.(true);
-
-          requestAnimationFrame(() => {
-            c.calcOffset?.();
-            c.renderAll?.();
-          });
+    // oculta lo que NO corresponda; respeta grupos/activeSelection
+    (c.getObjects() || []).forEach(o => {
+      const visit = (x) => {
+        if (!x) return;
+        if (x.type === "group" || x.type === "activeSelection") {
+          (x._objects || []).forEach(visit);
+          // si el grupo no tiene ningún hijo del tipo pedido, se oculta completo
+          const keepAny = (x._objects || []).some(ch => (kind === "image" ? isImg(ch) : isTxt(ch)));
+          if (!keepAny) hide(x);
           return;
         }
-
-        // RGB / Cámara
-        const baseEl =
-          src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
-            ? src
-            : imgEl;
-
-        const fabricImg = new fabric.Image(baseEl, {
-          originX: "center",
-          originY: "center",
-          left: c.getWidth() / 2,
-          top: c.getHeight() / 2,
-          selectable: true,
-          evented: true,
-          objectCaching: false
-        });
-        fabricImg._doboKind = mode === "camera" ? "camera" : "rgb";
-
-        const maxW = c.getWidth() * 0.85;
-        const maxH = c.getHeight() * 0.85;
-        const naturalW = baseEl.naturalWidth || baseEl.width || fabricImg.width || 1;
-        const naturalH = baseEl.naturalHeight || baseEl.height || fabricImg.height || 1;
-        const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
-        fabricImg.set({ scaleX: scale, scaleY: scale });
-
-        c.add(fabricImg);
-        c.setActiveObject(fabricImg);
-        setSelType?.("image");
-        setEditing?.(true);
-
-        requestAnimationFrame(() => {
-          c.calcOffset?.();
-          c.renderAll?.();
-        });
+        const keep = (kind === "image" && isImg(x)) || (kind === "text" && isTxt(x));
+        if (!keep) hide(x);
       };
+      visit(o);
+    });
 
-      imgEl.onerror = () => console.error("[DOBO] Error cargando imagen");
-      imgEl.src = dataUrl;
+    // fuerza render
+    c.discardActiveObject?.();
+    c.renderAll?.();
+
+    const url = c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+
+    // restaurar
+    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; markDirty(o); });
+    c.renderAll?.();
+
+    return url;
+  } catch {
+    return "";
+  }
+}
+
+// --- LECTURA de URL de imagen desde tus productos (fallback de datos) ---
+function readImageUrlFor(prod) {
+  return (
+    prod?.featuredImage?.url ||
+    prod?.image?.url || prod?.image?.src ||
+    (Array.isArray(prod?.images) && (prod.images[0]?.url || prod.images[0]?.src)) ||
+    ""
+  );
+}
+
+// --- Rehost CORS (convierte una URL remota en URL Cloudinary con CORS OK) ---
+async function rehostForCORS(url) {
+  if (!url) return "";
+  try {
+    const r = await fetch("/api/proxy-image", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+    const j = await r.json().catch(() => ({}));
+    return j?.url || "";
+  } catch { return ""; }
+}
+
+// ---------- Preview INTEGRADO (maceta + planta + overlay) ----------
+function selectStageEl(canvas) {
+  const cEl = canvas?.lowerCanvasEl || canvas?.upperCanvasEl || null;
+  return (
+    document.querySelector("[data-stage-root]") ||
+    cEl?.closest?.("[data-stage-root]") ||
+    document.getElementById("dobo-stage") ||
+    document.getElementById("design-stage") ||
+    cEl?.parentElement || null
+  );
+}
+
+// --- Dibujo tipo object-fit: contain ---
+function drawContain(ctx, img, x, y, w, h) {
+  const sx = w / img.naturalWidth;
+  const sy = h / img.naturalHeight;
+  const s = Math.min(sx || 1, sy || 1);
+  const dw = (img.naturalWidth * s) | 0;
+  const dh = (img.naturalHeight * s) | 0;
+  const dx = x + ((w - dw) / 2) | 0;
+  const dy = y + ((h - dh) / 2) | 0;
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+function pickImg(stageEl, role) {
+  if (!stageEl) return null;
+  const sels = role === "pot"
+    ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
+    : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
+  for (const s of sels) { const el = stageEl.querySelector(s); if (el) return el; }
+  const imgs = stageEl.querySelectorAll("img");
+  if (imgs.length === 0) return null;
+  if (role === "pot") return imgs[0];
+  if (role === "plant") return imgs.length > 1 ? imgs[1] : imgs[0];
+  return null;
+}
+
+function stageRelativeRect(el, stageEl) {
+  const er = el.getBoundingClientRect();
+  const sr = stageEl.getBoundingClientRect();
+  return { x: er.left - sr.left, y: er.top - sr.top, w: er.width, h: er.height };
+}
+
+function loadImageCORS(src) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = src;
+  });
+}
+
+// --- Preview INTEGRADO (3 estrategias: DOM -> rehost -> datos) ---
+async function exportIntegratedPreview({ stageEl, fabricCanvas, multiplier = 2, potUrl = "", plantUrl = "" } = {}) {
+  try {
+    const canvas = fabricCanvas || (typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null);
+    const stage  = stageEl || (function selectStageEl(c) {
+      const el = c?.lowerCanvasEl || c?.upperCanvasEl || null;
+      return (
+        document.querySelector("[data-stage-root]") ||
+        el?.closest?.("[data-stage-root]") ||
+        document.getElementById("dobo-stage") ||
+        document.getElementById("design-stage") ||
+        el?.parentElement || null
+      );
+    })(canvas);
+    if (!canvas) return "";
+
+    const W = Math.round(canvas.getWidth?.() || stage?.clientWidth || 800);
+    const H = Math.round(canvas.getHeight?.() || stage?.clientHeight || 800);
+
+    const out = document.createElement("canvas");
+    out.width  = Math.max(1, Math.round(W * multiplier));
+    out.height = Math.max(1, Math.round(H * multiplier));
+    const ctx = out.getContext("2d");
+
+    // ---------- Estrategia A: DOM con posiciones ----------
+    const selImg = (root, role) => {
+      if (!root) return null;
+      const sels = role === "pot"
+        ? ['[data-role="pot"] img','img[data-pot]','.pot img','img.pot','.pot-image','img[alt*="maceta" i]']
+        : ['[data-role="plant"] img','img[data-plant]','.plant img','img.plant','.plant-image','img[alt*="planta" i]'];
+      for (const s of sels) { const el = root.querySelector(s); if (el) return el; }
+      const imgs = root.querySelectorAll("img");
+      if (!imgs.length) return null;
+      return role === "plant" ? (imgs.length > 1 ? imgs[1] : imgs[0]) : imgs[0];
     };
 
-    reader.readAsDataURL(file);
+    let drewBase = false;
+    async function drawDomImage(el) {
+      if (!el) return false;
+      const er = el.getBoundingClientRect();
+      const sr = (stage || el.parentElement).getBoundingClientRect();
+      const rx = (er.left - sr.left) * multiplier;
+      const ry = (er.top  - sr.top ) * multiplier;
+      const rw = (er.width)  * multiplier;
+      const rh = (er.height) * multiplier;
+      const src0 = el.currentSrc || el.src || "";
+      try {
+        const im = await (async () => {
+          try {
+            const im = new Image(); im.crossOrigin = "anonymous";
+            await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = src0; });
+            return im;
+          } catch {
+            const prox = await rehostForCORS(src0);
+            if (!prox) throw new Error("rehost-failed");
+            const im2 = new Image(); im2.crossOrigin = "anonymous";
+            await new Promise((res, rej) => { im2.onload = res; im2.onerror = rej; im2.src = prox; });
+            return im2;
+          }
+        })();
+      ctx.drawImage(im, Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
+      return true;
+      } catch { return false; }
+    }
+
+    if (stage) {
+      const potEl   = selImg(stage, "pot");
+      const plantEl = selImg(stage, "plant");
+      if (await drawDomImage(potEl))   drewBase = true;
+      if (await drawDomImage(plantEl)) drewBase = true;
+    }
+
+    // ---------- Estrategia B: datos (si DOM falló) ----------
+    if (!drewBase && (potUrl || plantUrl)) {
+      const loadCORS = async (u) => {
+        if (!u) return null;
+        try {
+          const im = new Image(); im.crossOrigin = "anonymous";
+          await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = u; });
+          return im;
+        } catch {
+          const prox = await rehostForCORS(u);
+          if (!prox) return null;
+          const im2 = new Image(); im2.crossOrigin = "anonymous";
+          await new Promise((res, rej) => { im2.onload = res; im2.onerror = rej; im2.src = prox; });
+          return im2;
+        }
+      };
+      const [poti, plti] = await Promise.all([loadCORS(potUrl), loadCORS(plantUrl)]);
+      if (poti) { drawContain(ctx, poti, 0, 0, out.width, out.height); drewBase = true; }
+      if (plti) { drawContain(ctx, plti, 0, 0, out.width, out.height); drewBase = true; }
+    }
+
+    // ---------- Estrategia C: backgroundImage de Fabric ----------
+    if (!drewBase && canvas?.backgroundImage) {
+      try {
+        const bi = canvas.backgroundImage.getElement?.() || canvas.backgroundImage._element;
+        if (bi) { ctx.drawImage(bi, 0, 0, out.width, out.height); drewBase = true; }
+      } catch {}
+    }
+
+    // Overlay encima (Fabric)
+    if (typeof canvas?.toCanvasElement === "function") {
+      const ov = canvas.toCanvasElement(multiplier);
+      if (ov) ctx.drawImage(ov, 0, 0);
+    } else if (canvas?.lowerCanvasEl) {
+      ctx.save(); ctx.scale(multiplier, multiplier);
+      ctx.drawImage(canvas.lowerCanvasEl, 0, 0);
+      ctx.restore();
+    }
+
+    return out.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
+// Componer asunto del email: "DO 12345 · NO 67890" (fallback "DOBO")
+function makeEmailSubject({ doNum, noNum }) {
+  const L = [];
+  if (doNum) L.push(`DO ${doNum}`);
+  if (noNum) L.push(`NO ${noNum}`);
+  return L.length ? L.join(" · ") : "DOBO";
+}
+// ===================== FIN HELPERS DOBO =====================
+
+
+
+
+
+
+// al inicio del archivo, junto a otros useRef/useState
+const initFromURLRef = { current: false };
+const mobileShellRef = { current: null };
+
+function ControlesPublicar() {
+  const onPublish = async () => {
+    const api = window.doboDesignAPI;
+    const snap = api?.exportDesignSnapshot?.();
+    if (!snap) { alert('No hay diseño'); return; }
+
+    const canvas = api.getCanvas();
+    const dataURL = exportPreviewDataURL(canvas, { multiplier: 2 });
+    const attachment = await dataURLtoBase64Attachment(dataURL);
+
+    const meta = { potHandle: 'maceta-x', plantHandle: 'planta-y', size: 'M' }; // ajusta con tus selecciones reales
+    const designJSON = { ...snap, meta };
+
+    const r = await fetch('/api/design/publish', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ designJSON, previewBase64: attachment, status: 'draft', tags: ['dobo','custom'] })
+    });
+    const out = await r.json();
+    if (!r.ok) { alert(out.error || 'Error al publicar'); return; }
+    console.log('Publicado:', out);
   };
 
-  // inicia flujo
-  waitForCanvasReady();
+  return <button className="btn btn-primary" onClick={onPublish}>Publicar diseño</button>;
+}
+
+
+// Dispara el email sin bloquear el checkout
+
+
+/* ---------- tamaño: normalización de etiquetas ---------- */
+function normalizeSizeTag(raw) {
+  if (!raw) return "";
+  const s = String(raw).trim().toLowerCase();
+  if (s === "grande" || s === "g") return "Grande";
+  if (s === "mediano" || s === "mediana" || s === "m") return "Mediano";
+  if (s === "pequeño" || s === "pequeno" || s === "pequeña" || s === "pequena" || s === "perqueña" || s === "perquena" || s === "p")
+    return "Pequeño";
+  return "";
+}
+const getSizeTag = (tags = []) => {
+  if (!Array.isArray(tags)) return "";
+  for (const t of tags) {
+    const n = normalizeSizeTag(t);
+    if (n) return n;
+  }
+  return "";
+};
+
+/* ---------- precio ---------- */
+const money = (amount, currency = "CLP") =>
+  new Intl.NumberFormat("es-CL", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(amount || 0));
+const num = (v) => Number(typeof v === "object" ? v?.amount : v || 0);
+const firstVariantPrice = (p) => {
+  const v = p?.variants?.[0]?.price;
+  return v ? num(v) : num(p?.minPrice);
+};
+const productMin = (p) => num(p?.minPrice);
+
+/* ---------- preview accesorios ---------- */
+const escapeHtml = (s) =>
+  (s && s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]))) || "";
+const buildIframeHTML = (imgUrl, title, desc) => `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,sans-serif}
+.wrap{padding:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
+img{max-width:100%;height:auto;display:block}
+h4{margin:0;font-size:14px;font-weight:600;text-align:center}
+p{margin:0;font-size:12px;line-height:1.35;text-align:center;color:#333}
+</style></head><body><div class="wrap">
+<img src="${escapeHtml(imgUrl)}" alt=""><h4>${escapeHtml(title||"")}</h4><p>${escapeHtml(desc||"")}</p>
+</div></body></html>`;
+function getPreviewRect() {
+  if (typeof window === "undefined") return { w: 360, h: 360, centered: false };
+  const m = window.innerWidth <= 768;
+  const w = m ? Math.min(window.innerWidth - 24, 420) : 360;
+  const h = m ? Math.min(Math.floor(window.innerHeight * 0.6), 520) : 360;
+  return { w, h, centered: m };
+}
+function IframePreview(props) {
+  if (!props.visible) return null;
+  const d = getPreviewRect();
+  const base = {
+    position: "fixed",
+    borderRadius: 12,
+    overflow: "hidden",
+    background: "#fff",
+    boxShadow: "0 12px 32px rgba(0,0,0,.24)",
+    zIndex: 9999,
+    pointerEvents: "none",
+  };
+  const style = d.centered
+    ? { ...base, left: "50%", bottom: 12, transform: "translateX(-50%)", width: d.w, height: d.h }
+    : { ...base, left: props.x, top: props.y, width: d.w, height: d.h };
+  return (
+    <div style={style}>
+      <iframe srcDoc={props.html} style={{ width: "100%", height: "100%", border: 0, pointerEvents: "none" }} />
+    </div>
+    
+  );
+}
+
+/* ---------- dots ---------- */
+function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
+  if (!count || count < 2) return null;
+  return (
+    <div className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <button
+          key={i}
+          type="button"
+          className={`${styles.dot} ${i === current ? styles.dotActive : ""}`}
+          aria-current={i === current ? "true" : "false"}
+          onClick={() => onSelect(i)}
+        />
+      ))}
+      <span className={styles.dotsLabel}>{current + 1}/{count}</span>
+    </div>
+   
+  );
+}
+
+/* ---------- overlay ---------- */
+const CustomizationOverlay = dynamic(() => import("../components/CustomizationOverlay"), { ssr: false });
+
+/* ---------- swipe ---------- */
+function makeSwipeEvents(swipeRef, handlers) {
+  const begin = (x, y, id, el) => {
+    swipeRef.current = { active: true, id, x, y };
+    if (id != null && el?.setPointerCapture) el.setPointerCapture(id);
+  };
+  const end = (ev, el) => {
+    const id = swipeRef.current?.id;
+    if (id != null && el?.releasePointerCapture) el.releasePointerCapture(id);
+    swipeRef.current = { active: false, id: null, x: 0, y: 0 };
+  };
+  const move = (x, y, ev, el) => {
+    const s = swipeRef.current;
+    if (!s?.active) return;
+    const dx = x - s.x, dy = y - s.y;
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+      ev.preventDefault();
+      if (Math.abs(dx) > 48) {
+        dx > 0 ? handlers.prev() : handlers.next();
+        end(ev, el);
+      }
+    }
+  };
+  return {
+    onPointerDown: (e) => begin(e.clientX, e.clientY, e.pointerId ?? null, e.currentTarget),
+    onPointerMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onPointerUp: (e) => end(e, e.currentTarget),
+    onPointerCancel: (e) => end(e, e.currentTarget),
+    onTouchStart: (e) => { const t = e.touches[0]; begin(t.clientX, t.clientY, null, e.currentTarget); },
+    onTouchMove: (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e, e.currentTarget); },
+    onTouchEnd: (e) => end(e, e.currentTarget),
+    onTouchCancel: (e) => end(e, e.currentTarget),
+    onMouseDown: (e) => begin(e.clientX, e.clientY, null, e.currentTarget),
+    onMouseMove: (e) => move(e.clientX, e.clientY, e, e.currentTarget),
+    onMouseUp: (e) => end(e, e.currentTarget),
+  };
+}
+
+/* ---------- shop ---------- */
+let SHOP_DOMAIN = process.env.NEXT_PUBLIC_SHOP_DOMAIN || "um7xus-0u.myshopify.com";
+if (typeof window !== 'undefined') {
+  const qs = new URLSearchParams(window.location.search);
+  const fromQS = qs.get('shopDomain');
+  if (fromQS) {
+    SHOP_DOMAIN = fromQS;
+  } else if (document.referrer) {
+    try { SHOP_DOMAIN = new URL(document.referrer).host || SHOP_DOMAIN; } catch {}
+  }
+}
+
+
+function Home() {
+  const [plants, setPlants] = useState([]);
+  const [pots, setPots] = useState([]);
+  const [accessories, setAccessories] = useState([]);
+
+  const [selectedPlantIndex, setSelectedPlantIndex] = useState(0);
+  const [selectedPotIndex, setSelectedPotIndex] = useState(0);
+  const [selectedPotVariant, setSelectedPotVariant] = useState(null);
+
+  const [selectedAccessoryIndices, setSelectedAccessoryIndices] = useState([]);
+  const [quantity, setQuantity] = useState(1);
+
+  const [accPreview, setAccPreview] = useState({ visible: false, x: 0, y: 0, html: "" });
+
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [colorOptions, setColorOptions] = useState([]);
+
+  const [editing, setEditing] = useState(false);
+  const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
+
+  const zoomRef = useRef(0.5);
+  const sceneWrapRef = useRef(null);
+  const stageRef = useRef(null);
+  const plantScrollRef = useRef(null);
+  const potScrollRef = useRef(null);
+  const plantSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+  const potSwipeRef = useRef({ active: false, id: null, x: 0, y: 0 });
+
+  const desiredPotHandleRef = useRef(null);
+  const desiredPlantHandleRef = useRef(null);
+  const desiredSizeRef = useRef(null);
+  const [designMeta, setDesignMeta] = useState(null);   // <— NUEVO
+  const restoredOnceRef = useRef(false);                // <— NUEVO
+  const userPickedSizeRef = useRef(false);
+  const appliedMetaOnceRef = useRef(false);
+
+  // para clicks mitad-izq/der estilo Google Shopping
+  const potDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const plantDownRef = useRef({ btn: null, x: 0, y: 0 });
+  const CLICK_STEP_PX = 8;
+  // DOBO: meta del diseño cargado
+const designMetaRef = useRef(null);
+
+  const handlePointerDownCap = (e, ref) => {
+    ref.current = {
+      btn: (e.pointerType === "mouse" || e.pointerType === "pen") ? e.button : 0,
+      x: e.clientX ?? 0,
+      y: e.clientY ?? 0,
+    };
+  };
+  const handlePointerUpCap = (e, ref, handlers) => {
+    if (editing) return;
+    const d = ref.current || { btn: null, x: 0, y: 0 };
+    if ((e.pointerType === "mouse" || e.pointerType === "pen") && d.btn !== 0) return;
+    const dx = Math.abs((e.clientX ?? 0) - d.x);
+    const dy = Math.abs((e.clientY ?? 0) - d.y);
+    if (dx > CLICK_STEP_PX || dy > CLICK_STEP_PX) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX ?? 0) - rect.left;
+    (x > rect.width / 2 ? handlers.next : handlers.prev)();
+  };
+
+  const COLOR_MAP = {
+    negro:"#000000", blanco:"#ffffff", gris:"#808080", "gris claro":"#bfbfbf", "gris oscuro":"#4a4a4a", plomo:"#9ea2a2",
+    plata:"#c0c0c0", dorado:"#d4af37", cobre:"#b87333",
+    rojo:"#ff0000", burdeo:"#6d071a", vino:"#7b001c", rosado:"#ff7aa2", rosa:"#ff7aa2",
+    naranjo:"#ff7a00", naranja:"#ff7a00", amarillo:"#ffd400",
+    verde:"#00a65a", "verde oliva":"#6b8e23", oliva:"#6b8e23", menta:"#3eb489",
+    azul:"#0066ff", celeste:"#4db8ff", turquesa:"#30d5c8",
+    morado:"#7d3cff", lila:"#b57edc", lavanda:"#b497bd",
+    café:"#6f4e37", marrón:"#6f4e37", cafe:"#6f4e37", chocolate:"#4e2a1e",
+    beige:"#d9c6a5", crema:"#f5f0e6", hueso:"#f2efe6",
+  };
+
+  const _stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const _norm = raw => _stripAccents(String(raw||'').toLowerCase().trim())
+    .replace(/\s+/g,' ')
+    .replace(/(claro|oscuro|mate|brillante|satinado|metalico|metalic|pastel)\b/g,'$1')
+    .trim();
+
+  const resolveColor = (opt) => {
+    const raw = String((opt&&opt.hex) || opt || '').trim();
+    if (/^#([0-9a-f]{3}){1,2}$/i.test(raw)) return raw;
+    const key = _norm(raw);
+    if (COLOR_MAP[key]) return COLOR_MAP[key];
+    const parts = key.split(/[\/,-]/).map(s=>s.trim());
+    for (const p of parts) if (COLOR_MAP[p]) return COLOR_MAP[p];
+    return '#ccc';
+  };
+
+ useEffect(() => {
+    if (typeof window !== "undefined" && window.fabric?.Image) {
+      window.fabric.Image.prototype.crossOrigin = "anonymous";
+    }
+  }, []);
+  
+  useEffect(() => {
+    const onFlag = (e) => setEditing(!!e.detail?.editing);
+    window.addEventListener("dobo-editing", onFlag);
+    return () => window.removeEventListener("dobo-editing", onFlag);
+  }, []);
+  useEffect(() => {
+    const s = stageRef.current, c = sceneWrapRef.current;
+    if (!s || !c) return;
+    const ps = s.style.touchAction, pc = c.style.touchAction;
+    s.style.touchAction = editing ? "none" : "pan-y";
+    c.style.touchAction = editing ? "none" : "pan-y";
+    return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+  }, [editing]);
+
+  // en el efecto de montaje inicial
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
+  // expone el zoom inicial al CSS si usas --zoom
+  stage.style.setProperty("--zoom", String(zoomRef.current));
+}, []);
+
+// Centrar horizontalmente el conjunto en móvil sin remaquetar
+useEffect(() => {
+  const shell = mobileShellRef?.current;
+  if (!shell) return;
+  const content = shell.querySelector('.container');
+  if (!content) return;
+  const center = () => {
+    try {
+      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
+      shell.scrollLeft = target;
+    } catch {}
+  };
+  center();
+  const onR = () => center();
+  window.addEventListener('resize', onR);
+  return () => window.removeEventListener('resize', onR);
+}, []);
+
+// ---------- fetch por tamaño y tipo ----------
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const sizeQ = encodeURIComponent(activeSize); // "Pequeño" | "Mediano" | "Grande"
+      const [rPots, rPlants, rAcc] = await Promise.all([
+        fetch(`/api/products?size=${sizeQ}&type=maceta&first=60`, { cache: "no-store" }),
+        fetch(`/api/products?size=${sizeQ}&type=planta&first=60`, { cache: "no-store" }),
+        fetch(`/api/products?type=accesorio&first=60`, { cache: "no-store" }), // accesorios no dependen de tamaño
+      ]);
+      if (!rPots.ok) throw new Error(`pots HTTP ${rPots.status}`);
+      if (!rPlants.ok) throw new Error(`plants HTTP ${rPlants.status}`);
+
+      const dPots = await rPots.json();
+      const dPlants = await rPlants.json();
+      const dAcc = rAcc.ok ? await rAcc.json() : [];
+
+      const potsList = Array.isArray(dPots) ? dPots : dPots.products || [];
+      const plantsList = Array.isArray(dPlants) ? dPlants : dPlants.products || [];
+      const accList = Array.isArray(dAcc) ? dAcc : dAcc.products || [];
+
+      const norm = (list) =>
+        list.map((p) => ({
+          ...p,
+          description: p?.description || p?.descriptionHtml || p?.body_html || "",
+          descriptionHtml: p?.descriptionHtml || "",
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          variants: Array.isArray(p?.variants) ? p.variants : [],
+          image: p?.image?.src || p?.image || (Array.isArray(p?.images) && p.images[0]?.src) || "",
+          minPrice: p?.minPrice || { amount: 0, currencyCode: "CLP" },
+        }));
+
+      if (cancelled) return;
+
+      const potsSafe = norm(potsList);
+      const plantsSafe = norm(plantsList);
+      const accSafe = norm(accList);
+
+      setPots(potsSafe);
+      setPlants(plantsSafe);
+      setAccessories(accSafe);
+
+      // 👉 IMPORTANTE: conservar selección (no resetear a 0 y no tocar selectedPotVariant aquí)
+      setSelectedPotIndex((i) => Math.min(Math.max(i, 0), Math.max(potsSafe.length - 1, 0)));
+      setSelectedPlantIndex((i) => Math.min(Math.max(i, 0), Math.max(plantsSafe.length - 1, 0)));
+      userPickedSizeRef.current = false; // ya cargó la familia del tamaño nuevo
+
+    } catch (err) {
+      console.error("Error fetching products:", err);
+      if (!cancelled) {
+        setPlants([]);
+        setPots([]);
+        setAccessories([]);
+      }
+    }
+  })();
+  return () => { cancelled = true; };
+}, [activeSize]);
+
+// ---------- aplicar selección desde meta/query (una sola vez) ----------
+const applyDesiredSelection = () => {
+  if (restoredOnceRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 && plants.length === 0) return;
+
+  const meta = designMeta || {};
+  const q = new URLSearchParams(window.location.search);
+
+  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
+  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
+  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+
+  const toStr = (v) => String(v || '').toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || '');
+    return s.includes('gid://') ? s.split('/').pop() : s;
+  };
+  const findIdx = (arr, key) => {
+    if (!key) return -1;
+    const k = toStr(key);
+    const kNum = gidToNum(k);
+    return arr.findIndex(p => {
+      const ids = [p?.id, gidToNum(p?.id), p?.handle, p?.title].map(toStr);
+      return ids.includes(k) || ids.includes(toStr(kNum));
+    });
+  };
+
+  let touched = false;
+
+  // tamaño primero (esto re-dispara el fetch con la familia correcta)
+  if (wantSize) {
+    if (wantSize.startsWith('p')) { setActiveSize('Pequeño'); touched = true; }
+    else if (wantSize.startsWith('m')) { setActiveSize('Mediano'); touched = true; }
+    else if (wantSize.startsWith('g')) { setActiveSize('Grande'); touched = true; }
+  }
+
+  // maceta / planta
+  const ip = findIdx(pots, wantPot);
+  if (ip >= 0) { setSelectedPotIndex(ip); touched = true; }
+
+  const il = findIdx(plants, wantPlant);
+  if (il >= 0) { setSelectedPlantIndex(il); touched = true; }
+
+  // color
+  if (meta.color) { setSelectedColor(meta.color); touched = true; }
+
+  if (touched) restoredOnceRef.current = true; // no repetir
+};
+
+// Ejecuta cuando ya hay productos o cambia la meta
+useEffect(() => {
+  applyDesiredSelection();
+}, [pots, plants, designMeta]);
+
+
+
+// DOBO: aplica selección de planta/maceta/color/size desde meta
+useEffect(() => {
+  // Solo una vez y solo si hay meta
+  if (appliedMetaOnceRef.current) return;
+  const meta = designMetaRef.current;
+  if (!meta) return;
+  if (!pots.length || !plants.length) return;
+
+  const asStr = v => String(v || "").toLowerCase().trim();
+  const gidToNum = (id) => (String(id||"").includes("gid://") ? String(id).split("/").pop() : String(id||""));
+
+  const matchIndex = (list, target) => {
+    if (!target) return -1;
+    const t = asStr(target); const tNum = asStr(gidToNum(target));
+    return list.findIndex(p => {
+      const ids = [
+        p?.id, gidToNum(p?.id), p?.handle, p?.title
+      ].map(asStr);
+      return ids.includes(t) || ids.includes(tNum);
+    });
+  };
+
+  // Tamaño guardado en meta → solo si el usuario AÚN no eligió manualmente
+  const sizeRaw = meta.size || meta.tamano || meta.tamaño;
+  if (!userPickedSizeRef.current && sizeRaw) {
+    const s = asStr(sizeRaw);
+    if (["p","pequeño","pequeno","pequeña","pequena"].includes(s)) setActiveSize("Pequeño");
+    else if (["m","mediano","mediana"].includes(s)) setActiveSize("Mediano");
+    else if (["g","grande"].includes(s)) setActiveSize("Grande");
+  }
+
+  // Selección de maceta/planta si existen en la lista actual
+  const ip = matchIndex(pots,   meta.potId || meta.pot || meta.potHandle || meta.potTitle);
+  const il = matchIndex(plants, meta.plantId || meta.plant || meta.plantHandle || meta.plantTitle);
+  if (ip >= 0) setSelectedPotIndex(ip);
+  if (il >= 0) setSelectedPlantIndex(il);
+
+  if (meta.color) setSelectedColor(meta.color);
+
+  // ¡No volver a aplicar!
+  appliedMetaOnceRef.current = true;
+}, [pots, plants]);
+
+
+
+
+  /* ---------- zoom rueda ---------- */
+  useEffect(() => {
+    const container = sceneWrapRef.current, stage = stageRef.current;
+    if (!container || !stage) return;
+    zoomRef.current = zoomRef.current || 1;
+    stage.style.setProperty("--zoom", String(zoomRef.current));
+    const MIN = 0.5, MAX = 2.5;
+    let target = zoomRef.current, raf = 0;
+    const clamp = (v) => Math.min(MAX, Math.max(MIN, v));
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        stage.style.setProperty("--zoom", String(target));
+        container.style.setProperty("--zoom", String(target));
+      });
+    };
+    const onWheel = (e) => {
+      if (!stage.contains(e.target)) return;
+      e.preventDefault();
+      const step = e.deltaY > 0 ? -0.08 : 0.08;
+      zoomRef.current = clamp(zoomRef.current + step);
+      target = zoomRef.current;
+      schedule();
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+// ---------- RESTAURAR SELECCIÓN (una sola vez) desde meta o query ----------
+const restoredRef = useRef(false);
+useEffect(() => {
+  if (restoredRef.current) return;
+  if (!Array.isArray(pots) || !Array.isArray(plants)) return;
+  if (pots.length === 0 && plants.length === 0) return;
+
+  const meta = designMetaRef.current || {};
+  const q = new URLSearchParams(window.location.search);
+
+  const wantSize  = (q.get('size')  || meta.size  || meta.tamano || meta.tamaño || '').toLowerCase();
+  const wantPot   = (q.get('pot')   || q.get('potHandle')   || meta.potHandle   || meta.potTitle   || meta.potId   || '').toLowerCase();
+  const wantPlant = (q.get('plant') || q.get('plantHandle') || meta.plantHandle || meta.plantTitle || meta.plantId || '').toLowerCase();
+
+  // tamaño
+  if (wantSize) {
+    if (wantSize.startsWith('p')) setActiveSize('Pequeño');
+    else if (wantSize.startsWith('m')) setActiveSize('Mediano');
+    else if (wantSize.startsWith('g')) setActiveSize('Grande');
+  }
+
+  // helper
+  const toStr = (v) => String(v || '').toLowerCase().trim();
+  const gidToNum = (id) => {
+    const s = String(id || '');
+    return s.includes('gid://') ? s.split('/').pop() : s;
+  };
+  const findIdx = (arr, key) => {
+    if (!key) return -1;
+    const k = toStr(key);
+    const kNum = gidToNum(k);
+    return arr.findIndex(p => {
+      const ids = [
+        p?.id, gidToNum(p?.id), p?.handle, p?.title
+      ].map(toStr);
+      return ids.includes(k) || ids.includes(toStr(kNum));
+    });
+  };
+
+  // maceta / planta
+  const ip = findIdx(pots, wantPot);
+  if (ip >= 0) setSelectedPotIndex(ip);
+
+  const il = findIdx(plants, wantPlant);
+  if (il >= 0) setSelectedPlantIndex(il);
+
+  // color (opcional)
+  if (meta.color) setSelectedColor(meta.color);
+
+  restoredRef.current = true;
+}, [pots, plants]);
+
+  
+  /* ---------- variantes: SOLO color ---------- */
+  useEffect(() => {
+    const pot = pots[selectedPotIndex];
+    if (!pot) { setColorOptions([]); setSelectedPotVariant(null); return; }
+    const valid = (pot.variants || []).filter((v) => !!v.image);
+    const lower = (s) => (s ?? "").toString().trim().toLowerCase();
+    const colors = [...new Set(valid.flatMap((v) => (v.selectedOptions || []).filter((o) => lower(o.name) === "color").map((o) => o.value)))];
+    setColorOptions(colors);
+    const match = (v, c) => {
+      const opts = v.selectedOptions || [];
+      return c ? opts.some((o) => lower(o.name) === "color" && lower(o.value) === lower(c)) : true;
+    };
+    if (!(selectedColor && valid.some((v) => match(v, selectedColor)))) {
+      const first = colors.find((c) => valid.some((v) => match(v, c)));
+      if (first) setSelectedColor(first);
+    }
+    const chosen = valid.find((v) => match(v, selectedColor)) || valid[0] || null;
+    setSelectedPotVariant(chosen || null);
+  }, [pots, selectedPotIndex, selectedColor]);
+
+  /* ---------- totales ---------- */
+  const getTotalPrice = () => {
+    const pot = pots[selectedPotIndex];
+    const plant = plants[selectedPlantIndex];
+    const potPrice = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const plantPrice = productMin(plant);
+    const accTotal = selectedAccessoryIndices.reduce((s, i) => {
+      const a = accessories[i];
+      const v = a?.variants?.[0]?.price;
+      return s + (v ? num(v) : productMin(a));
+    }, 0);
+    return potPrice + plantPrice + accTotal;
+  };
+  const getTotalComparePrice = () => {
+    const pot = pots[selectedPotIndex];
+    const plant = plants[selectedPlantIndex];
+    const potCmp = selectedPotVariant?.compareAtPrice ? num(selectedPotVariant.compareAtPrice) :
+                    selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pot);
+    const plantCmp = productMin(plant);
+    const accCmp = selectedAccessoryIndices.reduce((s, i) => {
+      const a = accessories[i];
+      const base = a?.variants?.[0]?.compareAtPrice ?? a?.variants?.[0]?.price ?? a?.minPrice;
+      return s + num(base);
+    }, 0);
+    return potCmp + plantCmp + accCmp;
+  };
+
+  /* ---------- cart helpers ---------- */
+  const gidToNumeric = (id) => {
+    const s = String(id || "");
+    return s.includes("gid://") ? s.split("/").pop() : s;
+  };
+  async function captureDesignPreview() {
+    const el = stageRef?.current;
+    if (!el) return null;
+    const { default: html2canvas } = await import("html2canvas");
+    const onclone = (doc) => {
+      const st = doc.querySelector('[data-capture-stage="1"]') || doc.body;
+      st.style.overflow = "visible";
+      st.style.clipPath = "none";
+      const prune = (sel, keep) => {
+        const tr = doc.querySelector(sel);
+        if (!tr) return;
+        Array.from(tr.children).forEach((node, i) => { if (i !== keep) node.remove(); });
+        tr.style.transform = "none";
+        tr.style.width = "100%";
+      };
+      prune('[data-capture="pot-track"]', selectedPotIndex);
+      prune('[data-capture="plant-track"]', selectedPlantIndex);
+      ['[data-capture="pot-container"]', '[data-capture="plant-container"]'].forEach((sel) => {
+        const c = doc.querySelector(sel);
+        if (c) { c.style.overflow = "visible"; c.style.clipPath = "none"; }
+      });
+    };
+    const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
+    return canvas.toDataURL("image/png");
+  }
+  async function prepareDesignAttributes() {
+    let previewUrl = "";
+    try {
+      const dataUrl = await captureDesignPreview();
+      if (dataUrl) {
+        const resp = await fetch("/api/upload-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
+        previewUrl = json.url || "";
+      }
+    } catch {}
+    const pot = pots[selectedPotIndex];
+    const plant = plants[selectedPlantIndex];
+    return [
+      { key: "_DesignPreview", value: previewUrl },
+      { key: "_DesignId", value: String(Date.now()) },
+      { key: "_DesignPlant", value: plant?.id || "" },
+      { key: "_DesignPot", value: pot?.id || "" },
+      { key: "_DesignColor", value: selectedColor || "" },
+      { key: "_DesignSize", value: activeSize || "" },
+      { key: "_LinePriority", value: "0" },
+    ];
+  }
+
+async function publishDesignForVariant(variantId) {
+  try {
+    const api = await waitDesignerReady(20000);
+    if (!api) return { ok:false, error:'designer-not-ready' };
+
+    // snapshot
+    let snap = (
+      api.exportDesignSnapshot?.() ??
+      api.exportSnapshot?.() ??
+      api.exportJSON?.() ??
+      api.toJSON?.() ??
+      api.getState?.()
+    );
+    if (!snap && typeof loadLocalDesign === 'function') snap = loadLocalDesign();
+    if (!snap) return { ok:false, error:'no-snapshot' };
+
+    // preview
+    let previewDataURL = null;
+    try { previewDataURL = await captureDesignPreview(); } catch {}
+    if (!previewDataURL) {
+      const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
+      try { previewDataURL = canvas?.toDataURL?.('image/png') || null; } catch {}
+    }
+    if (!previewDataURL) return { ok:false, error:'no-preview' };
+
+
+// DOBO: meta para restaurar selección
+const meta = {
+  potId: pots[selectedPotIndex]?.id || "",
+  potTitle: pots[selectedPotIndex]?.title || "",
+  potHandle: pots[selectedPotIndex]?.handle || "",
+  plantId: plants[selectedPlantIndex]?.id || "",
+  plantTitle: plants[selectedPlantIndex]?.title || "",
+  plantHandle: plants[selectedPlantIndex]?.handle || "",
+  color: selectedColor || "",
+  size: activeSize || ""
+};
+
+    
+    // call
+    const r = await fetch('/api/publish-by-variant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+  variantId,
+  previewDataURL,
+  design: snap,   // el snapshot actual
+  meta            // ← importante
+})
+    });
+
+    const raw = await r.text();
+    let j; try { j = JSON.parse(raw); } catch { j = { ok:false, error: raw } }
+
+    if (!r.ok || !j?.ok) {
+      const msg = j?.error ? `${j.error}${j.stage ? ' @'+j.stage : ''}` : `HTTP ${r.status}`;
+      return { ok:false, error: msg };
+    }
+    return j;
+  } catch (e) {
+    return { ok:false, error:String(e?.message||e) };
+  }
+}
+
+
+async function getPreviewDataURL(api) {
+  // usa tu helper existente
+  try {
+    const d = await captureDesignPreview();
+    if (d) return d;
+  } catch {}
+  // fallback directo al canvas
+  const canvas = api.getCanvas?.() || api.canvas || document.querySelector('canvas');
+  try { return canvas?.toDataURL ? canvas.toDataURL('image/png') : null; } catch { return null; }
+}
+
+async function waitDesignerReady(timeout = 20000) {
+  // 1) evento opcional si tu customizador lo emite
+  let api = null;
+  let resolved = false;
+  const onEvt = (e)=>{ api = (e && e.detail) || window.doboDesignAPI; resolved = true; };
+  window.addEventListener('dobo:ready', onEvt, { once:true });
+
+  // 2) sondeo
+  const start = Date.now();
+  while (Date.now() - start < timeout && !resolved) {
+    const a = window.doboDesignAPI;
+    const ok = a && (a.exportDesignSnapshot || a.exportSnapshot || a.exportJSON || a.toJSON || a.getState);
+    if (ok) { api = a; break; }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  window.removeEventListener('dobo:ready', onEvt);
+  return api || null;
+}
+
+
+
+  
+
+
+
+
+
+
+
+// —————————————————————————————————————————————
+// POST AL CARRITO (mantiene compat de keys)
+// —————————————————————————————————————————————
+function postCart(shop, mainVariantId, qty, attrs, accessoryIds, returnTo) {
+  const asStr = (v) => String(v || "").trim();
+  const isNum = (v) => /^\d+$/.test(asStr(v));
+  const gidToNum = (id) => {
+    const s = asStr(id);
+    return s.includes("gid://") ? s.split("/").pop() : s;
+  };
+
+  const main = isNum(mainVariantId) ? asStr(mainVariantId) : gidToNum(mainVariantId);
+  if (!isNum(main)) throw new Error("Variant principal inválido");
+
+  const accs = (accessoryIds || [])
+    .map((id) => (isNum(id) ? asStr(id) : gidToNum(id)))
+    .filter(isNum);
+
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.target = "_top";
+  form.action = `https://${shop}/cart/add`;
+
+  const add = (n, v) => {
+    const i = document.createElement("input");
+    i.type = "hidden";
+    i.name = n;
+    i.value = String(v);
+    form.appendChild(i);
+  };
+
+  let line = 0;
+
+  const getA = (name) => {
+    const n = String(name || "").toLowerCase();
+    return (attrs || []).find((a) => {
+      const k = String(a?.key || "").toLowerCase();
+      return k === n || k === `_${n}`;
+    })?.value || "";
+  };
+
+  const previewUrl  = getA("DesignPreview");
+  const designId    = getA("DesignId");
+  const designPlant = getA("DesignPlant");
+  const designPot   = getA("DesignPot");
+  const designColor = getA("DesignColor");
+  const designSize  = getA("DesignSize");
+  const layerImg    = getA("Layer:Image") || getA("LayerImage") || getA("_LayerImage");
+  const layerTxt    = getA("Layer:Text")  || getA("LayerText")  || getA("_LayerText");
+
+  // Línea principal
+  add(`items[${line}][id]`, main);
+  add(`items[${line}][quantity]`, String(qty || 1));
+  add(`items[${line}][properties][_LinePriority]`, "0");
+  if (previewUrl)  add(`items[${line}][properties][_DesignPreview]`, previewUrl);
+  if (designId)    add(`items[${line}][properties][_DesignId]`, designId);
+  if (designPlant) add(`items[${line}][properties][_DesignPlant]`, designPlant);
+  if (designPot)   add(`items[${line}][properties][_DesignPot]`, designPot);
+  if (designColor) add(`items[${line}][properties][_DesignColor]`, designColor);
+  if (designSize)  add(`items[${line}][properties][_DesignSize]`, designSize);
+  if (layerImg)    add(`items[${line}][properties][_LayerImage]`, layerImg);
+  if (layerTxt)    add(`items[${line}][properties][_LayerText]`, layerTxt);
+  line++;
+
+  // Accesorios (si hay)
+  accs.forEach((id) => {
+    add(`items[${line}][id]`, id);
+    add(`items[${line}][quantity]`, "1");
+    add(`items[${line}][properties][_Accessory]`, "true");
+    add(`items[${line}][properties][_LinePriority]`, "1");
+    line++;
+  });
+
+  if (returnTo) add("return_to", returnTo);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// —————————————————————————————————————————————
+// ACCESORIOS (corrige gidToNumeric → gidToNum)
+// —————————————————————————————————————————————
+const getAccessoryVariantIds = () =>
+  (selectedAccessoryIndices || [])
+    .map((i) => accessories?.[i]?.variants?.[0]?.id)
+    .map((id) => {
+      const s = String(id || "");
+      return s.includes("gid://") ? s.split("/").pop() : s;
+    })
+    .filter((id) => /^\d+$/.test(id));
+
+
+// === DOBO Cloudinary Upload + Checkout seguro ===
+const handleCheckout = async (mode = "checkout") => {
+  try {
+    const api = window.doboDesignAPI;
+    if (!api || !api.toPNG) {
+      alert("El diseñador no está listo. Intenta de nuevo en unos segundos.");
+      return;
+    }
+
+    // Genera el PNG comprimido
+    const dataUrl = api.toPNG(1.8); // menor multiplicador = imagen más liviana
+    const blob = await (await fetch(dataUrl)).blob();
+
+    // Prepara datos para subir a Cloudinary
+    const formData = new FormData();
+    formData.append("file", blob);
+    formData.append("upload_preset", "dobo_uploads"); // tu preset configurado en Cloudinary
+
+    // 🔹 Sube el archivo
+    const uploadResponse = await fetch(
+      "https://api.cloudinary.com/v1_1/dmebjfbwd/image/upload", // cambia por tu cloud name si difiere
+      { method: "POST", body: formData }
+    );
+    const uploadData = await uploadResponse.json();
+
+    if (!uploadData.secure_url) {
+      console.error("Error al subir imagen:", uploadData);
+      alert("No se pudo subir la imagen del diseño. Intenta de nuevo.");
+      return;
+    }
+
+    console.log("[DOBO] Imagen subida correctamente:", uploadData.secure_url);
+
+    // 🔹 Envía al backend para generar checkout y correo
+    const res = await fetch("/api/createCheckout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        designUrl: uploadData.secure_url, // <-- ya no se manda el base64 pesado
+        mode,
+        ...selectedProductData, // tus datos actuales de producto
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("Error en checkout:", text);
+      alert("No se pudo iniciar el checkout. Revisa la consola para más detalles.");
+      return;
+    }
+
+    const data = await res.json();
+
+    if (data.url) {
+      window.location.href = data.url; // redirige al checkout de Shopify
+    } else {
+      console.warn("No se recibió URL de checkout:", data);
+      alert("No se pudo iniciar el checkout correctamente.");
+    }
+  } catch (err) {
+    console.error("[DOBO] Error general en handleCheckout:", err);
+    alert("Hubo un error inesperado al procesar tu compra.");
+  }
 };
 
 
+// —————————————————————————————————————————————
+// BUY NOW (normaliza https una sola vez y fuerza _DesignPreview)
+// —————————————————————————————————————————————
+async function buyNow() {
+  try {
+    let attrs = await prepareDesignAttributes(); // aquí ya llega _DesignPreview integrado por html2canvas
 
+    // Esperar editor y canvas
+    const ready = await waitDesignerReady(20000);
+    if (!ready) throw new Error("designer-not-ready");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!fabricCanvas) throw new Error("canvas-missing");
 
+    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
 
+    // Utilidades locales
+    const __delay = (ms)=> new Promise(r=>setTimeout(r, ms));
+    const __size  = (s)=> (s || "").length;
+    const __tooSmall = (d) => __size(d) < 2000;
 
-  const onDelete = () => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const removeOne = (o) => { if (!o) return; try { c.remove(o); } catch {} };
-
-    if (a.type === "activeSelection" && a._objects?.length) {
-      const arr = a._objects.slice();
-      a.discard();
-      arr.forEach(removeOne);
-    } else {
-      removeOne(a);
-    }
-    c.discardActiveObject();
-    c.requestRenderAll();
-    setSelType("none");
-  };
-
-  const applyToSelection = (mutator) => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const applyToGroup = (g) => {
-      if (!g || g._kind !== "textGroup") return;
-      const { base, shadow, highlight } = g._textChildren || {};
-      [base, shadow, highlight].forEach(o => o && mutator(o));
-      const sx = Math.max(1e-6, Math.abs(g.scaleX || 1));
-      const sy = Math.max(1e-6, Math.abs(g.scaleY || 1));
-      const ox = 1 / sx, oy = 1 / sy;
-      shadow?.set({ left: -ox, top: -oy });
-      highlight?.set({ left: +ox, top: +oy });
-      g.setCoords();
+    const __isTextLike  = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+    const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
+    const __isBaseLike = (o) => {
+      if (!o) return false;
+      const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
+      return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
     };
+    const __hasBaseDeep = (o) => !!o && (__isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasBaseDeep)));
 
-    if (a.type === "activeSelection" && Array.isArray(a._objects)) {
-      a._objects.forEach(applyToGroup);
-    } else if (a._kind === "textGroup") {
-      applyToGroup(a);
-    } else if (a.type === "textbox" || a.type === "i-text" || a.type === "text") {
-      mutator(a);
-    }
-    c.requestRenderAll();
-  };
-
-  // Cambiar color a vector (re-vectoriza con el color actual)
-  const applyColorToActive = (hex) => {
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-    const rgb = hexToRgb(hex);
-
-    const rebuildVector = (obj) => {
-      let element = null;
-      let pose = null;
-
-      if (obj?._doboKind === "vector") {
-        const baseEl = obj._vecSourceEl || (typeof obj.getElement === "function" ? obj.getElement() : obj._element);
-        if (!baseEl) return;
-        element = baseEl;
-        pose = {
-          left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
-          scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0
-        };
-        try { obj.canvas.remove(obj); } catch {}
-      } else {
-        // texto normal (si llegó acá)
-        return;
-      }
-
-      const baseImg = vectorizeElementToBitmap(element, {
-        maxDim: VECTOR_SAMPLE_DIM,
-        makeDark: true,
-        drawColor: rgb,
-        thrBias: vecBias
-      });
-      if (!baseImg) return;
-      baseImg._doboKind = "vector";
-      baseImg.set({
-        selectable: true, evented: true, objectCaching: false
-      });
-      baseImg.set(pose);
-      c.add(baseImg);
-      c.setActiveObject(baseImg);
-    };
-
-    if (a.type === "activeSelection" && a._objects?.length) {
-      const arr = a._objects.slice(); a.discard(); arr.forEach(rebuildVector);
-    } else if (a._doboKind === "vector") {
-      rebuildVector(a);
-    } else if (a._kind === "textGroup" || a.type === "textbox" || a.type === "i-text" || a.type === "text") {
-      // Cambiar color del texto
-      applyToSelection(o => o.set({ fill: `rgba(${rgb.join(",")},1)` }));
-    }
-
-    c.requestRenderAll();
-  };
-
-  // Re-vectorizar cuando cambia "Detalles" (vecBias) SOLO si hay vector seleccionado
-
-  useEffect(() => {
-    if (!editing || selType !== "image") return;
-    const c = fabricCanvasRef.current; if (!c) return;
-    const a = c.getActiveObject(); if (!a) return;
-
-    const maybeRebuild = (obj) => {
-      if (obj?._doboKind !== "vector") return;
-      const element = obj._vecSourceEl || (typeof obj.getElement === "function" ? obj.getElement() : obj._element);
-      if (!element) return;
-      const pose = {
-        left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
-        scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle || 0
+    const __hidden = [];
+    const __hideIf = (pred) => {
+      const walk = (o) => {
+        if (!o) return;
+        if (pred(o)) { __hidden.push(o); o.__vis = o.visible; o.visible = false; }
+        if (Array.isArray(o._objects)) o._objects.forEach(walk);
       };
-      try { obj.canvas.remove(obj); } catch {}
+      (fabricCanvas.getObjects?.() || []).forEach(walk);
+      if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
+        const bg = fabricCanvas.backgroundImage;
+        __hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
+      }
+      fabricCanvas.requestRenderAll?.();
+    };
+    const __restoreAll = () => {
+      __hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
+      __hidden.length = 0;
+      fabricCanvas.requestRenderAll?.();
+    };
+    const __snap = (mult = 2) =>
+      fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
 
-      const rgb = hexToRgb(shapeColor);
-      const baseImg = vectorizeElementToBitmap(element, {
-        maxDim: VECTOR_SAMPLE_DIM,
-        makeDark: true,
-        drawColor: rgb,
-        thrBias: vecBias
-      });
-      if (!baseImg) return;
-      baseImg._doboKind = "vector";
-      baseImg.set({ selectable: true, evented: true, objectCaching: false });
-      baseImg.set(pose);
-      c.add(baseImg);
-      c.setActiveObject(baseImg);
+    const __loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+    const __composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        __loadImage(overlayAllUrl),
+        potUrl ? __loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? __loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const ctx = off.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return off.toDataURL("image/png");
     };
 
-    if (a.type === "activeSelection" && a._objects?.length) {
-      const arr = a._objects.slice(); a.discard(); arr.forEach(maybeRebuild);
+    // === Capturas ===
+    await __delay(50);
+
+    // Overlay:All (sin base)
+    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    let overlayAll = __snap(2);
+
+    // Solo texto
+    __restoreAll();
+    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    __hideIf((o) => !__hasTextDeep(o));
+    let layerTxt = __snap(2);
+
+    // Solo imagen
+    __restoreAll();
+    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    __hideIf((o) => __hasTextDeep(o));
+    let layerImg = __snap(2);
+
+    // Intento de “re-compuesto” (por si hiciera falta)
+    __restoreAll();
+    let previewRecomposed = "";
+    try { previewRecomposed = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
+    catch { previewRecomposed = __snap(2); }
+
+    // Filtros de tamaño mínimo
+    if (__tooSmall(layerTxt)) layerTxt = "";
+    if (__tooSmall(layerImg) && overlayAll && !__tooSmall(overlayAll)) layerImg = overlayAll;
+
+    // ——— AQUÍ VIENE EL CAMBIO CRÍTICO ———
+    // Preferimos SIEMPRE el DesignPreview que vino del prepareDesignAttributes (html2canvas),
+    // y NO lo sobreescribimos si ya existe y es válido.
+    const previewFromPrepare = getAttrCI(attrs, "designpreview"); // _DesignPreview o DesignPreview
+    const bestIntegrated = previewFromPrepare || previewRecomposed || overlayAll;
+
+    // Subir a https lo que falte
+    overlayAll                 = await ensureHttpsUrl(overlayAll, "overlay-all");
+    layerImg                   = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt                   = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const bestIntegratedHttps  = await ensureHttpsUrl(bestIntegrated, "preview-full");
+
+    // Merge attrs SIN pisar el DesignPreview existente
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    if (!previewFromPrepare) {
+      // si no venía, recién ahora escribimos DesignPreview
+      pushKV("DesignPreview", bestIntegratedHttps);
     } else {
-      maybeRebuild(a);
+      // si ya venía bueno, lo respetamos y guardamos el alias por compat
+      pushKV("Preview:Full", bestIntegratedHttps);
     }
-    c.requestRenderAll();
-  }, [vecBias]); // eslint-disable-line react-hooks/exhaustive-deps
+    pushKV("Overlay:All",  overlayAll);
+    pushKV("Layer:Image",  layerImg);
+    pushKV("Layer:Text",   layerTxt);
 
-  // ====== Zoom de rueda básico (opcional)
-  useEffect(() => {
-    const host = stageRef?.current || fabricCanvasRef.current?.upperCanvasEl;
-    if (!host) return;
-    const onWheel = (e) => {
-      if (textEditing) return;
-      e.preventDefault();
-      const current = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
-      const next = clamp(current + (e.deltaY > 0 ? -0.08 : 0.08), 0.6, 2.5);
-      stageRef?.current?.style.setProperty("--zoom", String(next));
-      if (typeof setZoom === "function") setZoom(next);
-    };
-    host.addEventListener("wheel", onWheel, { passive: false });
-    return () => host.removeEventListener("wheel", onWheel);
-  }, [stageRef, setZoom, textEditing]);
+    // Precio + producto temporal
+    const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
 
-  if (!visible) return null;
+    const previewForProduct =
+      previewFromPrepare || bestIntegratedHttps || overlayAll;
 
-  // ====== Overlay Canvas (posicionado dentro del anchor/stage)
-  const OverlayCanvas = (
-    <div
-      ref={overlayRef}
-      style={{
-        position: "absolute",
-        left: overlayBox.left,
-        top: overlayBox.top,
-        width: overlayBox.w,
-        height: overlayBox.h,
-        zIndex: Z_CANVAS,
-        overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain"
-      }}
-      onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
-    >
-      <canvas
-        data-dobo-design="1"
-        ref={canvasRef}
-        width={overlayBox.w}
-        height={overlayBox.h}
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "block",
-          background: "transparent",
-          touchAction: editing ? "none" : "auto"
-        }}
-      />
-    </div>
-  );
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+        previewUrl: previewForProduct,          // ← usar el integrado ya bueno
+        price: basePrice,
+        color: selectedColor || "Único",
+        size:  activeSize   || "Único",
+        designId: attrs.find((a) => a.key === "_DesignId")?.value,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle:   pots[selectedPotIndex]?.title   || "Maceta",
+      }),
+    });
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    // DO / NO
+    const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+    const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
+    pushKV("_DO", doNum);
+    pushKV("_NO", noNum);
+
+    // Publicar assets
+    const again = await waitDesignerReady(20000);
+    if (!again) throw new Error("designer-not-ready");
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    // Email (usar attrs tal cual, que ya contienen las 3 capas y el integrado)
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
+
+    const emailAttrs = attrs.slice();
+
+    sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
+      attrs: emailAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+      attachOverlayAll: true
+    });
+
+    // Checkout
+    const accIds = getAccessoryVariantIds();
+    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/checkout");
+  } catch (e) {
+    alert(`No se pudo iniciar el checkout: ${e.message}`);
+  }
 }
-  // ====== Menú ======
-  const Menu = () => {
-    const c = fabricCanvasRef.current;
-    const a = c?.getActiveObject();
-    const isVectorSelected =
-      selType === "image" && a && a._doboKind === "vector";
-    const isRgbSelected =
-      selType === "image" && a && a._doboKind === "rgb";
 
-    return (
-      <div
-        ref={menuRef}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          background: "rgba(253, 253, 253, 0.34)",
-          backdropFilter: "blur(4px)",
-          WebkitBackdropFilter: "blur(4px)",
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: "10px 12px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          width: "auto",
-          maxWidth: "94vw",
-          fontSize: 12,
-          userSelect: "none"
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-      >
-        {/* Línea 1: historial + zoom + modos */}
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás"
-            >
-              <i className="fa fa-undo" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante"
-            >
-              <i className="fa fa-repeat" aria-hidden="true"></i>
-            </button>
+
+
+
+// —————————————————————————————————————————————
+// ADD TO CART (normaliza https una sola vez y fuerza _DesignPreview)
+// —————————————————————————————————————————————
+async function addToCart() {
+  try {
+    let attrs = await prepareDesignAttributes(); // ya trae _DesignPreview integrado
+
+    const ready = await waitDesignerReady(20000);
+    if (!ready) throw new Error("designer-not-ready");
+    const fabricCanvas = window.doboDesignAPI?.getCanvas?.() || null;
+    if (!fabricCanvas) throw new Error("canvas-missing");
+
+    const potUrl   = readImageUrlFor(pots?.[selectedPotIndex]);
+    const plantUrl = readImageUrlFor(plants?.[selectedPlantIndex]);
+
+    // Utilidades locales (idénticas a buyNow)
+    const __delay = (ms)=> new Promise(r=>setTimeout(r, ms));
+    const __size  = (s)=> (s || "").length;
+    const __tooSmall = (d) => __size(d) < 2000;
+    const __isTextLike  = (o) => !!o && (/text/i.test(o.type || "") || typeof o.text === "string");
+    const __hasTextDeep = (o) => !!o && (__isTextLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasTextDeep)));
+    const __isBaseLike = (o) => {
+      if (!o) return false;
+      const tag = (o.name || o.id || o.doboKind || o.role || "").toLowerCase();
+      return /(^(base|pot|maceta|plant|planta|bg|background)$)|(^|_|-)(pot|maceta|plant|planta|base|bg|background)(_|-|$)/.test(tag);
+    };
+    const __hasBaseDeep = (o) => !!o && (__isBaseLike(o) || (Array.isArray(o._objects) && o._objects.some(__hasBaseDeep)));
+
+    const __hidden = [];
+    const __hideIf = (pred) => {
+      const walk = (o) => {
+        if (!o) return;
+        if (pred(o)) { __hidden.push(o); o.__vis = o.visible; o.visible = false; }
+        if (Array.isArray(o._objects)) o._objects.forEach(walk);
+      };
+      (fabricCanvas.getObjects?.() || []).forEach(walk);
+      if (fabricCanvas.backgroundImage && pred(fabricCanvas.backgroundImage)) {
+        const bg = fabricCanvas.backgroundImage;
+        __hidden.push(bg); bg.__vis = bg.visible; bg.visible = false;
+      }
+      fabricCanvas.requestRenderAll?.();
+    };
+    const __restoreAll = () => {
+      __hidden.forEach(o => { o.visible = (o.__vis !== false); delete o.__vis; });
+      __hidden.length = 0;
+      fabricCanvas.requestRenderAll?.();
+    };
+    const __snap = (mult = 2) =>
+      fabricCanvas.toDataURL({ format: "png", multiplier: mult, backgroundColor: null });
+
+    const __loadImage = (url) => new Promise((res, rej) => {
+      if (!url) return rej(new Error("no-url"));
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => res(img);
+      img.onerror = (e) => rej(e);
+      img.src = url;
+    });
+    const __composeFull = async ({ overlayAllUrl, potUrl, plantUrl }) => {
+      const [overlayImg, potImg, plantImg] = await Promise.all([
+        __loadImage(overlayAllUrl),
+        potUrl ? __loadImage(potUrl).catch(()=>null) : Promise.resolve(null),
+        plantUrl ? __loadImage(plantUrl).catch(()=>null) : Promise.resolve(null),
+      ]);
+      const W = overlayImg.naturalWidth  || overlayImg.width  || 1024;
+      const H = overlayImg.naturalHeight || overlayImg.height || 1024;
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const ctx = off.getContext("2d");
+      if (potImg)   ctx.drawImage(potImg,   0, 0, W, H);
+      if (plantImg) ctx.drawImage(plantImg, 0, 0, W, H);
+      ctx.drawImage(overlayImg, 0, 0, W, H);
+      return off.toDataURL("image/png");
+    };
+
+    // === Capturas ===
+    await __delay(50);
+
+    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    let overlayAll = __snap(2);
+
+    __restoreAll();
+    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    __hideIf((o) => !__hasTextDeep(o));
+    let layerTxt = __snap(2);
+
+    __restoreAll();
+    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+    __hideIf((o) => __hasTextDeep(o));
+    let layerImg = __snap(2);
+
+    __restoreAll();
+    let previewRecomposed = "";
+    try { previewRecomposed = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
+    catch { previewRecomposed = __snap(2); }
+
+    if (__tooSmall(layerTxt)) layerTxt = "";
+    if (__tooSmall(layerImg) && overlayAll && !__tooSmall(overlayAll)) layerImg = overlayAll;
+
+    const previewFromPrepare = getAttrCI(attrs, "designpreview");
+    const bestIntegrated = previewFromPrepare || previewRecomposed || overlayAll;
+
+    overlayAll                = await ensureHttpsUrl(overlayAll, "overlay-all");
+    layerImg                  = await ensureHttpsUrl(layerImg, "layer-image");
+    layerTxt                  = layerTxt ? await ensureHttpsUrl(layerTxt, "layer-text") : "";
+    const bestIntegratedHttps = await ensureHttpsUrl(bestIntegrated, "preview-full");
+
+    const pushKV = (k, v) => { if (v) attrs = [...attrs.filter(a => a.key !== k && a.key !== `_${k}`), { key: k, value: v }]; };
+    if (!previewFromPrepare) {
+      pushKV("DesignPreview", bestIntegratedHttps);
+    } else {
+      pushKV("Preview:Full",  bestIntegratedHttps);
+    }
+    pushKV("Overlay:All",  overlayAll);
+    pushKV("Layer:Image",  layerImg);
+    pushKV("Layer:Text",   layerTxt);
+
+    const potPrice   = selectedPotVariant?.price ? num(selectedPotVariant.price) : firstVariantPrice(pots[selectedPotIndex]);
+    const plantPrice = productMin(plants[selectedPlantIndex]);
+    const basePrice  = Number(((potPrice + plantPrice) * quantity).toFixed(2));
+
+    const previewForProduct =
+      previewFromPrepare || bestIntegratedHttps || overlayAll;
+
+    const dpRes = await fetch("/api/design-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `DOBO ${plants[selectedPlantIndex]?.title} + ${pots[selectedPotIndex]?.title}`,
+        previewUrl: previewForProduct,          // ← usar el integrado ya bueno
+        price: basePrice,
+        color: selectedColor || "Único",
+        size:  activeSize   || "Único",
+        designId: attrs.find((a) => a.key === "_DesignId")?.value,
+        plantTitle: plants[selectedPlantIndex]?.title || "Planta",
+        potTitle:   pots[selectedPotIndex]?.title   || "Maceta",
+      }),
+    });
+    const dp = await dpRes.json();
+    if (!dpRes.ok || !dp?.variantId) throw new Error(dp?.error || "No se creó el producto DOBO");
+
+    const doNum = (attrs.find(a => a.key === "_DesignId")?.value || "").toString().slice(-8).toUpperCase();
+    const noNum = (String(dp.variantId || "").includes("gid://") ? String(dp.variantId).split("/").pop() : String(dp.variantId));
+    pushKV("_DO", doNum);
+    pushKV("_NO", noNum);
+
+    const again = await waitDesignerReady(20000);
+    if (!again) throw new Error("designer-not-ready");
+    const pub = await publishDesignForVariant(dp.variantId);
+    if (!pub?.ok) throw new Error(pub?.error || "publish failed");
+
+    const shortDescription = (
+      `DOBO ${plants?.[selectedPlantIndex]?.title ?? ""} + ` +
+      `${pots?.[selectedPotIndex]?.title ?? ""} · ` +
+      `${activeSize ?? ""} · ${selectedColor ?? ""}`
+    ).replace(/\s+/g, " ").trim();
+
+    const emailAttrs = attrs.slice();
+
+    sendEmailNow({
+      subject: makeEmailSubject({ doNum, noNum }),
+      attrs: emailAttrs,
+      meta: { Descripcion: shortDescription, Precio: basePrice },
+      links: { Storefront: location.origin },
+      attachPreviews: true,
+      attachOverlayAll: true
+    });
+
+    // Añadir al carrito
+    const accIds = getAccessoryVariantIds();
+    postCart(SHOP_DOMAIN, dp.variantId, quantity, attrs, accIds, "/cart");
+  } catch (e) {
+    alert(`No se pudo añadir: ${e.message}`);
+  }
+}
+
+
+
+
+
+
+
+  /* ---------- handlers swipe ---------- */
+  const createHandlers = (items, setIndex) => ({
+    prev: () => setIndex((p) => (p > 0 ? p - 1 : Math.max(items.length - 1, 0))),
+    next: () => setIndex((p) => (p < items.length - 1 ? p + 1 : 0)),
+  });
+  const plantHandlers = createHandlers(plants, setSelectedPlantIndex);
+  const potHandlers = createHandlers(pots, setSelectedPotIndex);
+  const plantSwipeEvents = makeSwipeEvents(plantSwipeRef, plantHandlers);
+  const potSwipeEvents = makeSwipeEvents(potSwipeRef, potHandlers);
+
+  /* ---------- UI ---------- */
+  const baseCode = selectedPotVariant?.price?.currencyCode || "CLP";
+  const totalNow = getTotalPrice() * quantity;
+  const totalBase = getTotalComparePrice() * quantity;
+
+// === DOBO loader desde ?designUrl ===
+useEffect(() => {
+  (async () => {
+    const params = new URLSearchParams(window.location.search);
+    const designUrl = params.get("designUrl");
+    if (!designUrl) return;
+
+    // esperar API del editor
+    const wait = async (ms = 20000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        const a = window.doboDesignAPI;
+        const ok = a && (a.importDesignSnapshot || a.loadDesignSnapshot || a.loadJSON || a.loadFromJSON);
+        if (ok) return a;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return null;
+    };
+    const api = await wait();
+    if (!api) return;
+
+    try {
+      api?.reset?.();
+      const resp = await fetch(designUrl, { cache: "no-store" });
+      if (!resp.ok) return;
+      const payload = await resp.json();
+      const snapshot = payload?.design || payload;
+// guarda meta para sincronizar carruseles
+designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || null;
+      setDesignMeta(designMetaRef.current); // <-- dispara efecto de restauración
+
+
+      if (api.importDesignSnapshot) await api.importDesignSnapshot(snapshot);
+      else if (api.loadDesignSnapshot) await api.loadDesignSnapshot(snapshot);
+      else if (api.loadJSON) await api.loadJSON(snapshot);
+      else if (api.loadFromJSON) {
+        await new Promise(res => api.loadFromJSON(snapshot, () => { api.requestRenderAll?.(); res(); }));
+      }
+    } catch (e) {
+      console.error("load designUrl failed", e);
+    }
+  })();
+}, []);
+// === /DOBO loader ===
+
+
+  
+  return (
+<div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+
+
+
+      <div className="row justify-content-center align-items-start gx-5 gy-4">
+        <div className="col-lg-5 col-md-8 col-12 text-center">
+          {/* Selector de tamaño */}
+          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
+         {["Pequeño", "Mediano", "Grande"].map((s) => (
+  <button
+    key={s}
+    className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+    onClick={() => {
+      userPickedSizeRef.current = true;        // el usuario eligió
+      appliedMetaOnceRef.current = true;       // no volver a aplicar meta luego
+      setActiveSize(s);                        // dispara fetch por tamaño
+    }}
+  >
+    {s}
+  </button>
+))}
+
+
           </div>
 
-         
-          )}
-
-          <button
-            type="button"
-            className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => setEditing(false)}
-            style={{ minWidth: "16ch" }}
+          {/* Escena */}
+          <div
+            className="position-relative"
+            ref={sceneWrapRef}
+            style={{
+              width: "500px",
+              height: "650px",
+              width: "100%", maxWidth: "500px",
+              aspectRatio: "500 / 650",
+              backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              border: "3px dashed #6c757d",
+              borderRadius: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              touchAction: "pan-y",
+              userSelect: "none",
+            }}
           >
-            Seleccionar Maceta
-          </button>
+            {/* Dots y flechas PLANTAS */}
+            <IndicatorDots
+              count={plants.length}
+              current={selectedPlantIndex}
+              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              position="top"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevTopLeft}`}
+              aria-label="Anterior"
+              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevTopRight}`}
+              aria-label="Siguiente"
+              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
 
-          <button
-            type="button"
-            className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => setEditing(true)}
-            style={{ minWidth: "12ch" }}
-          >
-            Diseñar
-          </button>
+            {/* Dots y flechas MACETAS */}
+            <IndicatorDots
+              count={pots.length}
+              current={selectedPotIndex}
+              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              position="bottom"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevBottomLeft}`}
+              aria-label="Anterior"
+              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevBottomRight}`}
+              aria-label="Siguiente"
+              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
+            {/* Nodo escalado con carruseles */}
+            <div
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                "--zoom": 0.75,
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+              }}
+            >
+              {/* Macetas */}
+              <div
+                className={styles.carouselContainer}
+                ref={potScrollRef}
+                data-capture="pot-container"
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...potSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                    const imageUrl = vImg || product.image;
+                    return (
+                      <div key={product.id} className={styles.carouselItem}>
+                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Plantas */}
+              <div
+                className={styles.carouselContainer}
+                ref={plantScrollRef}
+                data-capture="plant-container"
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...plantSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                  {plants.map((product) => (
+                    <div key={product.id} className={styles.carouselItem}>
+                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+{/* Dock menú DOBO debajo de carruseles */}
+<div id="dobo-menu-dock" className={styles.menuDock} />
+
+       
         </div>
 
-        {/* Línea 2: acciones básicas */}
-        {editing && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            <button
-              type="button" className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={addText} disabled={!ready}
-              title="Agregar texto"
-            >
-              <i className="fa fa-font" aria-hidden="true"></i> Texto
-            </button>
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
-            <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
-              {/* Subir Vector */}
-              <button
-                type="button" className="btn btn-outline-secondary"
-                onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
-  addInputVectorRef.current?.click();
-}); }}
-                disabled={!ready}
-                title="Subir vector (usa Detalles y Color)"
-              >
-                <i className="fa fa-magic" aria-hidden="true"></i> Vector
-              </button>
-              {/* Subir RGB */}
-              <button
-                type="button" className="btn btn-outline-secondary"
-                onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-  addInputRgbRef.current?.click();
-}); }}
-                disabled={!ready}
-                title="Subir imagen RGB (color original)"
-              >
-                <i className="fa fa-image" aria-hidden="true"></i> Imagen
-              </button>
-              {/* Cámara */}
-              <button
-                type="button" className="btn btn-outline-secondary"
-                onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-  cameraInputRef.current?.click();
-}); }}
-                disabled={!ready}
-                title="Tomar foto con cámara"
-              >
-                <i className="fa fa-camera" aria-hidden="true"></i> Cámara
-              </button>
-            </div>
+        {/* Panel derecho */}
+        <div className="col-lg-5 col-md-8 col-12">
+          {pots.length > 0 && plants.length > 0 && (
+            <div className="text-center">
+              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
+                {totalBase > totalNow && (
+                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
+                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
+                  </p>
+                )}
+                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
+              </div>
 
-            <button
-              type="button" className="btn btn-sm btn-outline-danger"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={onDelete}
-              disabled={!ready || selType === "none"}
-              title="Eliminar seleccionado"
-            >
-              <i className="fa fa-trash" aria-hidden="true"></i> Borrar
-            </button>
-          </div>
-        )}
-
-        {/* Línea 3: propiedades */}
-        {editing && (
-          <>
-            {/* Texto */}
-            {selType === "text" && (
-              <>
-                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                  <span className="input-group-text">Color</span>
-                  <input
-                    type="color" className="form-control form-control-color"
-                    value={shapeColor}
-                    onChange={(e)=>{ setShapeColor(e.target.value); applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                  />
+              {/* SOLO color */}
+              {colorOptions.length > 0 && (
+                <div className="mb-4">
+                  <h5>Color</h5>
+                  <div className="d-flex justify-content-center gap-3 flex-wrap">
+                    {colorOptions.map((color, index) => {
+                      const bg = resolveColor(color);
+                      const isWhite = bg.toLowerCase() === "#ffffff" || bg.toLowerCase() === "#fff";
+                      const isSelected = selectedColor === color;
+                      return (
+                        <div
+                          key={index}
+                          onClick={() => setSelectedColor(color)}
+                          title={color}
+                          aria-label={color}
+                          aria-selected={isSelected}
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "50%",
+                            backgroundColor: bg,              // <- FIX: usar color real
+                            border: isSelected ? "3px solid #000" : (isWhite ? "1px solid #999" : "1px solid #ccc"),
+                            boxShadow: isSelected ? "0 0 0 3px rgba(0,0,0,0.15) inset" : "none",
+                            cursor: "pointer",
+                            transition: "transform .12s ease",
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
 
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-                  <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
-                    <span className="input-group-text">Fuente</span>
-                    <select
-                      className="form-select form-select-sm"
-                      value={fontFamily}
-                      onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                      onPointerDown={(e)=>e.stopPropagation()}
+   {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
+          {accessories && accessories.length > 0 && (
+            <div className="mb-4 mt-4">
+              <h5>Accesorios</h5>
+              <div className="d-flex justify-content-center gap-3 flex-wrap">
+                {accessories.map((product, index) => {
+                  const img =
+                    product?.image?.src || product?.image ||
+                    (Array.isArray(product?.images) && product.images[0]?.src) ||
+                    "/placeholder.png";
+                  const title = product?.title || product?.name || `Accesorio ${index + 1}`;
+                  const selected = selectedAccessoryIndices.includes(index);
+                  return (
+                    <div
+                      key={product?.id || index}
+                      onClick={(e) => {
+                        setSelectedAccessoryIndices((prev) =>
+                          prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+                        );
+                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                        setAccPreview({
+                          visible: true,
+                          x: cx + 16,
+                          y: cy + 16,
+                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                        });
+                      }}
+                      onMouseEnter={(e) => {
+                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                        setAccPreview({
+                          visible: true,
+                          x: cx + 16,
+                          y: cy + 16,
+                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                        });
+                      }}
+                      onMouseMove={(e) =>
+                        setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
+                      }
+                      onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
+                      aria-label={title}
+                      style={{
+                        border: selected ? "3px solid black" : "1px solid #ccc",
+                        borderRadius: "12px",
+                        padding: "6px",
+                        cursor: "zoom-in",
+                        width: "100px",
+                        height: "100px",
+                        overflow: "hidden",
+                        transition: "transform 0.2s ease",
+                      }}
                     >
-                      {FONT_OPTIONS.map(f => (
-                        <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                      <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-                  <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                    <button
-                      type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); }}
-                      title="Negrita"
-                    >B</button>
-                    <button
-                      type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); }}
-                      title="Cursiva"
-                    >I</button>
-                    <button
-                      type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
-                      title="Subrayado"
-                    >U</button>
-                  </div>
-
-                  <div className="input-group input-group-sm" style={{ width: 160 }}>
-                    <span className="input-group-text">Tamaño</span>
+              {/* Cantidad + botones */}
+              <div className="d-flex flex-column align-items-center mb-5">
+                <div className="mb-3 text-center">
+                  <label className="form-label d-block">Cantidad</label>
+                  <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
                     <input
-                      type="number" className="form-control form-control-sm"
-                      min={8} max={200} step={1}
-                      value={fontSize}
-                      onPointerDown={(e)=>e.stopPropagation()}
+                      type="number"
+                      className="form-control text-center"
+                      value={quantity}
+                      min="1"
+                      max="1000"
                       onChange={(e) => {
-                        const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
-                        setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                        const val = e.target.value;
+                        if (/^\d*$/.test(val)) {
+                          const n = parseInt(val, 10);
+                          if (!isNaN(n) && n >= 1 && n <= 1000) setQuantity(n);
+                          else if (val === "") setQuantity("");
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const n = parseInt(e.target.value, 10);
+                        if (isNaN(n) || n < 1) setQuantity(1);
+                        else if (n > 1000) setQuantity(1000);
                       }}
                     />
-                  </div>
-
-                  <div className="btn-group dropup">
-                    <button
-                      type="button" className="btn btn-outline-secondary btn-sm"
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => setShowAlignMenu(v => !v)}
-                      title="Alineación"
-                    >
-                      {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
-                    </button>
-                    {showAlignMenu && (
-                      <ul className="dropdown-menu show" style={{ position: "absolute" }}>
-                        {["left","center","right","justify"].map(a => (
-                          <li key={a}>
-                            <button
-                              type="button"
-                              className={`dropdown-item ${textAlign === a ? "active" : ""}`}
-                              onPointerDown={(e)=>e.stopPropagation()}
-                              onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
-                            >
-                              {a}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
                   </div>
                 </div>
-              </>
-            )}
 
-            {/* Imagen */}
-            {selType === "image" && (
-              <>
-                {/* Color: solo afecta a vectores */}
-                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                  <span className="input-group-text">Color</span>
-                  <input
-                    type="color" className="form-control form-control-color"
-                    value={shapeColor}
-                    onChange={(e)=>{ setShapeColor(e.target.value); if (isVectorSelected) applyColorToActive(e.target.value); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    disabled={!isVectorSelected}
-                    title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
-                  />
+                <div className="d-flex gap-3">
+                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
+                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
                 </div>
+              </div>
+            </div>
+          )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                  {/* Detalles: solo para vectores */}
-                  <div className="input-group input-group-sm" style={{ width: 230 }}>
-                    <span className="input-group-text">Detalles</span>
-                    <button
-                      type="button" className="btn btn-outline-secondary"
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}
-                      disabled={!isVectorSelected}
-                    >−</button>
-                    <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-                    <button
-                      type="button" className="btn btn-outline-secondary"
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}
-                      disabled={!isVectorSelected}
-                    >+</button>
-                  </div>
+          {/* Descripciones */}
+          <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
+            <h6><strong>Planta</strong></h6>
+            {(() => {
+              const p = plants[selectedPlantIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+              );
+            })()}
 
-                  {/* Indicador RGB */}
-                  {isRgbSelected && (
-                    <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
-                  )}
-                </div>
-              </>
-            )}
-          </>
-        )}
+            <h6 className="mt-3"><strong>Maceta</strong></h6>
+            {(() => {
+              const p = pots[selectedPotIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
 
-     {/* Inputs ocultos */}
-<input
-  ref={addInputVectorRef}
-  type="file"
-  accept="image/*"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "vector");
-    }
-    // 🔧 limpiar inmediatamente para permitir reusar el input
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
+      {/* Preview flotante accesorios */}
+      <IframePreview
+        visible={accPreview.visible}
+        x={accPreview.x}
+        y={accPreview.y}
+        html={accPreview.html}
+        onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
+      />
 
-<input
-  ref={addInputRgbRef}
-  type="file"
-  accept="image/*"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "rgb");
-    }
-    // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
-
-<input
-  ref={cameraInputRef}
-  id="cameraInput"
-  type="file"
-  accept="image/*"
-  capture="environment"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
-    }
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
-</div>
-  ); 
-};
-
-  return (
-    <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
-
-      {anchorRef?.current ? createPortal(
-        <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none", marginTop: 8 }}>
-          <div style={{ pointerEvents: "auto", display: "inline-flex" }}><Menu /></div>
-        </div>,
-        document.getElementById("dobo-menu-dock") || document.body
-      ) : null}
-    </>
+      <style jsx global>{`
+        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
+        .pot-carousel--locked::-webkit-scrollbar { display: none; }
+      `}</style>
+    </div>
   );
+
 }
+export default dynamic(() => Promise.resolve(Home), { ssr: false });
