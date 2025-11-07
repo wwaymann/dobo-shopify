@@ -354,50 +354,8 @@ useEffect(() => {
   });
   fabricCanvasRef.current = c;
 
-  // --- Habilitar gestos táctiles (pan y pinch zoom)
-  if (c.upperCanvasEl) {
-    const el = c.upperCanvasEl;
-    el.setAttribute("tabindex", "0");
-    el.style.touchAction = "manipulation"; // deja pasar scroll, pinch y tap
-    el.addEventListener("touchstart", (e) => {
-      el.focus();
-      // Si hay más de un dedo, se trata de pinch: no prevenir
-      if (e.touches.length > 1) return;
-      // Si no hay objeto activo, deja pasar el scroll
-      if (!c.getActiveObject()) return;
-      e.preventDefault();
-    }, { passive: false });
-
-    el.addEventListener("touchmove", (e) => {
-      // Pinch zoom → controlado por navegador
-      if (e.touches.length > 1) return;
-      // Scroll libre si no hay selección
-      if (!c.getActiveObject()) return;
-      // Si hay objeto activo, evita el scroll y deja mover el objeto
-      e.preventDefault();
-    }, { passive: false });
-  }
-
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
-
-   // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+  // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
   (() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-
-    // 0) Foco y tolerancias táctiles
-    if (c.upperCanvasEl) {
-      c.upperCanvasEl.setAttribute("tabindex", "0");
-      c.upperCanvasEl.style.touchAction = "manipulation"; // permite scroll y zoom nativo
-      c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-    }
-    c.perPixelTargetFind = false;
-    c.targetFindTolerance = 12;
-    if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
-
-    // 1) Utilidades
     const isTextTarget = (t) =>
       !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
@@ -419,75 +377,51 @@ useEffect(() => {
       });
     };
 
-    // 2) Tap vs Drag + candado anti-doble-disparo
-    let downInfo = null;
-    let moved = false;
-    let editLockUntil = 0;
+    // Soporte táctil real: deja pasar scroll y pinch zoom fuera de edición
+    if (c.upperCanvasEl) {
+      const el = c.upperCanvasEl;
+      el.setAttribute("tabindex", "0");
+      el.style.touchAction = "auto"; // 🔓 deja pasar scroll y pinch
 
-    const TAP_MAX_MS = 220;
-    const TAP_MAX_MOVE = 6;
-    const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
+      // Al tocar: si no hay objeto activo, deja que el navegador maneje el gesto
+      el.addEventListener(
+        "touchstart",
+        (e) => {
+          el.focus();
+          if (e.touches.length > 1) return; // pinch zoom libre
+          const active = c.getActiveObject();
+          const isEditing = !!document.activeElement?.classList?.contains("canvas-textarea");
+          if (!active && !isEditing) return; // no prevenir scroll
+          e.preventDefault();
+        },
+        { passive: false }
+      );
 
-    c.on("mouse:down", (opt) => {
-      const now = performance.now();
-      moved = false;
-      downInfo = {
-        x: opt.pointer?.x ?? 0,
-        y: opt.pointer?.y ?? 0,
-        t: now,
-        target: opt.target || null
-      };
-    });
+      // Durante movimiento táctil
+      el.addEventListener(
+        "touchmove",
+        (e) => {
+          // deja pasar multitouch (pinch)
+          if (e.touches.length > 1) return;
+          const active = c.getActiveObject();
+          if (!active || !editing) return; // scroll libre fuera de edición
+          e.preventDefault(); // sólo bloquea cuando se arrastra dentro del canvas
+        },
+        { passive: false }
+      );
+    }
 
-    c.on("mouse:move", (opt) => {
-      if (!downInfo) return;
-      const p = opt.pointer || { x: 0, y: 0 };
-      if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-        moved = true;
-      }
-    });
-
-    c.on("mouse:up", (opt) => {
-      const now = performance.now();
-      if (!downInfo) return;
-      const t = downInfo.target;
-      const duration = now - downInfo.t;
-      if (now < editLockUntil) { downInfo = null; return; }
-
-      if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+    c.on("mouse:dblclick", (opt) => {
+      const t = opt.target;
+      if (isTextTarget(t)) {
         opt.e?.preventDefault?.();
         opt.e?.stopPropagation?.();
         enterEdit(t);
-        editLockUntil = now + 300;
       }
-
-      downInfo = null;
     });
+  })();
+}, [visible, editing]);
 
-    c.on("mouse:dblclick", (opt) => {
-      const now = performance.now();
-      const t = opt.target;
-      if (!isTextTarget(t)) return;
-      if (now < editLockUntil) return;
-      opt.e?.preventDefault?.();
-      opt.e?.stopPropagation?.();
-      enterEdit(t);
-      editLockUntil = now + 300;
-    });
-
-    c.on("text:editing:exited", (opt) => {
-      const t = opt?.target;
-      if (!t) return;
-      t.editable = true;
-      t.selectable = true;
-      t.evented = true;
-      t.hasControls = true;
-      t.lockMovementX = false;
-      t.lockMovementY = false;
-      c.setActiveObject(t);
-      c.requestRenderAll();
-    });
-  })(); // 👈 Cierre correcto de la función autoinvocada
 
 
 
