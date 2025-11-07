@@ -419,6 +419,7 @@ useEffect(() => {
   })();
 
   // 🔚 Limpieza al desmontar (cierre correcto)
+  // 🔚 Limpieza al desmontar
   return () => {
     try {
       c.dispose();
@@ -428,6 +429,7 @@ useEffect(() => {
     fabricCanvasRef.current = null;
   };
 }, [visible, editing]); // ✅ cierre correcto del useEffect
+
 
 
 
