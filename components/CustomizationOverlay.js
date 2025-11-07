@@ -469,12 +469,23 @@ useEffect(() => {
     host.removeEventListener("touchmove", onTouchMove);
     host.removeEventListener("touchend", onTouchEnd);
     host.removeEventListener("touchcancel", onTouchEnd);
-    try {
-      c.dispose();
-    } catch {}
+    try { c.dispose(); } catch {}
     fabricCanvasRef.current = null;
   };
-}, [visible]);
+}, [visible]); // 👈 cierre correcto del useEffect principal
+
+// ✅ Cierre completo del bloque de inicialización del canvas
+// (esto evita el error "Expression expected" en la siguiente línea)
+
+// ====== Ajuste de tamaño si cambian baseSize ======
+useEffect(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  const { w, h } = baseSize;
+  c.setWidth(w);
+  c.setHeight(h);
+  c.requestRenderAll();
+}, [baseSize]);
 
 
 
