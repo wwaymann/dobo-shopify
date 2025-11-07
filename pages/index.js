@@ -1897,7 +1897,22 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "550px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+               style={{
+  zIndex: 3,                               // encima de la maceta
+  position: "absolute",
+  bottom: "300px",                         // ajusta si necesitas más o menos altura
+  left: "50%",
+  height: "530px",
+  transform: "translateX(-50%)",
+  transformOrigin: "center bottom",        // pivote abajo
+  display: "flex",
+  alignItems: "flex-end",                  // alinea las plantas por la base
+  justifyContent: "center",
+  touchAction: "pan-y",
+  userSelect: "none",
+  pointerEvents: "auto"
+}}
+
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
                 onAuxClick={(e) => e.preventDefault()}
