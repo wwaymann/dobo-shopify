@@ -472,10 +472,7 @@ useEffect(() => {
     try { c.dispose(); } catch {}
     fabricCanvasRef.current = null;
   };
-}, [visible]); // 👈 cierre correcto del useEffect principal
-
-// ✅ Cierre completo del bloque de inicialización del canvas
-// (esto evita el error "Expression expected" en la siguiente línea)
+}, [visible]); // cierre correcto del useEffect principal
 
 // ====== Ajuste de tamaño si cambian baseSize ======
 useEffect(() => {
@@ -486,6 +483,55 @@ useEffect(() => {
   c.setHeight(h);
   c.requestRenderAll();
 }, [baseSize]);
+
+// ====== Re-vectorizar cuando cambia "Detalles" (vecBias) SOLO si hay vector seleccionado ======
+useEffect(() => {
+  if (!editing || selType !== "image") return;
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+  const a = c.getActiveObject();
+  if (!a) return;
+
+  const maybeRebuild = (obj) => {
+    if (obj?._doboKind !== "vector") return;
+    const element = obj._vecSourceEl || (typeof obj.getElement === "function" ? obj.getElement() : obj._element);
+    if (!element) return;
+    const pose = {
+      left: obj.left,
+      top: obj.top,
+      originX: obj.originX,
+      originY: obj.originY,
+      scaleX: obj.scaleX,
+      scaleY: obj.scaleY,
+      angle: obj.angle || 0
+    };
+    try { obj.canvas.remove(obj); } catch {}
+
+    const rgb = hexToRgb(shapeColor);
+    const baseImg = vectorizeElementToBitmap(element, {
+      maxDim: VECTOR_SAMPLE_DIM,
+      makeDark: true,
+      drawColor: rgb,
+      thrBias: vecBias
+    });
+    if (!baseImg) return;
+    baseImg._doboKind = "vector";
+    baseImg.set({ selectable: true, evented: true, objectCaching: false });
+    baseImg.set(pose);
+    c.add(baseImg);
+    c.setActiveObject(baseImg);
+  };
+
+  if (a.type === "activeSelection" && a._objects?.length) {
+    const arr = a._objects.slice();
+    a.discard();
+    arr.forEach(maybeRebuild);
+  } else {
+    maybeRebuild(a);
+  }
+  c.requestRenderAll();
+}, [vecBias]);
+
 
 
 
