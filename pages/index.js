@@ -685,13 +685,6 @@ useEffect(() => {
   if (!stage) return;
   // expone el zoom inicial al CSS si usas --zoom
   stage.style.setProperty("--zoom", String(zoomRef.current));
-  // También actualizar el zoom del canvas de Fabric
-const fabricCanvas = window.doboDesignAPI?.getCanvas?.();
-if (fabricCanvas) {
-  fabricCanvas.setZoom(zoomRef.current);
-  fabricCanvas.requestRenderAll();
-}
-
 }, []);
 
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
@@ -1857,118 +1850,78 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-   {/* Nodo escalado con carruseles */}
-<div
-  ref={stageRef}
-  data-capture-stage="1"
-  className="d-flex justify-content-center align-items-end"
-  style={{
-    height: "100%",
-    "--zoom": 1, // valor inicial; se actualiza dinámicamente desde Fabric
-    transform: "scale(var(--zoom))",
-    transformOrigin: "50% 70%",
-    willChange: "transform",
-    backfaceVisibility: "hidden",
-    touchAction: "none", // permitir pinch-to-zoom, bloquear scroll del navegador
-    userSelect: "none",
-    overflow: "hidden", // evita que el pan saque el canvas de su área
-  }}
->
-  {/* Carrusel de macetas */}
-  <div
-    className={styles.carouselContainer}
-    ref={potScrollRef}
-    data-capture="pot-container"
-    style={{
-      zIndex: 1,
-      touchAction: "pan-y",
-      userSelect: "none",
-      position: "relative",
-    }}
-    onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-    onPointerUpCapture={(e) =>
-      handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
-    }
-    onAuxClick={(e) => e.preventDefault()}
-    onContextMenu={(e) => e.preventDefault()}
-    {...potSwipeEvents}
-  >
-    <div
-      className={styles.carouselTrack}
-      data-capture="pot-track"
-      style={{
-        transform: `translateX(-${selectedPotIndex * 100}%)`,
-      }}
-    >
-      {pots.map((product, idx) => {
-        const isSel = idx === selectedPotIndex;
-        const vImg =
-          isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
-        const imageUrl = vImg || product.image;
-        return (
-          <div key={product.id} className={styles.carouselItem}>
-            <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+            {/* Nodo escalado con carruseles */}
+            <div
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                "--zoom": 0.75,
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+              }}
+            >
+              {/* Macetas */}
+              <div
+                className={styles.carouselContainer}
+                ref={potScrollRef}
+                data-capture="pot-container"
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...potSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                    const imageUrl = vImg || product.image;
+                    return (
+                      <div key={product.id} className={styles.carouselItem}>
+                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Plantas */}
+              <div
+                className={styles.carouselContainer}
+                ref={plantScrollRef}
+                data-capture="plant-container"
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...plantSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                  {plants.map((product) => (
+                    <div key={product.id} className={styles.carouselItem}>
+                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-        );
-      })}
-    </div>
-  </div>
-
-  {/* Carrusel de plantas */}
-  <div
-    className={styles.carouselContainer}
-    ref={plantScrollRef}
-    data-capture="plant-container"
-    style={{
-      zIndex: 2,
-      position: "absolute",
-      bottom: "300px",
-      height: "530px",
-      left: "50%",
-      transform: "translateX(-50%)",
-      touchAction: "pan-y",
-      userSelect: "none",
-    }}
-    onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-    onPointerUpCapture={(e) =>
-      handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
-    }
-    onAuxClick={(e) => e.preventDefault()}
-    onContextMenu={(e) => e.preventDefault()}
-    {...plantSwipeEvents}
-  >
-    <div
-      className={styles.carouselTrack}
-      data-capture="plant-track"
-      style={{
-        transform: `translateX(-${selectedPlantIndex * 100}%)`,
-      }}
-    >
-      {plants.map((product) => (
-        <div key={product.id} className={styles.carouselItem}>
-          <img
-            src={product.image}
-            alt={product.title}
-            className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
-          />
-        </div>
-      ))}
-    </div>
-  </div>
-</div>
-
 {/* Dock menú DOBO debajo de carruseles */}
-<div id="dobo-menu-dock" className={styles.menuDock}></div>
+<div id="dobo-menu-dock" className={styles.menuDock} />
 
-{/* Overlay de edición (canvas de Fabric) */}
-<CustomizationOverlay
-  mode="both"
-  stageRef={stageRef}
-  anchorRef={potScrollRef}
-  containerRef={sceneWrapRef}
-  docked={false}
-/>
+       
+        </div>
 
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
@@ -2161,5 +2114,5 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     </div>
   );
 
-};
+}
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
