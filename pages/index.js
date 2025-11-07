@@ -1871,7 +1871,21 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                style={{
+  zIndex: 2,
+  position: "absolute",
+  bottom: "300px",
+  height: "530px",
+  left: "50%",
+  transformOrigin: "center 0%",     // pivote arriba
+  transform: "translateX(-50%)",
+  display: "flex",
+  alignItems: "flex-start",         // ancla visual arriba
+  justifyContent: "center",
+  touchAction: "pan-y",
+  userSelect: "none"
+}}
+
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
@@ -1897,17 +1911,21 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-              style={{
+             style={{
   zIndex: 2,
   position: "absolute",
   bottom: "300px",
   height: "530px",
   left: "50%",
-  transformOrigin: "center bottom",           // pivote abajo
-  transform: "translateX(-50%) translateY(8%)",// leve traslape hacia arriba
+  transformOrigin: "center 100%",   // 100% = parte inferior exacta
+  transform: "translateX(-50%) translateY(0%)",
+  display: "flex",
+  alignItems: "flex-end",           // fuerza alineación inferior de las imágenes
+  justifyContent: "center",
   touchAction: "pan-y",
   userSelect: "none"
 }}
+
 
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
