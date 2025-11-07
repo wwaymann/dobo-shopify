@@ -605,6 +605,65 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
+    // === PAN y ZOOM sincronizados ===
+(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+
+  let isPanning = false;
+  let lastPos = { x: 0, y: 0 };
+
+  // Pan con click izquierdo o touch
+  c.on("mouse:down", (opt) => {
+    const evt = opt.e;
+    if (evt.altKey || evt.ctrlKey || evt.metaKey) return; // no interferir con edición
+    if (opt.button === 1 || (evt.touches && evt.touches.length === 1)) {
+      isPanning = true;
+      lastPos = { x: evt.clientX || evt.touches?.[0]?.clientX, y: evt.clientY || evt.touches?.[0]?.clientY };
+      c.setCursor("grabbing");
+    }
+  });
+  c.on("mouse:move", (opt) => {
+    if (!isPanning) return;
+    const evt = opt.e;
+    const x = evt.clientX || evt.touches?.[0]?.clientX;
+    const y = evt.clientY || evt.touches?.[0]?.clientY;
+    const dx = x - lastPos.x;
+    const dy = y - lastPos.y;
+    lastPos = { x, y };
+    const vpt = c.viewportTransform;
+    vpt[4] += dx;
+    vpt[5] += dy;
+    c.requestRenderAll();
+  });
+  c.on("mouse:up", () => {
+    isPanning = false;
+    c.setCursor("default");
+  });
+
+  // Zoom con rueda o gesto
+  const handleWheel = (opt) => {
+    opt.e.preventDefault();
+    const delta = opt.e.deltaY;
+    let zoomLevel = c.getZoom();
+    zoomLevel *= delta > 0 ? 0.95 : 1.05;
+    zoomLevel = Math.min(3, Math.max(0.4, zoomLevel));
+    const pt = new fabric.Point(opt.e.offsetX, opt.e.offsetY);
+    c.zoomToPoint(pt, zoomLevel);
+    if (typeof setZoom === "function") setZoom(zoomLevel);
+    c.requestRenderAll();
+  };
+  c.on("mouse:wheel", handleWheel);
+
+  // Limpieza
+  return () => {
+    c.off("mouse:down");
+    c.off("mouse:move");
+    c.off("mouse:up");
+    c.off("mouse:wheel", handleWheel);
+  };
+})();
+
     return () => {
       c.off("mouse:dblclick");
       c.off("selection:created", onSel);
