@@ -1075,7 +1075,7 @@ const addImageFromFile = (file, mode) => {
       />
     </div>
   );
-
+}
   // ====== Menú ======
   const Menu = () => {
     const c = fabricCanvasRef.current;
@@ -1129,20 +1129,7 @@ const addImageFromFile = (file, mode) => {
             </button>
           </div>
 
-          {typeof setZoom === "function" && (
-            <div className="input-group input-group-sm" style={{ width: 180 }}>
-              <span className="input-group-text">Zoom</span>
-              <button
-                type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
-              >−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center"
-                value={`${Math.round((zoom || 1) * 100)}%`} />
-              <button
-                type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
-              >+</button>
-            </div>
+         
           )}
 
           <button
