@@ -350,7 +350,7 @@ useEffect(() => {
     preserveObjectStacking: true,
     selection: true,
     perPixelTargetFind: true,
-    targetFindTolerance: 8
+    targetFindTolerance: 8,
   });
   fabricCanvasRef.current = c;
 
@@ -368,7 +368,7 @@ useEffect(() => {
   const upper = c.upperCanvasEl;
   if (!upper) return;
   upper.style.pointerEvents = "none"; // deja pasar scroll
-  upper.style.touchAction = "none";   // sin pinch nativo
+  upper.style.touchAction = "none"; // sin pinch nativo
 
   const host =
     document.querySelector("[data-stage-root]") ||
@@ -380,8 +380,10 @@ useEffect(() => {
 
   if (host && host.style) host.style.touchAction = "pan-y";
 
-  const ZMIN = 0.4, ZMAX = 2.5;
-  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  const ZMIN = 0.4,
+    ZMAX = 2.5;
+  const dist = (t0, t1) =>
+    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
 
   const hitObjectAt = (clientX, clientY) => {
     const rect = upper.getBoundingClientRect();
@@ -417,11 +419,18 @@ useEffect(() => {
   const onTouchMove = (ev) => {
     if (PINCH.active && ev.touches.length === 2) {
       const d = dist(ev.touches[0], ev.touches[1]);
-      const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
+      const newZoom = Math.max(
+        ZMIN,
+        Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0))
+      );
       const rect = upper.getBoundingClientRect();
       const mid = {
-        x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
-        y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
+        x:
+          (ev.touches[0].clientX + ev.touches[1].clientX) / 2 -
+          rect.left,
+        y:
+          (ev.touches[0].clientY + ev.touches[1].clientY) / 2 -
+          rect.top,
       };
       try {
         c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
@@ -443,23 +452,30 @@ useEffect(() => {
   host.addEventListener("touchend", onTouchEnd, { passive: true });
   host.addEventListener("touchcancel", onTouchEnd, { passive: true });
 
- // 🔹 4. Edición de texto y selección
-if (c.upperCanvasEl) {
-  c.upperCanvasEl.setAttribute("tabindex", "0");
-  c.upperCanvasEl.style.touchAction = "none";
-  c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-}
+  // 🔹 4. Edición de texto y selección
+  if (c.upperCanvasEl) {
+    c.upperCanvasEl.setAttribute("tabindex", "0");
+    c.upperCanvasEl.style.touchAction = "none";
+    c.upperCanvasEl.addEventListener(
+      "touchstart",
+      () => c.upperCanvasEl.focus(),
+      { passive: false }
+    );
+  }
 
-// ✅ Cierre correcto del useEffect
-return () => {
-  host.removeEventListener("touchstart", onTouchStart);
-  host.removeEventListener("touchmove", onTouchMove);
-  host.removeEventListener("touchend", onTouchEnd);
-  host.removeEventListener("touchcancel", onTouchEnd);
-  try { c.dispose(); } catch {}
-  fabricCanvasRef.current = null;
-};
+  // ✅ Cleanup y cierre del useEffect
+  return () => {
+    host.removeEventListener("touchstart", onTouchStart);
+    host.removeEventListener("touchmove", onTouchMove);
+    host.removeEventListener("touchend", onTouchEnd);
+    host.removeEventListener("touchcancel", onTouchEnd);
+    try {
+      c.dispose();
+    } catch {}
+    fabricCanvasRef.current = null;
+  };
 }, [visible]);
+
 
 
 
