@@ -354,52 +354,59 @@ useEffect(() => {
   });
   fabricCanvasRef.current = c;
 
-  // ✅ Permite gestos táctiles básicos en móvil sin anular scroll ni swipe fuera del área de edición
+  // --- Habilitar gestos táctiles (pan y pinch zoom)
   if (c.upperCanvasEl) {
-    c.upperCanvasEl.addEventListener("touchmove", (e) => {
-      // Solo bloquea movimiento interno si se está editando dentro del canvas
-      if (!editing) return;
-      if (e.touches.length > 1) return; // deja pasar gestos multitouch (pinch-zoom, etc.)
-      e.stopPropagation(); // evita que el canvas bloquee scroll horizontal o vertical
+    const el = c.upperCanvasEl;
+    el.setAttribute("tabindex", "0");
+    el.style.touchAction = "manipulation"; // deja pasar scroll, pinch y tap
+    el.addEventListener("touchstart", (e) => {
+      el.focus();
+      // Si hay más de un dedo, se trata de pinch: no prevenir
+      if (e.touches.length > 1) return;
+      // Si no hay objeto activo, deja pasar el scroll
+      if (!c.getActiveObject()) return;
+      e.preventDefault();
+    }, { passive: false });
+
+    el.addEventListener("touchmove", (e) => {
+      // Pinch zoom → controlado por navegador
+      if (e.touches.length > 1) return;
+      // Scroll libre si no hay selección
+      if (!c.getActiveObject()) return;
+      // Si hay objeto activo, evita el scroll y deja mover el objeto
+      e.preventDefault();
     }, { passive: false });
   }
 
-  // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-  (() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
+  c.perPixelTargetFind = false;
+  c.targetFindTolerance = 12;
+  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-    // 0) Foco y tolerancias táctiles
-    if (c.upperCanvasEl) {
-      c.upperCanvasEl.setAttribute("tabindex", "0");
-      c.upperCanvasEl.style.touchAction = "none"; // evita el zoom del navegador sobre el canvas
-      c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-    }
-    c.perPixelTargetFind = false;
-    c.targetFindTolerance = 12;
-    if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
+  // === Activación de edición de texto (móvil + escritorio)
+  const isTextTarget = (t) =>
+    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
-    // 1) Utilidades
-    const isTextTarget = (t) =>
-      !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+  const enterEdit = (t) => {
+    if (!isTextTarget(t)) return;
+    requestAnimationFrame(() => {
+      if (t.type === "textbox" || t.type === "i-text") {
+        t.selectable = true;
+        t.editable = true;
+        t.evented = true;
+        c.setActiveObject(t);
+        t.enterEditing?.();
+        t.hiddenTextarea?.focus?.();
+      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+        startInlineTextEdit(t);
+        c.setActiveObject(t);
+      }
+      c.requestRenderAll();
+    });
+  };
 
-    const enterEdit = (t) => {
-      if (!isTextTarget(t)) return;
-      requestAnimationFrame(() => {
-        if (t.type === "textbox" || t.type === "i-text") {
-          t.selectable = true;
-          t.editable = true;
-          t.evented = true;
-          c.setActiveObject(t);
-          t.enterEditing?.();
-          t.hiddenTextarea?.focus?.();
-        } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-          startInlineTextEdit(t);
-          c.setActiveObject(t);
-        }
-        c.requestRenderAll();
-      });
-    };
+  // Resto del bloque (mouse:down, mouse:up, etc.) queda igual...
+}, [visible]);
+
 
   // 2) Tap vs Drag + candado anti-doble-disparo
   let downInfo = null;
