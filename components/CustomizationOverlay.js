@@ -418,12 +418,16 @@ useEffect(() => {
     });
   })();
 
-  // 🔚 Limpieza al desmontar
+  // 🔚 Limpieza al desmontar (cierre correcto)
   return () => {
-    try { c.dispose(); } catch {}
+    try {
+      c.dispose();
+    } catch (err) {
+      console.warn("Error disposing Fabric:", err);
+    }
     fabricCanvasRef.current = null;
   };
-}, [visible, editing]);
+}, [visible, editing]); // ✅ cierre correcto del useEffect
 
 
 
