@@ -340,98 +340,134 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-// ====== init Fabric
-useEffect(() => {
-  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+  // ====== init Fabric
+  useEffect(() => {
+    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
-  const c = new fabric.Canvas(canvasRef.current, {
-    width: 1,
-    height: 1,
-    preserveObjectStacking: true,
-    selection: true,
-    perPixelTargetFind: true,
-    targetFindTolerance: 8
-  });
-  fabricCanvasRef.current = c;
-
-  // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-  (() => {
-    const isTextTarget = (t) =>
-      !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
-
-    const enterEdit = (t) => {
-      if (!isTextTarget(t)) return;
-      requestAnimationFrame(() => {
-        if (t.type === "textbox" || t.type === "i-text") {
-          t.selectable = true;
-          t.editable = true;
-          t.evented = true;
-          c.setActiveObject(t);
-          t.enterEditing?.();
-          t.hiddenTextarea?.focus?.();
-        } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-          startInlineTextEdit(t);
-          c.setActiveObject(t);
-        }
-        c.requestRenderAll();
-      });
-    };
-
-    // Soporte táctil real: deja pasar scroll y pinch zoom fuera de edición
-    if (c.upperCanvasEl) {
-      const el = c.upperCanvasEl;
-      el.setAttribute("tabindex", "0");
-      el.style.touchAction = "auto"; // permite scroll y zoom
-
-      el.addEventListener(
-        "touchstart",
-        (e) => {
-          el.focus();
-          if (e.touches.length > 1) return; // pinch zoom libre
-          const active = c.getActiveObject();
-          const isEditing = !!document.activeElement?.classList?.contains("canvas-textarea");
-          if (!active && !isEditing) return; // no prevenir scroll
-          e.preventDefault();
-        },
-        { passive: false }
-      );
-
-      el.addEventListener(
-        "touchmove",
-        (e) => {
-          if (e.touches.length > 1) return;
-          const active = c.getActiveObject();
-          if (!active || !editing) return; // scroll libre
-          e.preventDefault();
-        },
-        { passive: false }
-      );
-    }
-
-    c.on("mouse:dblclick", (opt) => {
-      const t = opt.target;
-      if (isTextTarget(t)) {
-        opt.e?.preventDefault?.();
-        opt.e?.stopPropagation?.();
-        enterEdit(t);
-      }
+    const c = new fabric.Canvas(canvasRef.current, {
+      width: 1,
+      height: 1,
+      preserveObjectStacking: true,
+      selection: true,
+      perPixelTargetFind: true,
+      targetFindTolerance: 8
     });
-  })();
+    fabricCanvasRef.current = c;
 
-  // 🔚 Limpieza al desmontar (cierre correcto)
-  // 🔚 Limpieza al desmontar
-  return () => {
-    try {
-      c.dispose();
-    } catch (err) {
-      console.warn("Error disposing Fabric:", err);
-    }
-    fabricCanvasRef.current = null;
+    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+(() => {
+  const c = fabricCanvasRef.current;
+  if (!c) return;
+
+  // 0) Foco y tolerancias táctiles
+  if (c.upperCanvasEl) {
+    c.upperCanvasEl.setAttribute("tabindex", "0");
+    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
+  }
+  c.perPixelTargetFind = false;
+  c.targetFindTolerance = 12;
+  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
+
+  // 1) Utilidades
+  const isTextTarget = (t) =>
+    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+
+  const enterEdit = (t) => {
+    if (!isTextTarget(t)) return;
+    requestAnimationFrame(() => {
+      if (t.type === "textbox" || t.type === "i-text") {
+        t.selectable = true; t.editable = true; t.evented = true;
+        c.setActiveObject(t);
+        t.enterEditing?.();
+        t.hiddenTextarea?.focus?.();
+      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+        startInlineTextEdit(t);
+        c.setActiveObject(t);
+      }
+      c.requestRenderAll();
+    });
   };
-}, [visible, editing]); // ✅ cierre correcto del useEffect
 
+  // 2) Tap vs Drag + candado anti-doble-disparo
+  let downInfo = null;
+  let moved = false;
+  let editLockUntil = 0; // ms timestamp: previene doble disparo
 
+  const TAP_MAX_MS = 220;
+  const TAP_MAX_MOVE = 6; // px
+  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
 
+  c.on("mouse:down", (opt) => {
+    const now = performance.now();
+    moved = false;
+    downInfo = {
+      x: opt.pointer?.x ?? 0,
+      y: opt.pointer?.y ?? 0,
+      t: now,
+      target: opt.target || null
+    };
+  });
+
+  c.on("mouse:move", (opt) => {
+    if (!downInfo) return;
+    const p = opt.pointer || { x: 0, y: 0 };
+    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
+      moved = true;
+    }
+  });
+
+  c.on("mouse:up", (opt) => {
+    const now = performance.now();
+    if (!downInfo) return;
+
+    const t = downInfo.target;
+    const duration = now - downInfo.t;
+
+    // Candado activo → nada
+    if (now < editLockUntil) { downInfo = null; return; }
+
+    // TAP corto sobre texto => editar
+    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+      opt.e?.preventDefault?.();
+      opt.e?.stopPropagation?.();
+      enterEdit(t);
+      editLockUntil = now + 300; // evita doble disparo inmediato
+    }
+
+    downInfo = null;
+  });
+
+  // Doble clic / doble tap → editar (respetando candado)
+  c.on("mouse:dblclick", (opt) => {
+    const now = performance.now();
+    const t = opt.target;
+    if (!isTextTarget(t)) return;
+    if (now < editLockUntil) return;
+
+    opt.e?.preventDefault?.();
+    opt.e?.stopPropagation?.();
+    enterEdit(t);
+    editLockUntil = now + 300;
+  });
+
+  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
+  c.on("text:editing:exited", (opt) => {
+    const t = opt?.target;
+    if (!t) return;
+
+    // Asegura movimiento/selección otra vez
+    t.editable = true;
+    t.selectable = true;
+    t.evented = true;
+    t.hasControls = true;
+    t.lockMovementX = false;
+    t.lockMovementY = false;
+
+    c.setActiveObject(t);
+    c.requestRenderAll();
+  });
+})();
 
 
     // Delimitar bounds (margen 10 px)
@@ -627,7 +663,7 @@ if (typeof window !== "undefined") {
       const upper = c.upperCanvasEl;
       if (upper) {
         upper.style.pointerEvents = on ? "auto" : "none";
-        upper.style.touchAction = on ? "manipulation" : "auto";
+        upper.style.touchAction = on ? "none" : "auto";
         upper.tabIndex = on ? 0 : -1;
       }
       c.defaultCursor = on ? "move" : "default";
