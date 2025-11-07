@@ -340,50 +340,36 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== init Fabric
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+// ====== init Fabric
+useEffect(() => {
+  if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8
-    });
-    fabricCanvasRef.current = c;
+  const c = new fabric.Canvas(canvasRef.current, {
+    width: 1,
+    height: 1,
+    preserveObjectStacking: true,
+    selection: true,
+    perPixelTargetFind: true,
+    targetFindTolerance: 8
+  });
+  fabricCanvasRef.current = c;
 
-    useEffect(() => {
+  // 🔹 1. Bloquear pinch nativo del navegador (solo scroll vertical)
+  document.documentElement.style.touchAction = "pan-y";
+  document.body.style.touchAction = "pan-y";
+
+  // 🔹 2. Configurar área principal para scroll vertical
   const s = stageRef.current;
-  const c = sceneWrapRef.current;
-  if (!s || !c) return;
+  const scene = sceneWrapRef.current;
+  if (s) s.style.touchAction = "pan-y";
+  if (scene) scene.style.touchAction = "pan-y";
 
-  // ✅ Solo scroll vertical. Nada de pinch-zoom nativo del navegador.
-  const prevS = s.style.touchAction;
-  const prevC = c.style.touchAction;
-  s.style.touchAction = "pan-y";
-  c.style.touchAction = "pan-y";
-
-  return () => {
-    s.style.touchAction = prevS;
-    c.style.touchAction = prevC;
-  };
-}, []); // sin dependencia de 'editing' para no oscilar el valor
-
-    // === Interacción móvil: SIN pinch nativo, scroll libre y selección correcta ===
-(() => {
-  const canvas = fabricCanvasRef?.current || c;
-  if (!canvas) return;
-
-  const upper = canvas.upperCanvasEl;
+  // 🔹 3. Interacción táctil del canvas
+  const upper = c.upperCanvasEl;
   if (!upper) return;
+  upper.style.pointerEvents = "none"; // deja pasar scroll
+  upper.style.touchAction = "none";   // sin pinch nativo
 
-  // 1) Por defecto, deja pasar el scroll vertical y desactiva pinch nativo del browser
-  upper.style.pointerEvents = "none";    // no bloquea scroll si tocas zona sin objetos
-  upper.style.touchAction = "none";      // prevenimos pinch nativo sobre el canvas
-
-  // El contenedor donde escuchamos gestos globales (carruseles + fondo)
   const host =
     document.querySelector("[data-stage-root]") ||
     stageRef?.current ||
@@ -392,19 +378,16 @@ export default function CustomizationOverlay({
     upper.parentElement ||
     document.body;
 
-  // Muy importante: el host NO debe hacer pinch nativo del DOM
   if (host && host.style) host.style.touchAction = "pan-y";
 
-  // == Utilidades ==
   const ZMIN = 0.4, ZMAX = 2.5;
   const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
 
-  // Detección de objeto bajo el dedo (para habilitar selección/drag por 1 dedo)
   const hitObjectAt = (clientX, clientY) => {
     const rect = upper.getBoundingClientRect();
     const e = { clientX, clientY };
-    const pt = canvas.getPointer(e, true);
-    const objs = canvas.getObjects() || [];
+    const pt = c.getPointer(e, true);
+    const objs = c.getObjects() || [];
     for (let i = objs.length - 1; i >= 0; i--) {
       const o = objs[i];
       if (!o) continue;
@@ -415,23 +398,19 @@ export default function CustomizationOverlay({
     return null;
   };
 
-  // Estado para pinch
   const PINCH = { active: false, d0: 0, z0: 1 };
 
-  // == Listeners ==
   const onTouchStart = (ev) => {
     if (ev.touches.length === 1) {
       const t = ev.touches[0];
       const hit = hitObjectAt(t.clientX, t.clientY);
-      // Si tocamos un objeto → habilita eventos del canvas para poder seleccionarlo/moverlo
       upper.style.pointerEvents = hit ? "auto" : "none";
-      // No prevenimos: si no hay objeto, que el DOM haga scroll vertical
       return;
     }
     if (ev.touches.length === 2) {
       PINCH.active = true;
       PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
-      PINCH.z0 = canvas.getZoom?.() || 1;
+      PINCH.z0 = c.getZoom?.() || 1;
     }
   };
 
@@ -439,31 +418,22 @@ export default function CustomizationOverlay({
     if (PINCH.active && ev.touches.length === 2) {
       const d = dist(ev.touches[0], ev.touches[1]);
       const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
-
       const rect = upper.getBoundingClientRect();
       const mid = {
         x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
         y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
       };
-
       try {
-        canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
+        c.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
         setZoom?.(newZoom);
-        canvas.requestRenderAll();
+        c.requestRenderAll();
       } catch {}
-
-      // Bloquea el pinch nativo y rebotes
       ev.preventDefault();
       return;
     }
-
-    // Con 1 dedo:
-    // - si upper.pointerEvents="none" → el DOM hace scroll (carruseles/fondo).
-    // - si "auto" (porque había objeto) → Fabric recibe drag/selección.
   };
 
   const onTouchEnd = () => {
-    // Al soltar: vuelve a “no bloquear” para que el scroll quede libre
     upper.style.pointerEvents = "none";
     PINCH.active = false;
   };
@@ -473,249 +443,22 @@ export default function CustomizationOverlay({
   host.addEventListener("touchend", onTouchEnd, { passive: true });
   host.addEventListener("touchcancel", onTouchEnd, { passive: true });
 
-  // Limpieza
-  const cleanup = () => {
-    host.removeEventListener("touchstart", onTouchStart);
-    host.removeEventListener("touchmove", onTouchMove);
-    host.removeEventListener("touchend", onTouchEnd);
-    host.removeEventListener("touchcancel", onTouchEnd);
-  };
-  try { canvas.__dobo_touch_cleanup && canvas.__dobo_touch_cleanup(); } catch {}
-  try { (canvas.__dobo_touch_cleanup = cleanup); } catch {}
-})();
-
-    
-// === Interacción móvil unificada (scroll + pinch fuera/dentro del canvas) ===
-(() => {
-  const canvas = fabricCanvasRef?.current || c;
-  if (!canvas) return;
-
-  const upper = canvas.upperCanvasEl;
-  if (!upper) return;
-
-  // 1) Por defecto: deja pasar scroll vertical a los carruseles
-  //    y evita gestos nativos del navegador sobre el canvas.
-upper.style.pointerEvents = "none";  // no intercepta scroll ni taps fuera de objetos
-upper.style.touchAction = "pan-y pinch-zoom"; // deja pasar scroll vertical y pinch al DOM
-
-
-  // 2) Detección de “hay objeto debajo del dedo” para habilitar manipulación 1-dedo
-  const hitObjectAt = (clientX, clientY) => {
-    const rect = upper.getBoundingClientRect();
-    const e = { clientX, clientY };
-    const pt = canvas.getPointer(e, true); // coords en canvas
-    // Chequeo simple con containsPoint (suficiente para texto/imagen)
-    const objs = canvas.getObjects() || [];
-    for (let i = objs.length - 1; i >= 0; i--) {
-      const o = objs[i];
-      if (!o || o.excludeFromExport) continue;
-      if (o.selectable !== false && typeof o.containsPoint === "function") {
-        if (o.containsPoint(pt)) return o;
-      }
-    }
-    return null;
-  };
-
-// 3) Superficie receptora: usamos el contenedor del canvas si existe; si no, el padre
-const host =
-  (document.querySelector("[data-stage-root]")) ||
-  (stageRef?.current) ||
-  (anchorRef?.current) ||
-  (overlayRef?.current) ||
-  (upper.parentElement) ||
-  document.body;
-
-
-  // Estado pinch
-  const PINCH = { active: false, d0: 0, z0: 1 };
-  const ZMIN = 0.4, ZMAX = 2.5;
-  const dist = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-
-  // 4) Un dedo: si hay objeto → damos control a Fabric (pointerEvents=auto).
-  //    Si no hay objeto → mantenemos pointerEvents=none y el scroll pasa al DOM.
-  const onTouchStart = (ev) => {
-    if (ev.touches.length === 1) {
-      const t = ev.touches[0];
-      const o = hitObjectAt(t.clientX, t.clientY);
-      if (o) {
-        // Habilitar interacción puntual con el canvas mientras dura el gesto
-        upper.style.pointerEvents = "auto";
-      } else {
-        upper.style.pointerEvents = "none";
-      }
-      return; // no hacemos preventDefault: que el scroll siga libre si no hay objeto
-    }
-
-    if (ev.touches.length === 2) {
-      PINCH.active = true;
-      PINCH.d0 = dist(ev.touches[0], ev.touches[1]);
-      PINCH.z0 = canvas.getZoom?.() || 1;
-    }
-  };
-
-  const onTouchMove = (ev) => {
-    if (PINCH.active && ev.touches.length === 2) {
-      const d = dist(ev.touches[0], ev.touches[1]);
-      const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
-
-      const rect = upper.getBoundingClientRect();
-      const mid = {
-        x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
-        y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
-      };
-
-      try {
-        canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-        setZoom?.(newZoom);
-        canvas.requestRenderAll();
-      } catch {}
-
-      // bloquea el pinch nativo y el “rebote”
-      ev.preventDefault();
-      return;
-    }
-    // Un dedo: no intervenimos → si upper tiene pointerEvents=none, el DOM hace scroll;
-    // si es auto (porque había objeto), Fabric recibe el drag.
-  };
-
-  const onTouchEnd = () => {
-    // Al terminar gesto, devolvemos el canvas a “no bloquear” el scroll
-    upper.style.pointerEvents = "none";
-    PINCH.active = false;
-  };
-
-  host.addEventListener("touchstart", onTouchStart, { passive: true });
-  host.addEventListener("touchmove", onTouchMove, { passive: false });
-  host.addEventListener("touchend", onTouchEnd, { passive: true });
-  host.addEventListener("touchcancel", onTouchEnd, { passive: true });
-
-  // Limpieza
-  const cleanup = () => {
-    host.removeEventListener("touchstart", onTouchStart);
-    host.removeEventListener("touchmove", onTouchMove);
-    host.removeEventListener("touchend", onTouchEnd);
-    host.removeEventListener("touchcancel", onTouchEnd);
-  };
-  // Guardamos cleanup para que el return del useEffect padre lo llame si quieres.
-  try { (canvas.__dobo_touch_cleanup = cleanup); } catch {}
-
-})();
-
-
-    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-
-  // 0) Foco y tolerancias táctiles
+  // 🔹 4. Edición de texto y selección
   if (c.upperCanvasEl) {
     c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+    c.upperCanvasEl.style.touchAction = "none";
     c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
   }
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  // 1) Utilidades
-  const isTextTarget = (t) =>
-    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
-
-  const enterEdit = (t) => {
-    if (!isTextTarget(t)) return;
-    requestAnimationFrame(() => {
-      if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true; t.editable = true; t.evented = true;
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
-      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
-      }
-      c.requestRenderAll();
-    });
+  // Cleanup
+  return () => {
+    host.removeEventListener("touchstart", onTouchStart);
+    host.removeEventListener("touchmove", onTouchMove);
+    host.removeEventListener("touchend", onTouchEnd);
+    host.removeEventListener("touchcancel", onTouchEnd);
   };
+}, [visible]);
 
-  // 2) Tap vs Drag + candado anti-doble-disparo
-  let downInfo = null;
-  let moved = false;
-  let editLockUntil = 0; // ms timestamp: previene doble disparo
-
-  const TAP_MAX_MS = 220;
-  const TAP_MAX_MOVE = 6; // px
-  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
-
-  c.on("mouse:down", (opt) => {
-    const now = performance.now();
-    moved = false;
-    downInfo = {
-      x: opt.pointer?.x ?? 0,
-      y: opt.pointer?.y ?? 0,
-      t: now,
-      target: opt.target || null
-    };
-  });
-
-  c.on("mouse:move", (opt) => {
-    if (!downInfo) return;
-    const p = opt.pointer || { x: 0, y: 0 };
-    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-      moved = true;
-    }
-  });
-
-  c.on("mouse:up", (opt) => {
-    const now = performance.now();
-    if (!downInfo) return;
-
-    const t = downInfo.target;
-    const duration = now - downInfo.t;
-
-    // Candado activo → nada
-    if (now < editLockUntil) { downInfo = null; return; }
-
-    // TAP corto sobre texto => editar
-    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
-      opt.e?.preventDefault?.();
-      opt.e?.stopPropagation?.();
-      enterEdit(t);
-      editLockUntil = now + 300; // evita doble disparo inmediato
-    }
-
-    downInfo = null;
-  });
-
-  // Doble clic / doble tap → editar (respetando candado)
-  c.on("mouse:dblclick", (opt) => {
-    const now = performance.now();
-    const t = opt.target;
-    if (!isTextTarget(t)) return;
-    if (now < editLockUntil) return;
-
-    opt.e?.preventDefault?.();
-    opt.e?.stopPropagation?.();
-    enterEdit(t);
-    editLockUntil = now + 300;
-  });
-
-  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
-  c.on("text:editing:exited", (opt) => {
-    const t = opt?.target;
-    if (!t) return;
-
-    // Asegura movimiento/selección otra vez
-    t.editable = true;
-    t.selectable = true;
-    t.evented = true;
-    t.hasControls = true;
-    t.lockMovementX = false;
-    t.lockMovementY = false;
-
-    c.setActiveObject(t);
-    c.requestRenderAll();
-  });
-})();
 
 
 
