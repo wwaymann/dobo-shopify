@@ -1796,7 +1796,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
-              border: "3px dashed #6c757d",
+              border: "0px dashed #6c757d",
               borderRadius: "20px",
               display: "flex",
               alignItems: "center",
