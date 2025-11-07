@@ -1,4 +1,4 @@
-  // pages/index.js
+// pages/index.js
 import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -677,9 +677,19 @@ useEffect(() => {
   const c = sceneWrapRef.current;
   if (!s || !c) return;
 
-  s.style.touchAction = "pan-y"; // Permite scroll vertical
-  c.style.touchAction = "pan-y";
-}, []);
+  const prevS = s.style.touchAction;
+  const prevC = c.style.touchAction;
+
+  // 🔧 Permitir pinch y scroll vertical
+  const action = editing ? "none" : "pan-y pinch-zoom";
+  s.style.touchAction = action;
+  c.style.touchAction = action;
+
+  return () => {
+    s.style.touchAction = prevS;
+    c.style.touchAction = prevC;
+  };
+}, [editing]);
 
 
 
