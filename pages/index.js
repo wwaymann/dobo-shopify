@@ -1871,23 +1871,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{
-  zIndex: 2,                               // debajo de la planta
-  position: "absolute",
-  bottom: "250px",                         // un poco menos que el de la planta
-  left: "50%",
-  height: "530px",
-  transform: "translateX(-50%)",
-  transformOrigin: "center top",           // pivote arriba
-  display: "flex",
-  alignItems: "flex-start",                // alinea las macetas por arriba
-  justifyContent: "center",
-  touchAction: "pan-y",
-  userSelect: "none",
-  pointerEvents: "auto"
-}}
-
-
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
@@ -1913,24 +1897,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-            style={{
-  zIndex: 3,                               // encima de la maceta
-  position: "absolute",
-  bottom: "300px",                         // ajusta si necesitas más o menos altura
-  left: "50%",
-  height: "530px",
-  transform: "translateX(-50%)",
-  transformOrigin: "center bottom",        // pivote abajo
-  display: "flex",
-  alignItems: "flex-end",                  // alinea las plantas por la base
-  justifyContent: "center",
-  touchAction: "pan-y",
-  userSelect: "none",
-  pointerEvents: "auto"
-}}
-
-
-
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
                 onAuxClick={(e) => e.preventDefault()}
