@@ -451,11 +451,13 @@ useEffect(() => {
   }
 
   // Cleanup
-  return () => {
+   return () => {
     host.removeEventListener("touchstart", onTouchStart);
     host.removeEventListener("touchmove", onTouchMove);
     host.removeEventListener("touchend", onTouchEnd);
     host.removeEventListener("touchcancel", onTouchEnd);
+    try { c.dispose(); } catch {}
+    fabricCanvasRef.current = null;
   };
 }, [visible]);
 
