@@ -443,22 +443,22 @@ useEffect(() => {
   host.addEventListener("touchend", onTouchEnd, { passive: true });
   host.addEventListener("touchcancel", onTouchEnd, { passive: true });
 
-  // 🔹 4. Edición de texto y selección
-  if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none";
-    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-  }
+ // 🔹 4. Edición de texto y selección
+if (c.upperCanvasEl) {
+  c.upperCanvasEl.setAttribute("tabindex", "0");
+  c.upperCanvasEl.style.touchAction = "none";
+  c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
+}
 
-  // Cleanup
-   return () => {
-    host.removeEventListener("touchstart", onTouchStart);
-    host.removeEventListener("touchmove", onTouchMove);
-    host.removeEventListener("touchend", onTouchEnd);
-    host.removeEventListener("touchcancel", onTouchEnd);
-    try { c.dispose(); } catch {}
-    fabricCanvasRef.current = null;
-  };
+// ✅ Cierre correcto del useEffect
+return () => {
+  host.removeEventListener("touchstart", onTouchStart);
+  host.removeEventListener("touchmove", onTouchMove);
+  host.removeEventListener("touchend", onTouchEnd);
+  host.removeEventListener("touchcancel", onTouchEnd);
+  try { c.dispose(); } catch {}
+  fabricCanvasRef.current = null;
+};
 }, [visible]);
 
 
