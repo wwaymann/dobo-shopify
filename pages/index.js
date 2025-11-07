@@ -604,8 +604,6 @@ function Home() {
   const restoredOnceRef = useRef(false);                // <— NUEVO
   const userPickedSizeRef = useRef(false);
   const appliedMetaOnceRef = useRef(false);
-  const [zoom, setZoom] = useState(0.6);
-  
 
   // para clicks mitad-izq/der estilo Google Shopping
   const potDownRef = useRef({ btn: null, x: 0, y: 0 });
@@ -672,26 +670,14 @@ const designMetaRef = useRef(null);
     window.addEventListener("dobo-editing", onFlag);
     return () => window.removeEventListener("dobo-editing", onFlag);
   }, []);
-useEffect(() => {
-  const s = stageRef.current;
-  const c = sceneWrapRef.current;
-  if (!s || !c) return;
-
-  const prevS = s.style.touchAction;
-  const prevC = c.style.touchAction;
-
-  // 🔧 Permitir pinch y scroll vertical
-  const action = editing ? "none" : "pan-y pinch-zoom";
-  s.style.touchAction = action;
-  c.style.touchAction = action;
-
-  return () => {
-    s.style.touchAction = prevS;
-    c.style.touchAction = prevC;
-  };
-}, [editing]);
-
-
+  useEffect(() => {
+    const s = stageRef.current, c = sceneWrapRef.current;
+    if (!s || !c) return;
+    const ps = s.style.touchAction, pc = c.style.touchAction;
+    s.style.touchAction = editing ? "none" : "pan-y";
+    c.style.touchAction = editing ? "none" : "pan-y";
+    return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
+  }, [editing]);
 
   // en el efecto de montaje inicial
 useEffect(() => {
@@ -1864,25 +1850,22 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
+            {/* Nodo escalado con carruseles */}
             <div
-  ref={stageRef}
-  data-stage-root
-  data-capture-stage="1"
-  className="d-flex justify-content-center align-items-end"
-  style={{
-    height: "100%",
-    // 🔹 eliminamos el valor fijo de --zoom, lo controla React dinámicamente
-    transform: "scale(var(--zoom, 1))",
-    transformOrigin: "50% 70%",
-    willChange: "transform",
-    backfaceVisibility: "hidden",
-    // 🔹 scroll vertical permitido por defecto
-    touchAction: "pan-y",
-    userSelect: "none",
-    overscrollBehavior: "contain",
-  }}
->
-
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                "--zoom": 0.75,
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+              }}
+            >
               {/* Macetas */}
               <div
                 className={styles.carouselContainer}
@@ -1937,20 +1920,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
        
         </div>
 
-      {/* Overlay de edición (restaurado y con zoom funcional) */}
-<CustomizationOverlay
-  mode="both"
-  stageRef={stageRef}
-  anchorRef={potScrollRef}
-  containerRef={sceneWrapRef}
-  docked={false}
-  visible
-  zoom={zoom}
-  setZoom={setZoom}
-/>
-
-
-
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
