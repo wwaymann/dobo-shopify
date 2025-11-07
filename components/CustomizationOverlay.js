@@ -1592,6 +1592,20 @@ const addImageFromFile = (file, mode) => {
   onPointerDown={(e) => e.stopPropagation()}
 />
 
+
+  useEffect(() => {
+  const z = Math.max(0.4, Math.min(2.5, Number(zoom) || 1));
+  // Solo aplica al DOM, no a Fabric
+  if (stageRef?.current) {
+    stageRef.current.style.setProperty("--zoom", String(z));
+  }
+  // 🔹 Evita aplicar zoom interno en Fabric
+  const fc = fabricCanvasRef.current;
+  if (fc) {
+    fc.requestRenderAll(); // sólo re-renderiza
+  }
+}, [zoom]);
+
 <input
   ref={cameraInputRef}
   id="cameraInput"
@@ -1611,25 +1625,6 @@ const addImageFromFile = (file, mode) => {
 </div>
   ); 
 };
-
-// === Sincronización de zoom global -> carruseles (DOM) + Fabric (canvas) ===
-useEffect(() => {
-  const z = Math.max(0.4, Math.min(2.5, Number(zoom) || 1));
-  // 1) DOM (carruseles/fondo) via CSS var
-  if (stageRef?.current) {
-    stageRef.current.style.setProperty("--zoom", String(z));
-  }
-  // 2) Canvas (Fabric) centrado
-  const fc = fabricCanvasRef.current;
-  if (fc) {
-    try {
-      const center = new fabric.Point(fc.getWidth() / 2, fc.getHeight() / 2);
-      fc.zoomToPoint(center, z);
-      fc.requestRenderAll();
-    } catch {}
-  }
-}, [zoom]);
-
 
   return (
     <>
