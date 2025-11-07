@@ -685,6 +685,13 @@ useEffect(() => {
   if (!stage) return;
   // expone el zoom inicial al CSS si usas --zoom
   stage.style.setProperty("--zoom", String(zoomRef.current));
+  // También actualizar el zoom del canvas de Fabric
+const fabricCanvas = window.doboDesignAPI?.getCanvas?.();
+if (fabricCanvas) {
+  fabricCanvas.setZoom(zoomRef.current);
+  fabricCanvas.requestRenderAll();
+}
+
 }, []);
 
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
