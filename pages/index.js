@@ -1864,22 +1864,25 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-            {/* Nodo escalado con carruseles */}
             <div
-              ref={stageRef}
-              data-capture-stage="1"
-              className="d-flex justify-content-center align-items-end"
-              style={{
-                height: "100%",
-                "--zoom": 0.75,
-                transform: "scale(var(--zoom))",
-                transformOrigin: "50% 70%",
-                willChange: "transform",
-                backfaceVisibility: "hidden",
-                touchAction: "pan-y",
-                userSelect: "none",
-              }}
-            >
+  ref={stageRef}
+  data-stage-root
+  data-capture-stage="1"
+  className="d-flex justify-content-center align-items-end"
+  style={{
+    height: "100%",
+    // 🔹 eliminamos el valor fijo de --zoom, lo controla React dinámicamente
+    transform: "scale(var(--zoom, 1))",
+    transformOrigin: "50% 70%",
+    willChange: "transform",
+    backfaceVisibility: "hidden",
+    // 🔹 scroll vertical permitido por defecto
+    touchAction: "pan-y",
+    userSelect: "none",
+    overscrollBehavior: "contain",
+  }}
+>
+
               {/* Macetas */}
               <div
                 className={styles.carouselContainer}
