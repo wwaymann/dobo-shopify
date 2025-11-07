@@ -1872,19 +1872,21 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 ref={potScrollRef}
                 data-capture="pot-container"
                 style={{
-  zIndex: 2,
+  zIndex: 2,                               // debajo de la planta
   position: "absolute",
-  bottom: "300px",
-  height: "530px",
+  bottom: "250px",                         // un poco menos que el de la planta
   left: "50%",
-  transformOrigin: "center 0%",     // pivote arriba
+  height: "530px",
   transform: "translateX(-50%)",
+  transformOrigin: "center top",           // pivote arriba
   display: "flex",
-  alignItems: "flex-start",         // ancla visual arriba
+  alignItems: "flex-start",                // alinea las macetas por arriba
   justifyContent: "center",
   touchAction: "pan-y",
-  userSelect: "none"
+  userSelect: "none",
+  pointerEvents: "auto"
 }}
+
 
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
@@ -1911,20 +1913,22 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-             style={{
-  zIndex: 2,
+            style={{
+  zIndex: 3,                               // encima de la maceta
   position: "absolute",
-  bottom: "300px",
-  height: "530px",
+  bottom: "300px",                         // ajusta si necesitas más o menos altura
   left: "50%",
-  transformOrigin: "center 100%",   // 100% = parte inferior exacta
-  transform: "translateX(-50%) translateY(0%)",
+  height: "530px",
+  transform: "translateX(-50%)",
+  transformOrigin: "center bottom",        // pivote abajo
   display: "flex",
-  alignItems: "flex-end",           // fuerza alineación inferior de las imágenes
+  alignItems: "flex-end",                  // alinea las plantas por la base
   justifyContent: "center",
   touchAction: "pan-y",
-  userSelect: "none"
+  userSelect: "none",
+  pointerEvents: "auto"
 }}
+
 
 
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
