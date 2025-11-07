@@ -416,36 +416,39 @@ export default function CustomizationOverlay({
     }
   };
 
-  const onTouchMove = (ev) => {
-    if (PINCH.active && ev.touches.length === 2) {
-      const d = dist(ev.touches[0], ev.touches[1]);
-      const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
+const onTouchMove = (ev) => {
+  if (PINCH.active && ev.touches.length === 2) {
+    const d = dist(ev.touches[0], ev.touches[1]);
+    const newZoom = Math.max(ZMIN, Math.min(ZMAX, PINCH.z0 * (d / PINCH.d0)));
 
-      const rect = upper.getBoundingClientRect();
-      const mid = {
-        x: (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - rect.left,
-        y: (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - rect.top,
-      };
+    // 🔧 En lugar de aplicar zoom directamente al canvas, sincroniza con el zoom global
+    setZoom?.(newZoom);
+    stageRef?.current?.style.setProperty("--zoom", String(newZoom));
 
-      try {
-        canvas.zoomToPoint(new fabric.Point(mid.x, mid.y), newZoom);
-        setZoom?.(newZoom);
-        canvas.requestRenderAll();
-      } catch {}
+    // Aplica también a Fabric solo si está visible
+    try {
+      const center = new fabric.Point(
+        c.getWidth() / 2,
+        c.getHeight() / 2
+      );
+      c.zoomToPoint(center, newZoom);
+      c.requestRenderAll();
+    } catch {}
 
-      // bloquea el pinch nativo y el “rebote”
-      ev.preventDefault();
-      return;
-    }
-    // Un dedo: no intervenimos → si upper tiene pointerEvents=none, el DOM hace scroll;
-    // si es auto (porque había objeto), Fabric recibe el drag.
-  };
+    ev.preventDefault(); // bloquea pinch nativo
+    return;
+  }
+};
+
 
   const onTouchEnd = () => {
-    // Al terminar gesto, devolvemos el canvas a “no bloquear” el scroll
-    upper.style.pointerEvents = "none";
-    PINCH.active = false;
-  };
+  // 🔧 No desactivar completamente los eventos del canvas, solo si no se está editando
+  if (!PINCH.active) {
+    upper.style.pointerEvents = "auto"; // permite selección de objetos
+  }
+  PINCH.active = false;
+};
+
 
   host.addEventListener("touchstart", onTouchStart, { passive: true });
   host.addEventListener("touchmove", onTouchMove, { passive: false });
