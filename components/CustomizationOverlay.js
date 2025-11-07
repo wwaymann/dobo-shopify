@@ -381,9 +381,8 @@ useEffect(() => {
     if (c.upperCanvasEl) {
       const el = c.upperCanvasEl;
       el.setAttribute("tabindex", "0");
-      el.style.touchAction = "auto"; // 🔓 deja pasar scroll y pinch
+      el.style.touchAction = "auto"; // permite scroll y zoom
 
-      // Al tocar: si no hay objeto activo, deja que el navegador maneje el gesto
       el.addEventListener(
         "touchstart",
         (e) => {
@@ -397,15 +396,13 @@ useEffect(() => {
         { passive: false }
       );
 
-      // Durante movimiento táctil
       el.addEventListener(
         "touchmove",
         (e) => {
-          // deja pasar multitouch (pinch)
           if (e.touches.length > 1) return;
           const active = c.getActiveObject();
-          if (!active || !editing) return; // scroll libre fuera de edición
-          e.preventDefault(); // sólo bloquea cuando se arrastra dentro del canvas
+          if (!active || !editing) return; // scroll libre
+          e.preventDefault();
         },
         { passive: false }
       );
@@ -420,6 +417,12 @@ useEffect(() => {
       }
     });
   })();
+
+  // 🔚 Limpieza al desmontar
+  return () => {
+    try { c.dispose(); } catch {}
+    fabricCanvasRef.current = null;
+  };
 }, [visible, editing]);
 
 
