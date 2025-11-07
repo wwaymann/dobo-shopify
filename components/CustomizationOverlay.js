@@ -81,15 +81,6 @@ function downscale(imgEl) {
   return cv;
 }
 
-useEffect(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
-  const z = typeof zoom === "number" ? zoom : 0.6;
-  const center = new fabric.Point(c.getWidth() / 2, c.getHeight() / 2);
-  c.zoomToPoint(center, z);
-  c.requestRenderAll();
-}, [zoom]);
-
 // ======= Vectorización (igual sistema usado antes: binarización con “Detalles/vecBias” y color) =======
 function vectorizeElementToBitmap(element, opts = {}) {
   const {
@@ -363,126 +354,73 @@ export default function CustomizationOverlay({
     });
     fabricCanvasRef.current = c;
 
-// === ZOOM + PAN sincronizados (DOBO versión estable Nov 2025) ===
+    // === Zoom táctil y rueda (desde versión anterior) ===
 (() => {
   const el = c.upperCanvasEl;
-  if (!el || el.__doboZoomBound) return;
+  if (!el) return;
+  if (el.__doboZoomBound) return; // prevenir duplicado
   el.__doboZoomBound = true;
-  el.style.touchAction = "none"; // evita scroll del navegador
+  el.style.touchAction = "none"; // evitar zoom del navegador
 
-  const MIN_ZOOM = 0.5;
-  const MAX_ZOOM = 3;
-  let lastPan = null;
-  let lastDist = 0;
-  let lastZoom = typeof zoom === "number" ? zoom : 1;
+  const MIN = 0.5, MAX = 2.5;
+  const clamp = v => Math.max(MIN, Math.min(MAX, v));
+  let z = typeof zoom === "number" ? zoom : c.getZoom() || 0.6;
 
-  const getZoom = () => c.getZoom();
-  const setZoomSync = (z, cx, cy) => {
-    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+  const applyZoom = (nz, cx, cy) => {
+    const next = clamp(nz);
+    if (next === z) return;
     const rect = el.getBoundingClientRect();
     const px = cx ?? rect.width / 2;
     const py = cy ?? rect.height / 2;
     const point = new fabric.Point(px, py);
-    c.zoomToPoint(point, clamped);
-    lastZoom = clamped;
-    if (setZoom) setZoom(clamped);
-    stageRef?.current?.style?.setProperty("--zoom", String(clamped));
-    if (zoomRef) zoomRef.current = clamped;
+    c.zoomToPoint(point, next);
+    z = next;
+    if (setZoom) setZoom(next);
+    stageRef?.current?.style?.setProperty("--zoom", String(next));
     c.requestRenderAll();
   };
 
-  // ===== Mouse wheel zoom =====
   const onWheel = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const delta = e.deltaY < 0 ? 1.1 : 0.9;
-    const newZoom = getZoom() * delta;
-    const rect = el.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    setZoomSync(newZoom, x, y);
+    const dir = Math.sign(e.deltaY);
+    const step = dir > 0 ? -0.08 : 0.08;
+    applyZoom(z + step, e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
   };
 
-  // ===== Pan con mouse =====
-  const onMouseDown = (opt) => {
-    if (editing) return;
-    const evt = opt.e;
-    const target = c.findTarget(evt);
-    if (!target) {
-      c.setCursor("grabbing");
-      lastPan = { x: evt.clientX, y: evt.clientY };
-      evt.preventDefault();
-    }
-  };
-
-  const onMouseMove = (opt) => {
-    if (!lastPan || editing) return;
-    const evt = opt.e;
-    const dx = evt.clientX - lastPan.x;
-    const dy = evt.clientY - lastPan.y;
-    lastPan = { x: evt.clientX, y: evt.clientY };
-    const vpt = c.viewportTransform;
-    vpt[4] += dx;
-    vpt[5] += dy;
-    c.requestRenderAll();
-  };
-
-  const onMouseUp = () => {
-    if (lastPan) {
-      lastPan = null;
-      c.setCursor("default");
-    }
-  };
-
-  // ===== Pinch zoom táctil =====
+  let pinchDist = 0;
   const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+
   const onTouchStart = (e) => {
     if (e.touches.length === 2) {
       e.preventDefault();
-      lastDist = dist2(e.touches[0], e.touches[1]);
-    } else if (e.touches.length === 1 && !editing) {
-      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      pinchDist = dist2(e.touches[0], e.touches[1]);
     }
   };
+
   const onTouchMove = (e) => {
-    if (e.touches.length === 2 && lastDist) {
+    if (e.touches.length === 2 && pinchDist) {
       e.preventDefault();
-      const newDist = dist2(e.touches[0], e.touches[1]);
-      const scale = newDist / lastDist;
-      lastDist = newDist;
+      const d = dist2(e.touches[0], e.touches[1]);
+      const ratio = d / pinchDist;
+      pinchDist = d;
       const rect = el.getBoundingClientRect();
       const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
       const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
-      setZoomSync(getZoom() * scale, cx, cy);
-    } else if (e.touches.length === 1 && lastPan && !editing) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - lastPan.x;
-      const dy = e.touches[0].clientY - lastPan.y;
-      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      const vpt = c.viewportTransform;
-      vpt[4] += dx;
-      vpt[5] += dy;
-      c.requestRenderAll();
+      applyZoom(z * ratio, cx, cy);
     }
   };
-  const onTouchEnd = () => { lastDist = 0; lastPan = null; };
 
-  // listeners
+  const onTouchEnd = () => { pinchDist = 0; };
+
   el.addEventListener("wheel", onWheel, { passive: false });
-  c.on("mouse:down", onMouseDown);
-  c.on("mouse:move", onMouseMove);
-  c.on("mouse:up", onMouseUp);
   el.addEventListener("touchstart", onTouchStart, { passive: false });
   el.addEventListener("touchmove", onTouchMove, { passive: false });
   el.addEventListener("touchend", onTouchEnd, { passive: false });
   el.addEventListener("touchcancel", onTouchEnd, { passive: false });
 
-  // Limpieza
-  c.__zoomCleanup = () => {
+  return () => {
     el.removeEventListener("wheel", onWheel);
-    c.off("mouse:down", onMouseDown);
-    c.off("mouse:move", onMouseMove);
-    c.off("mouse:up", onMouseUp);
     el.removeEventListener("touchstart", onTouchStart);
     el.removeEventListener("touchmove", onTouchMove);
     el.removeEventListener("touchend", onTouchEnd);
@@ -490,7 +428,6 @@ export default function CustomizationOverlay({
     el.__doboZoomBound = false;
   };
 })();
-
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
 (() => {
@@ -757,13 +694,9 @@ if (typeof window !== "undefined") {
       c.off("object:scaling", __bounds_onScale);
       c.off("object:rotating", __bounds_onRotate);
       c.off("object:added", __bounds_onAdded);
-       try { c.__zoomCleanup?.(); } catch {}
       try { __bounds_ro.disconnect(); } catch {}
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
-       
-
- 
     };
   }, [visible]);
 
