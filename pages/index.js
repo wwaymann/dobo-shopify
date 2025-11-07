@@ -674,8 +674,9 @@ const designMetaRef = useRef(null);
     const s = stageRef.current, c = sceneWrapRef.current;
     if (!s || !c) return;
     const ps = s.style.touchAction, pc = c.style.touchAction;
-    s.style.touchAction = editing ? "none" : "pan-y";
-    c.style.touchAction = editing ? "none" : "pan-y";
+s.style.touchAction = editing ? "none" : "pan-x pan-y";
+c.style.touchAction = editing ? "none" : "pan-x pan-y";
+
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
