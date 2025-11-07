@@ -996,7 +996,8 @@ const addImageFromFile = (file, mode) => {
     c.requestRenderAll();
   };
 
-  // Re-vectorizar cuando cambia “Detalles” (vecBias) SOLO si hay vector seleccionado
+  // Re-vectorizar cuando cambia "Detalles" (vecBias) SOLO si hay vector seleccionado
+
   useEffect(() => {
     if (!editing || selType !== "image") return;
     const c = fabricCanvasRef.current; if (!c) return;
