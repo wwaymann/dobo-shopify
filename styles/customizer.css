@@ -65,23 +65,10 @@ button.buy-button {
   cursor: pointer;
 }
 
-/* === Carruseles: pivotes fijos === */
+
 
 /* Contenedor genérico de carrusel de PLANTAS */
-.plant-carousel {
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;   /* todas las plantas descansan en la base */
-}
-
-/* Todas las imágenes de plantas pivotean en la base */
-.plant-carousel img {
-  transform-origin: center bottom !important;
-  transform: scale(1); /* activa el pivote */
-  display: block;
-  margin: 0 auto;
-  pointer-events: none;
-}
+.plant-carousel img { transform-origin: center bottom !important; transform: scale(1); }
 
 /* Contenedor genérico de carrusel de MACETAS */
 .pot-carousel {
@@ -91,17 +78,4 @@ button.buy-button {
 }
 
 /* Todas las imágenes de macetas pivotean en la boca (arriba) */
-.pot-carousel img {
-  transform-origin: center top !important;
-  transform: scale(1);
-  display: block;
-  margin: 0 auto;
-  pointer-events: none;
-}
-.pot-carousel img {
-  transform-origin: center top !important;
-  transform: scale(1);
-  display: block;
-  margin: 0 auto;
-  pointer-events: none;
-}
+.pot-carousel img   { transform-origin: center top !important;    transform: scale(1); }
