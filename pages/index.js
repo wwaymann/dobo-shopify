@@ -1866,7 +1866,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 userSelect: "none",
               }}
             >
- {/* Macetas */}
+{/* Macetas */}
 <div
   className={`${styles.carouselContainer} pot-carousel`}
   ref={potScrollRef}
@@ -1953,6 +1953,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     ))}
   </div>
 </div>
+
 
 
 
