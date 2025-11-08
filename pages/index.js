@@ -1896,7 +1896,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         {/* Plantas */}
 <div
   className={`${styles.carouselContainer} plant-carousel`}
-  style={{ zIndex: 3, position: "absolute", bottom: "300px", left: "50%", transform: "translateX(-50%)" }}
+  style={{ zIndex: 3, position: "absolute", bottom: "500px", left: "50%", transform: "translateX(-50%)" }}
 >
   <div
     className={styles.carouselTrack}
