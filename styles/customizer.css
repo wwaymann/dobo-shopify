@@ -65,32 +65,34 @@ button.buy-button {
   cursor: pointer;
 }
 
-/* PLANTAS: alineadas por la base, sin romper el track */
-.plant-carousel .carouselItem {
+/* Carrusel de PLANTAS: todas las plantas descansan sobre la misma línea */
+.plant-carousel {
   display: flex;
-  align-items: flex-end; /* base común */
+  align-items: flex-end; /* alinea visualmente las bases */
   justify-content: center;
+  position: relative;
 }
 
 .plant-carousel img {
-  transform-origin: center bottom;
   height: auto;
   max-height: 100%;
   object-fit: contain;
   display: block;
+  align-self: flex-end;
 }
 
-/* MACETAS: alineadas por la boca */
-.pot-carousel .carouselItem {
+/* Carrusel de MACETAS: todas las bocas se alinean */
+.pot-carousel {
   display: flex;
-  align-items: flex-start; /* alinea bocas */
+  align-items: flex-start; /* alinea visualmente las bocas */
   justify-content: center;
+  position: relative;
 }
 
 .pot-carousel img {
-  transform-origin: center top;
   height: auto;
   max-height: 100%;
   object-fit: contain;
   display: block;
+  align-self: flex-start;
 }
