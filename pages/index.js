@@ -1851,21 +1851,26 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             </button>
 
             {/* Nodo escalado con carruseles */}
-            <div
-              ref={stageRef}
-              data-capture-stage="1"
-              className="d-flex justify-content-center align-items-end"
-              style={{
-                height: "100%",
-                "--zoom": 0.75,
-                transform: "scale(var(--zoom))",
-                transformOrigin: "50% 70%",
-                willChange: "transform",
-                backfaceVisibility: "hidden",
-                touchAction: "pan-y",
-                userSelect: "none",
-              }}
-            >
+           <div
+  ref={stageRef}
+  data-capture-stage="1"
+  className="d-flex justify-content-center align-items-center"
+  style={{
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    "--zoom": 0.75,
+    transform: "translate(-50%, -50%) scale(var(--zoom))",
+    transformOrigin: "50% 70%",
+    top: "50%",
+    left: "50%",
+    willChange: "transform",
+    backfaceVisibility: "hidden",
+    userSelect: "none",
+    pointerEvents: "none", // solo el contenedor, no el contenido
+  }}
+>
+
                {/* Macetas */}
   <div
     className={`${styles.carouselContainer} pot-carousel`}
