@@ -1960,13 +1960,14 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         </div>
 
         {/* Overlay de edición (restaurado) */}
-       <CustomizationOverlay
+     <CustomizationOverlay
   mode="both"
   stageRef={stageRef}
-  anchorRef={stageRef}   // ⬅️ centrado geométrico correcto
+  anchorRef={sceneWrapRef}   // 👈 ancla estable y centrada
   containerRef={sceneWrapRef}
   docked={false}
 />
+
 
 
         {/* Panel derecho */}
