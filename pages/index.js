@@ -1866,15 +1866,15 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 userSelect: "none",
               }}
             >
-    {/* Macetas */}
+ {/* Macetas */}
 <div
-  className={`${styles.carouselContainer} pot-carousel`} // <-- clase global para macetas
+  className={`${styles.carouselContainer} pot-carousel`}
   ref={potScrollRef}
   data-capture="pot-container"
   style={{
     zIndex: 1,
     position: "absolute",
-    bottom: "250px", // base de referencia para traslape
+    bottom: "250px",
     left: "50%",
     transform: "translateX(-50%)",
     height: "auto",
@@ -1896,14 +1896,14 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   >
     {pots.map((product, idx) => {
       const isSel = idx === selectedPotIndex;
-      const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+      const vImg = isSel ? (selectedPotVariant?.image || selectedPotVariant?.imageUrl || null) : null;
       const imageUrl = vImg || product.image;
       return (
         <div key={product.id} className={styles.carouselItem}>
           <img
             src={imageUrl}
             alt={product.title}
-            className={`${styles.carouselImage} pot-image`} // <-- refuerza el pivote
+            className={`${styles.carouselImage} pot-image`}
           />
         </div>
       );
@@ -1913,13 +1913,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
 {/* Plantas */}
 <div
-  className={`${styles.carouselContainer} plant-carousel`} // <-- clase global para plantas
+  className={`${styles.carouselContainer} plant-carousel`}
   ref={plantScrollRef}
   data-capture="plant-container"
   style={{
-    zIndex: 3, // encima de la maceta
+    zIndex: 3,
     position: "absolute",
-    bottom: "300px", // ajusta este valor para traslape
+    bottom: "300px",
     left: "50%",
     transform: "translateX(-50%)",
     height: "auto",
@@ -1932,9 +1932,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     justifyContent: "center"
   }}
   onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-  onPointerUpCapture={(e) =>
-    handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
-  }
+  onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
   onAuxClick={(e) => e.preventDefault()}
   onContextMenu={(e) => e.preventDefault()}
   {...plantSwipeEvents}
@@ -1949,12 +1947,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         <img
           src={product.image}
           alt={product.title}
-          className={`${styles.carouselImage} plant-image`} // <-- refuerza pivote inferior
+          className={`${styles.carouselImage} plant-image`}
         />
       </div>
     ))}
   </div>
 </div>
+
 
 
 
