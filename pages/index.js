@@ -1796,7 +1796,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
-              border: "0px dashed #6c757d",
+              border: "3px dashed #6c757d",
               borderRadius: "20px",
               display: "flex",
               alignItems: "center",
@@ -1866,52 +1866,33 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 userSelect: "none",
               }}
             >
-{/* Macetas */}
-<div
-  className={`${styles.carouselContainer} pot-carousel`}
-  ref={potScrollRef}
-  data-capture="pot-container"
-  style={{
-    zIndex: 1,
-    position: "absolute",
-    bottom: "250px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    height: "auto",
-    minHeight: "500px",
-    touchAction: "pan-y",
-    userSelect: "none",
-    pointerEvents: "auto"
-  }}
-  onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-  onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
-  onAuxClick={(e) => e.preventDefault()}
-  onContextMenu={(e) => e.preventDefault()}
-  {...potSwipeEvents}
->
-  <div
-    className={styles.carouselTrack}
-    data-capture="pot-track"
-    style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
-  >
-    {pots.map((product, idx) => {
-      const isSel = idx === selectedPotIndex;
-      const vImg = isSel ? (selectedPotVariant?.image || selectedPotVariant?.imageUrl || null) : null;
-      const imageUrl = vImg || product.image;
-      return (
-        <div key={product.id} className={styles.carouselItem}>
-          <img
-            src={imageUrl}
-            alt={product.title}
-            className={`${styles.carouselImage} pot-image`}
-          />
-        </div>
-      );
-    })}
-  </div>
-</div>
+              {/* Macetas */}
+              <div
+                className={styles.carouselContainer}
+                ref={potScrollRef}
+                data-capture="pot-container"
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...potSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                    const imageUrl = vImg || product.image;
+                    return (
+                      <div key={product.id} className={styles.carouselItem}>
+                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-{/* Plantas */}
+        {/* Plantas */}
 <div
   className={`${styles.carouselContainer} plant-carousel`}
   ref={plantScrollRef}
@@ -1949,21 +1930,17 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           alt={product.title}
           className={`${styles.carouselImage} plant-image`}
         />
-      </div>
-    ))}
-  </div>
-</div>
-
-
-
-
-
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
 {/* Dock menú DOBO debajo de carruseles */}
 <div id="dobo-menu-dock" className={styles.menuDock} />
 
        
         </div>
-}
 
         {/* Overlay de edición (restaurado) */}
         <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
