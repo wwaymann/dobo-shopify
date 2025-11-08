@@ -1851,32 +1851,21 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             </button>
 
         {/* Nodo escalado con carruseles */}
-<div
-  className="stage-wrapper"
-  style={{
-    position: "relative",
-    width: "100%",
-    height: "100%",
-    overflow: "visible",
-  }}
->
-  <div
-    ref={stageRef}
-    data-capture-stage="1"
-    className="d-flex justify-content-center align-items-center"
-    style={{
-      position: "absolute",
-      top: "50%",
-      left: "50%",
-      transform: "translate(-50%, -50%) scale(var(--zoom))",
-      transformOrigin: "50% 70%",
-      willChange: "transform",
-      backfaceVisibility: "hidden",
-      userSelect: "none",
-      pointerEvents: "none",
-      "--zoom": 0.75,
-    }}
-  >
+            <div
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                "--zoom": 0.75,
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+              }}
+            >
 
                {/* Macetas */}
   <div
