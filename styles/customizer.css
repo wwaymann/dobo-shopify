@@ -65,34 +65,73 @@ button.buy-button {
   cursor: pointer;
 }
 
-/* Carrusel de PLANTAS: todas las plantas descansan sobre la misma línea */
+/* Carrusel de PLANTAS: base alineada, mantiene scroll */
 .plant-carousel {
+  position: absolute;
+  z-index: 3;
+  bottom: 25vh; /* usa vh para mantener proporción */
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.plant-carousel .carouselTrack {
   display: flex;
-  align-items: flex-end; /* alinea visualmente las bases */
+  transition: transform 0.4s ease;
+  will-change: transform;
+}
+
+.plant-carousel .carouselItem {
+  display: flex;
+  align-items: flex-end;
   justify-content: center;
-  position: relative;
 }
 
 .plant-carousel img {
+  transform-origin: center bottom;
+  transform: scale(1);
   height: auto;
-  max-height: 100%;
+  max-height: 40vh;
   object-fit: contain;
   display: block;
-  align-self: flex-end;
+  pointer-events: none;
 }
 
-/* Carrusel de MACETAS: todas las bocas se alinean */
+/* Carrusel de MACETAS: boca alineada, mantiene scroll */
 .pot-carousel {
+  position: absolute;
+  z-index: 1;
+  bottom: 20vh;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.pot-carousel .carouselTrack {
   display: flex;
-  align-items: flex-start; /* alinea visualmente las bocas */
+  transition: transform 0.4s ease;
+  will-change: transform;
+}
+
+.pot-carousel .carouselItem {
+  display: flex;
+  align-items: flex-start;
   justify-content: center;
-  position: relative;
 }
 
 .pot-carousel img {
+  transform-origin: center top;
+  transform: scale(1);
   height: auto;
-  max-height: 100%;
+  max-height: 40vh;
   object-fit: contain;
   display: block;
-  align-self: flex-start;
+  pointer-events: none;
+}
+
+/* Menú DOBO siempre visible */
+#dobo-menu-dock,
+.menuDock {
+  position: relative !important;
+  z-index: 20 !important;
 }
