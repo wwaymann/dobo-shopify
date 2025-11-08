@@ -1850,8 +1850,39 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-{/* Nodo escalado con carruseles */} <div ref={stageRef} data-capture-stage="1" className="d-flex justify-content-center align-items-end" style={{ height: "100%", "--zoom": 0.75, transform: "scale(var(--zoom))", transformOrigin: "50% 70%", willChange: "transform", backfaceVisibility: "hidden", touchAction: "pan-y", userSelect: "none", }} >
-    {/* Carrusel de macetas */}
+{/* Nodo escalado con carruseles */}
+<div
+  className="stage-wrapper"
+  style={{
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "visible",
+  }}
+  ref={sceneWrapRef} // este será el ancla real del overlay
+>
+  <div
+    ref={stageRef}
+    data-capture-stage="1"
+    className="d-flex justify-content-center align-items-end"
+    style={{
+      height: "100%",
+      "--zoom": 0.75,
+      transform: "scale(var(--zoom))",
+      transformOrigin: "50% 70%",
+      willChange: "transform",
+      backfaceVisibility: "hidden",
+      touchAction: "pan-y",
+      userSelect: "none",
+      position: "relative",
+      zIndex: 5,
+    }}
+  >
+
+{/* Carrusel de macetas */}
     <div
       className={`${styles.carouselContainer} pot-carousel`}
       ref={potScrollRef}
