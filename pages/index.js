@@ -1920,7 +1920,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     style={{
       zIndex: 3,
       position: "absolute",
-      bottom: "35vh",
+      bottom: "30vh",
       left: "50%",
       transform: "translateX(-50%)",
       pointerEvents: "auto",
