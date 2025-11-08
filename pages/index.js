@@ -1796,7 +1796,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
-              border: "0px dashed #6c757d",
+              border: "3px dashed #6c757d",
               borderRadius: "20px",
               display: "flex",
               alignItems: "center",
@@ -1850,25 +1850,23 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-{/* Nodo escalado con carruseles */}
-<div
-  ref={stageRef}
-  data-capture-stage="1"
-  className="d-flex justify-content-center align-items-center"
-  style={{
-    position: "relative",
-    width: "100%",
-    height: "100%",
-    "--zoom": 0.75,
-    transform: "scale(var(--zoom))",
-    transformOrigin: "50% 70%",
-    willChange: "transform",
-    backfaceVisibility: "hidden",
-    userSelect: "none",
-    pointerEvents: "none", // evita que este contenedor bloquee clics
-  }}
->
-  {/* Macetas */}
+            {/* Nodo escalado con carruseles */}
+            <div
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                "--zoom": 0.75,
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+              }}
+            >
+               {/* Macetas */}
   <div
     className={`${styles.carouselContainer} pot-carousel`}
     ref={potScrollRef}
@@ -1908,13 +1906,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               alt={product.title}
               className={`${styles.carouselImage} pot-image`}
             />
-          </div>
-        );
-      })}
-    </div>
-  </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-  {/* Plantas */}
+             {/* Plantas */}
   <div
     className={`${styles.carouselContainer} plant-carousel`}
     ref={plantScrollRef}
@@ -1948,24 +1946,20 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             alt={product.title}
             className={`${styles.carouselImage} plant-image`}
           />
-        </div>
-      ))}
-    </div>
-  </div>
-</div>
-
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
 {/* Dock menú DOBO debajo de carruseles */}
-<div id="dobo-menu-dock" className={styles.menuDock} style={{ zIndex: 20, position: "relative" }} />
+<div id="dobo-menu-dock" className={styles.menuDock} />
 
-{/* Overlay de edición */}
-<CustomizationOverlay
-  mode="both"
-  stageRef={stageRef}
-  anchorRef={potScrollRef}
-  containerRef={sceneWrapRef}
-  docked={false}
-/>
+       
+        </div>
 
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
 
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
