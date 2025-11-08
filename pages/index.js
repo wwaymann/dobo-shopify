@@ -1963,6 +1963,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
        
         </div>
+}
 
         {/* Overlay de edición (restaurado) */}
         <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
