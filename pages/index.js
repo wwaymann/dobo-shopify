@@ -1853,7 +1853,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 {/* Nodo escalado con carruseles */}
 <div
   className="stage-wrapper"
-  ref={sceneWrapRef}
+
   style={{
     position: "relative",
     width: "100%",
