@@ -1804,7 +1804,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
               {/* Plantas */}
               <div
-                className={styles.carouselContainer}
+                 className={`${styles.carousel} plant-carousel`}
                 ref={plantScrollRef}
                 data-capture="plant-container"
                 style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
