@@ -1866,69 +1866,98 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 userSelect: "none",
               }}
             >
-              {/* Macetas */}
-              <div
-                className={styles.carouselContainer}
-                ref={potScrollRef}
-                data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...potSwipeEvents}
-              >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
-                  {pots.map((product, idx) => {
-                    const isSel = idx === selectedPotIndex;
-                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
-                    const imageUrl = vImg || product.image;
-                    return (
-                      <div key={product.id} className={styles.carouselItem}>
-                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+    {/* Macetas */}
+<div
+  className={`${styles.carouselContainer} pot-carousel`} // <-- clase global para macetas
+  ref={potScrollRef}
+  data-capture="pot-container"
+  style={{
+    zIndex: 1,
+    position: "absolute",
+    bottom: "250px", // base de referencia para traslape
+    left: "50%",
+    transform: "translateX(-50%)",
+    height: "auto",
+    minHeight: "500px",
+    touchAction: "pan-y",
+    userSelect: "none",
+    pointerEvents: "auto"
+  }}
+  onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+  onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+  onAuxClick={(e) => e.preventDefault()}
+  onContextMenu={(e) => e.preventDefault()}
+  {...potSwipeEvents}
+>
+  <div
+    className={styles.carouselTrack}
+    data-capture="pot-track"
+    style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
+  >
+    {pots.map((product, idx) => {
+      const isSel = idx === selectedPotIndex;
+      const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+      const imageUrl = vImg || product.image;
+      return (
+        <div key={product.id} className={styles.carouselItem}>
+          <img
+            src={imageUrl}
+            alt={product.title}
+            className={`${styles.carouselImage} pot-image`} // <-- refuerza el pivote
+          />
+        </div>
+      );
+    })}
+  </div>
+</div>
 
-              {/* Plantas */}
-              <div
-                className={styles.carouselContainer}
-                ref={plantScrollRef}
-                data-capture="plant-container"
-               style={{
-  zIndex: 3,                               // encima de la maceta
-  position: "absolute",
-  bottom: "300px",                         // ajusta si necesitas más o menos altura
-  left: "50%",
-  height: "530px",
-  transform: "translateX(-50%)",
-  transformOrigin: "center bottom",        // pivote abajo
-  display: "flex",
-  alignItems: "flex-end",                  // alinea las plantas por la base
-  justifyContent: "center",
-  touchAction: "pan-y",
-  userSelect: "none",
-  pointerEvents: "auto"
-}}
+{/* Plantas */}
+<div
+  className={`${styles.carouselContainer} plant-carousel`} // <-- clase global para plantas
+  ref={plantScrollRef}
+  data-capture="plant-container"
+  style={{
+    zIndex: 3, // encima de la maceta
+    position: "absolute",
+    bottom: "300px", // ajusta este valor para traslape
+    left: "50%",
+    transform: "translateX(-50%)",
+    height: "auto",
+    minHeight: "500px",
+    touchAction: "pan-y",
+    userSelect: "none",
+    pointerEvents: "auto",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center"
+  }}
+  onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+  onPointerUpCapture={(e) =>
+    handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
+  }
+  onAuxClick={(e) => e.preventDefault()}
+  onContextMenu={(e) => e.preventDefault()}
+  {...plantSwipeEvents}
+>
+  <div
+    className={styles.carouselTrack}
+    data-capture="plant-track"
+    style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
+  >
+    {plants.map((product) => (
+      <div key={product.id} className={styles.carouselItem}>
+        <img
+          src={product.image}
+          alt={product.title}
+          className={`${styles.carouselImage} plant-image`} // <-- refuerza pivote inferior
+        />
+      </div>
+    ))}
+  </div>
+</div>
 
-                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...plantSwipeEvents}
-              >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
-                  {plants.map((product) => (
-                    <div key={product.id} className={styles.carouselItem}>
-                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+
+
 {/* Dock menú DOBO debajo de carruseles */}
 <div id="dobo-menu-dock" className={styles.menuDock} />
 
