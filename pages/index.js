@@ -1850,10 +1850,10 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-   {/* Nodo escalado con carruseles */}
+  {/* Nodo escalado con carruseles */}
 <div
   className="stage-wrapper"
-  ref={sceneWrapRef}  // referencia para el overlay
+  ref={sceneWrapRef}
   style={{
     position: "relative",
     width: "100%",
