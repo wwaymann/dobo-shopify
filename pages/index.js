@@ -1853,6 +1853,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 {/* Nodo escalado con carruseles */}
 <div
   className="stage-wrapper"
+  ref={sceneWrapRef}
   style={{
     position: "relative",
     width: "100%",
@@ -1862,7 +1863,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     alignItems: "center",
     overflow: "visible",
   }}
-  ref={sceneWrapRef} // este será el ancla real del overlay
 >
   <div
     ref={stageRef}
@@ -1881,6 +1881,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       zIndex: 5,
     }}
   >
+
 
 {/* Carrusel de macetas */}
     <div
