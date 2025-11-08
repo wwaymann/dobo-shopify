@@ -65,56 +65,32 @@ button.buy-button {
   cursor: pointer;
 }
 
-/* ============ Carruseles ============ */
-
-/* Track mantiene scroll horizontal */
-.carouselTrack {
-  display: flex;
-  transition: transform 0.5s ease;
-  will-change: transform;
-}
-
-/* Ítems alineados según tipo */
+/* PLANTAS: alineadas por la base, sin romper el track */
 .plant-carousel .carouselItem {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-end; /* base común */
   justify-content: center;
 }
 
-.pot-carousel .carouselItem {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-/* Imágenes con pivote activo */
 .plant-carousel img {
   transform-origin: center bottom;
-  transform: scale(1);
-  pointer-events: none;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* MACETAS: alineadas por la boca */
+.pot-carousel .carouselItem {
+  display: flex;
+  align-items: flex-start; /* alinea bocas */
+  justify-content: center;
 }
 
 .pot-carousel img {
   transform-origin: center top;
-  transform: scale(1);
-  pointer-events: none;
-}
-
-/* ============ Capas ============ */
-.plant-carousel {
-  z-index: 3;
-  position: absolute;
-  pointer-events: auto;
-}
-
-.pot-carousel {
-  z-index: 1;
-  position: absolute;
-  pointer-events: auto;
-}
-
-/* Asegura que el menú quede por encima de todo */
-#dobo-menu-dock {
-  z-index: 10 !important;
-  position: relative !important;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
 }
