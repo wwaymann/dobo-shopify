@@ -1,7 +1,6 @@
 // pages/index.js
 import { useEffect, useState, useRef } from "react";
 import styles from "../styles/home.module.css";
-import '../styles/customizer.css'; 
 import "bootstrap/dist/css/bootstrap.min.css";
 import dynamic from "next/dynamic";
 
