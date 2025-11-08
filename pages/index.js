@@ -1755,232 +1755,250 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 }, []);
 // === /DOBO loader ===
 
+return (
+  <div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+    <div className="row justify-content-center align-items-start gx-5 gy-4">
+      <div className="col-lg-5 col-md-8 col-12 text-center">
+        {/* Selector de tamaño */}
+        <div className="btn-group mb-3" role="group" aria-label="Tamaño">
+          {["Pequeño", "Mediano", "Grande"].map((s) => (
+            <button
+              key={s}
+              className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+              onClick={() => {
+                userPickedSizeRef.current = true;
+                appliedMetaOnceRef.current = true;
+                setActiveSize(s);
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
 
-  
-  return (
-<div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+        {/* Escena */}
+        <div
+          className="position-relative"
+          ref={sceneWrapRef}
+          style={{
+            width: "100%",
+            maxWidth: "500px",
+            aspectRatio: "500 / 650",
+            backgroundImage: "url('/images/fondo-dobo.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            border: "3px dashed #6c757d",
+            borderRadius: "20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+            touchAction: "pan-y",
+            userSelect: "none",
+          }}
+        >
+          {/* Dots y flechas PLANTAS */}
+          <IndicatorDots
+            count={plants.length}
+            current={selectedPlantIndex}
+            onSelect={(i) =>
+              setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))
+            }
+            position="top"
+          />
+          <button
+            className={`${styles.chev} ${styles.chevTopLeft}`}
+            aria-label="Anterior"
+            onClick={() =>
+              setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))
+            }
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <button
+            className={`${styles.chev} ${styles.chevTopRight}`}
+            aria-label="Siguiente"
+            onClick={() =>
+              setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
+            }
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
 
+          {/* Dots y flechas MACETAS */}
+          <IndicatorDots
+            count={pots.length}
+            current={selectedPotIndex}
+            onSelect={(i) =>
+              setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))
+            }
+            position="bottom"
+          />
+          <button
+            className={`${styles.chev} ${styles.chevBottomLeft}`}
+            aria-label="Anterior"
+            onClick={() =>
+              setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))
+            }
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <button
+            className={`${styles.chev} ${styles.chevBottomRight}`}
+            aria-label="Siguiente"
+            onClick={() =>
+              setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
+            }
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
 
-
-      <div className="row justify-content-center align-items-start gx-5 gy-4">
-        <div className="col-lg-5 col-md-8 col-12 text-center">
-          {/* Selector de tamaño */}
-          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-         {["Pequeño", "Mediano", "Grande"].map((s) => (
-  <button
-    key={s}
-    className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
-    onClick={() => {
-      userPickedSizeRef.current = true;        // el usuario eligió
-      appliedMetaOnceRef.current = true;       // no volver a aplicar meta luego
-      setActiveSize(s);                        // dispara fetch por tamaño
-    }}
-  >
-    {s}
-  </button>
-))}
-
-
-          </div>
-
-          {/* Escena */}
+          {/* Nodo escalado con carruseles */}
           <div
-            className="position-relative"
-            ref={sceneWrapRef}
+            className="stage-wrapper"
             style={{
-              width: "500px",
-              height: "650px",
-              width: "100%", maxWidth: "500px",
-              aspectRatio: "500 / 650",
-              backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              border: "3px dashed #6c757d",
-              borderRadius: "20px",
+              position: "relative",
+              width: "100%",
+              height: "100%",
               display: "flex",
-              alignItems: "center",
               justifyContent: "center",
-              overflow: "hidden",
-              touchAction: "pan-y",
-              userSelect: "none",
+              alignItems: "center",
+              overflow: "visible",
             }}
           >
-            {/* Dots y flechas PLANTAS */}
-            <IndicatorDots
-              count={plants.length}
-              current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-              position="top"
-            />
-            <button
-              className={`${styles.chev} ${styles.chevTopLeft}`}
-              aria-label="Anterior"
-              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
+            <div
+              ref={stageRef}
+              data-capture-stage="1"
+              className="d-flex justify-content-center align-items-end"
+              style={{
+                height: "100%",
+                "--zoom": 0.75,
+                transform: "scale(var(--zoom))",
+                transformOrigin: "50% 70%",
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+                touchAction: "pan-y",
+                userSelect: "none",
+                position: "relative",
+                zIndex: 5,
+              }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-            <button
-              className={`${styles.chev} ${styles.chevTopRight}`}
-              aria-label="Siguiente"
-              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
+              {/* Carrusel de macetas */}
+              <div
+                className={`${styles.carouselContainer} pot-carousel`}
+                ref={potScrollRef}
+                data-capture="pot-container"
+                style={{
+                  zIndex: 1,
+                  position: "absolute",
+                  bottom: "20vh",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  pointerEvents: "auto",
+                  touchAction: "pan-y",
+                }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                onPointerUpCapture={(e) =>
+                  handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
+                }
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...potSwipeEvents}
+              >
+                <div
+                  className={styles.carouselTrack}
+                  data-capture="pot-track"
+                  style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
+                >
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel
+                      ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null
+                      : null;
+                    const imageUrl = vImg || product.image;
+                    return (
+                      <div key={product.id} className={styles.carouselItem}>
+                        <img
+                          src={imageUrl}
+                          alt={product.title}
+                          className={`${styles.carouselImage} pot-image`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-            {/* Dots y flechas MACETAS */}
-            <IndicatorDots
-              count={pots.length}
-              current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-              position="bottom"
-            />
-            <button
-              className={`${styles.chev} ${styles.chevBottomLeft}`}
-              aria-label="Anterior"
-              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-            <button
-              className={`${styles.chev} ${styles.chevBottomRight}`}
-              aria-label="Siguiente"
-              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
-
-{/* Nodo escalado con carruseles */}
-<div
-  className="stage-wrapper"
-
-  style={{
-    position: "relative",
-    width: "100%",
-    height: "100%",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "visible",
-  }}
->
-  <div
-    ref={stageRef}
-    data-capture-stage="1"
-    className="d-flex justify-content-center align-items-end"
-    style={{
-      height: "100%",
-      "--zoom": 0.75,
-      transform: "scale(var(--zoom))",
-      transformOrigin: "50% 70%",
-      willChange: "transform",
-      backfaceVisibility: "hidden",
-      touchAction: "pan-y",
-      userSelect: "none",
-      position: "relative",
-      zIndex: 5,
-    }}
-  >
-
-
-{/* Carrusel de macetas */}
-    <div
-      className={`${styles.carouselContainer} pot-carousel`}
-      ref={potScrollRef}
-      data-capture="pot-container"
-      style={{
-        zIndex: 1,
-        position: "absolute",
-        bottom: "20vh",
-        left: "50%",
-        transform: "translateX(-50%)",
-        pointerEvents: "auto",
-        touchAction: "pan-y"
-      }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
-      }
-      onAuxClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
-      {...potSwipeEvents}
-    >
-      <div
-        className={styles.carouselTrack}
-        data-capture="pot-track"
-        style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
-      >
-        {pots.map((product, idx) => {
-          const isSel = idx === selectedPotIndex;
-          const vImg = isSel
-            ? (selectedPotVariant?.image || selectedPotVariant?.imageUrl || null)
-            : null;
-          const imageUrl = vImg || product.image;
-          return (
-            <div key={product.id} className={styles.carouselItem}>
-              <img
-                src={imageUrl}
-                alt={product.title}
-                className={`${styles.carouselImage} pot-image`}
-              />
+              {/* Carrusel de plantas */}
+              <div
+                className={`${styles.carouselContainer} plant-carousel`}
+                ref={plantScrollRef}
+                data-capture="plant-container"
+                style={{
+                  zIndex: 3,
+                  position: "absolute",
+                  bottom: "25vh",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  pointerEvents: "auto",
+                  touchAction: "pan-y",
+                }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+                onPointerUpCapture={(e) =>
+                  handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
+                }
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...plantSwipeEvents}
+              >
+                <div
+                  className={styles.carouselTrack}
+                  data-capture="plant-track"
+                  style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
+                >
+                  {plants.map((product) => (
+                    <div key={product.id} className={styles.carouselItem}>
+                      <img
+                        src={product.image}
+                        alt={product.title}
+                        className={`${styles.carouselImage} plant-image`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          );
-        })}
-      </div>
-    </div>
-
-    {/* Carrusel de plantas */}
-    <div
-      className={`${styles.carouselContainer} plant-carousel`}
-      ref={plantScrollRef}
-      data-capture="plant-container"
-      style={{
-        zIndex: 3,
-        position: "absolute",
-        bottom: "25vh",
-        left: "50%",
-        transform: "translateX(-50%)",
-        pointerEvents: "auto",
-        touchAction: "pan-y",
-      }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
-      }
-      onAuxClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
-      {...plantSwipeEvents}
-    >
-      <div
-        className={styles.carouselTrack}
-        data-capture="plant-track"
-        style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
-      >
-        {plants.map((product) => (
-          <div key={product.id} className={styles.carouselItem}>
-            <img
-              src={product.image}
-              alt={product.title}
-              className={`${styles.carouselImage} plant-image`}
-            />
           </div>
-        ))}
+
+          {/* Overlay centrado y visible */}
+          <CustomizationOverlay
+            mode="both"
+            stageRef={stageRef}
+            anchorRef={sceneWrapRef}
+            containerRef={sceneWrapRef}
+            docked={false}
+          />
+
+          {/* Menú por encima */}
+          <div
+            id="dobo-menu-dock"
+            className={styles.menuDock}
+            style={{ zIndex: 20, position: "relative" }}
+          />
+        </div>
       </div>
     </div>
   </div>
-</div>
-
-{/* Overlay centrado y visible */}
-<CustomizationOverlay
-  mode="both"
-  stageRef={stageRef}
-  anchorRef={sceneWrapRef}
-  containerRef={sceneWrapRef}
-  docked={false}
-/>
-
-{/* Menú por encima */}
-<div id="dobo-menu-dock" className={styles.menuDock} style={{ zIndex: 20, position: "relative" }} />
+);
 
 
 
