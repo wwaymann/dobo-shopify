@@ -98,3 +98,10 @@ button.buy-button {
   margin: 0 auto;
   pointer-events: none;
 }
+.pot-carousel img {
+  transform-origin: center top !important;
+  transform: scale(1);
+  display: block;
+  margin: 0 auto;
+  pointer-events: none;
+}
