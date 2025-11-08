@@ -198,27 +198,4 @@
   pointer-events: none; /* deja pasar los eventos táctiles al fondo */
 }
 
-/* --- Flechas de historial (menu DOBO) --- */
-.menuDock {
-  position: relative !important;
-  z-index: 30 !important; /* por encima del stage escalado */
-  pointer-events: auto !important;
-}
-
-.menuDock button,
-.menuDock .history-arrow {
-  position: relative;
-  z-index: 31 !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-}
-
-/* Si las flechas son SVG o iconos de fontawesome */
-.menuDock svg,
-.menuDock i {
-  z-index: 32 !important;
-  pointer-events: auto !important;
-  fill: #333 !important; /* ajusta color según fondo */
-}
 
