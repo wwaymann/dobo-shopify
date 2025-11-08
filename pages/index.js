@@ -1869,7 +1869,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             {/* Macetas */}
 <div
   className={`${styles.carouselContainer} pot-carousel`}
-  style={{ zIndex: 1, position: "absolute", bottom: "50px", left: "50%", transform: "translateX(-50%)" }}
+  style={{ zIndex: 1, position: "absolute", bottom: "-20px", left: "50%", transform: "translateX(-50%)" }}
 >
   <div
     className={styles.carouselTrack}
