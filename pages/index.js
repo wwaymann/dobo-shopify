@@ -1895,7 +1895,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         left: "50%",
         transform: "translateX(-50%)",
         pointerEvents: "auto",
-        touchAction: "pan-y",
+        touchAction: "pan-y"
       }}
       onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
       onPointerUpCapture={(e) =>
