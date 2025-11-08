@@ -1869,25 +1869,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             {/* Macetas */}
 <div
   className={`${styles.carouselContainer} pot-carousel`}
-  ref={potScrollRef}
-  data-capture="pot-container"
-  style={{
-    zIndex: 1,
-    position: "absolute",
-    bottom: "250px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    height: "auto",
-    minHeight: "500px",
-    touchAction: "pan-y",
-    userSelect: "none",
-    pointerEvents: "auto"
-  }}
-  onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-  onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
-  onAuxClick={(e) => e.preventDefault()}
-  onContextMenu={(e) => e.preventDefault()}
-  {...potSwipeEvents}
+  style={{ zIndex: 1, position: "absolute", bottom: "250px", left: "50%", transform: "translateX(-50%)" }}
 >
   <div
     className={styles.carouselTrack}
@@ -1914,28 +1896,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         {/* Plantas */}
 <div
   className={`${styles.carouselContainer} plant-carousel`}
-  ref={plantScrollRef}
-  data-capture="plant-container"
-  style={{
-    zIndex: 3,
-    position: "absolute",
-    bottom: "300px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    height: "auto",
-    minHeight: "500px",
-    touchAction: "pan-y",
-    userSelect: "none",
-    pointerEvents: "auto",
-    display: "flex",
-    alignItems: "flex-end",
-    justifyContent: "center"
-  }}
-  onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-  onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
-  onAuxClick={(e) => e.preventDefault()}
-  onContextMenu={(e) => e.preventDefault()}
-  {...plantSwipeEvents}
+  style={{ zIndex: 3, position: "absolute", bottom: "300px", left: "50%", transform: "translateX(-50%)" }}
 >
   <div
     className={styles.carouselTrack}
