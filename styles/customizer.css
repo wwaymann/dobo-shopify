@@ -65,17 +65,35 @@ button.buy-button {
   cursor: pointer;
 }
 
-
-
-/* Contenedor genérico de carrusel de PLANTAS */
-.plant-carousel img { transform-origin: center bottom !important; transform: scale(1); }
-
-/* Contenedor genérico de carrusel de MACETAS */
-.pot-carousel {
+/* Carrusel de PLANTAS: todas las plantas descansan sobre la misma línea */
+.plant-carousel {
   display: flex;
+  align-items: flex-end; /* alinea visualmente las bases */
   justify-content: center;
-  align-items: flex-start; /* todas las macetas alineadas arriba */
+  position: relative;
 }
 
-/* Todas las imágenes de macetas pivotean en la boca (arriba) */
-.pot-carousel img   { transform-origin: center top !important;    transform: scale(1); }
+.plant-carousel img {
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  align-self: flex-end;
+}
+
+/* Carrusel de MACETAS: todas las bocas se alinean */
+.pot-carousel {
+  display: flex;
+  align-items: flex-start; /* alinea visualmente las bocas */
+  justify-content: center;
+  position: relative;
+}
+
+.pot-carousel img {
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  align-self: flex-start;
+}
+
