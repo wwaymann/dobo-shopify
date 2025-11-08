@@ -1,5 +1,6 @@
 import "../styles/home.module.css"; // tus estilos globales si aplica
 import GlobalErrorBoundary from "../components/GlobalErrorBoundary";
+import '../styles/customizer.css';  // <-- agrega esta línea aquí
 
 function App({ Component, pageProps }) {
   // Listeners globales (solo en cliente)
