@@ -81,7 +81,7 @@ img[data-plant],
 .plant img,
 img.plant,
 .plant-image {
-  transform-origin: 50% 100%; /* abajo */
+  transform-origin: center bottom; /* abajo */
   object-fit: contain;
   height: 100%;
 }
