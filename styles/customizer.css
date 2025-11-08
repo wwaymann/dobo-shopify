@@ -75,15 +75,12 @@ button.buy-button {
 }
 
 /* Todas las imágenes de plantas pivotean en la base */
-.plant-carousel img,
-[data-role="plant"] img,
-img[data-plant],
-.plant img,
-img.plant,
-.plant-image {
-  transform-origin: center bottom; /* abajo */
-  object-fit: contain;
-  height: 100%;
+.plant-carousel img {
+  transform-origin: center bottom !important;
+  transform: scale(1); /* activa el pivote */
+  display: block;
+  margin: 0 auto;
+  pointer-events: none;
 }
 
 /* Contenedor genérico de carrusel de MACETAS */
@@ -94,13 +91,10 @@ img.plant,
 }
 
 /* Todas las imágenes de macetas pivotean en la boca (arriba) */
-.pot-carousel img,
-[data-role="pot"] img,
-img[data-pot],
-.pot img,
-img.pot,
-.pot-image {
-  transform-origin: 50% 0%; /* arriba */
-  object-fit: contain;
-  height: 100%;
+.pot-carousel img {
+  transform-origin: center top !important;
+  transform: scale(1);
+  display: block;
+  margin: 0 auto;
+  pointer-events: none;
 }
