@@ -113,16 +113,19 @@
 }
 
 .plantImage {
-  transform: translateY(40px);
+  /* Sin desplazamientos verticales forzados */
+  transform-origin: 50% 100%; /* Ancla en la base */
   z-index: 10;
   position: relative;
 }
 
 .plantImageOverlay {
-  transform: translateY(1px); /* Ajusta según la altura deseada de la planta sobre la maceta */
+  /* Quita desplazamiento para no romper el pivote */
+  transform: none;
   z-index: 2;
   position: relative;
 }
+
 
 .carouselTrack
 { display:flex; 
