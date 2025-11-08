@@ -1850,8 +1850,8 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
             </button>
 
-            {/* Nodo escalado con carruseles */}
-      <div
+        {/* Nodo escalado con carruseles */}
+<div
   className="stage-wrapper"
   style={{
     position: "relative",
@@ -1865,17 +1865,16 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     data-capture-stage="1"
     className="d-flex justify-content-center align-items-center"
     style={{
-      "--zoom": 0.75,
-    transform: "translate(-50%, -50%) scale(var(--zoom))",
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%) scale(var(--zoom))",
       transformOrigin: "50% 70%",
       willChange: "transform",
       backfaceVisibility: "hidden",
       userSelect: "none",
       pointerEvents: "none",
-      position: "absolute",
-      top: "50%",
-      left: "50%",
-      
+      "--zoom": 0.75,
     }}
   >
 
