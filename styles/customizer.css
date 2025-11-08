@@ -145,11 +145,6 @@ button.buy-button {
   pointer-events: auto;
   z-index: 20;
 }
-.sceneWrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
+
 
 
