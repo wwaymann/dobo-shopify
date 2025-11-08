@@ -1866,7 +1866,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     className="d-flex justify-content-center align-items-center"
     style={{
       "--zoom": 0.75,
-      transform: "scale(var(--zoom))",
+    transform: "translate(-50%, -50%) scale(var(--zoom))",
       transformOrigin: "50% 70%",
       willChange: "transform",
       backfaceVisibility: "hidden",
@@ -1875,7 +1875,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       position: "absolute",
       top: "50%",
       left: "50%",
-      translate: "-50% -50%",
+      
     }}
   >
 
