@@ -96,4 +96,33 @@ button.buy-button {
   display: block;
   align-self: flex-start;
 }
+/* PLANTAS: alineadas por la base, sin romper el track */
+.plant-carousel .carouselItem {
+  display: flex;
+  align-items: flex-end; /* base común */
+  justify-content: center;
+}
+
+.plant-carousel img {
+  transform-origin: center bottom;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* MACETAS: alineadas por la boca */
+.pot-carousel .carouselItem {
+  display: flex;
+  align-items: flex-start; /* alinea bocas */
+  justify-content: center;
+}
+
+.pot-carousel img {
+  transform-origin: center top;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
 
