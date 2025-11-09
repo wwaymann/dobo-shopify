@@ -1874,7 +1874,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       style={{
         zIndex: 1,
         position: "absolute",
-        bottom: "20vh",
+        bottom: "2vh",
         left: "50%",
         transform: "translateX(-50%)",
         pointerEvents: "auto",
@@ -1920,7 +1920,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       style={{
         zIndex: 3,
         position: "absolute",
-        bottom: "25vh",
+        bottom: "40vh",
         left: "50%",
         transform: "translateX(-50%)",
         pointerEvents: "auto",
