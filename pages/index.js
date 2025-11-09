@@ -1784,7 +1784,7 @@ return (
             width: "100%",
             maxWidth: "500px",
             aspectRatio: "500 / 650",
-            backgroundImage: "url('/images/fondo-dobo.jpg')",
+            backgroundImage: `url("/images/fondo-dobo.jpg")`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
