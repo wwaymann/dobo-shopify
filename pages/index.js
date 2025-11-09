@@ -2003,6 +2003,7 @@ return (
 
 
 
+
         {/* Panel derecho */}
         <div className="col-lg-5 col-md-8 col-12">
           {pots.length > 0 && plants.length > 0 && (
