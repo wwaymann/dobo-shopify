@@ -713,7 +713,51 @@ useEffect(() => {
   fabricCanvasEl.style.transformOrigin = "center bottom";
 }, []);
 
-// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN DEFINITIVA Y SEGURA) ===
+// === CENTRAR CANVAS DEL CUSTOMIZER SOBRE EL STAGE ===
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
+
+  // Intenta tomar el canvas principal de Fabric
+  const fabricCanvasEl =
+    stage.querySelector("canvas.upper-canvas") ||
+    stage.querySelector("canvas.lower-canvas") ||
+    stage.querySelector("canvas");
+
+  if (!fabricCanvasEl) return;
+
+  // Posicionamiento centrado respecto al stage
+  fabricCanvasEl.style.position = "absolute";
+  fabricCanvasEl.style.left = "50%";
+  fabricCanvasEl.style.top = "50%";
+  fabricCanvasEl.style.transform = "translate(-50%, -50%)";
+
+  // Para no bloquear interacciones con los carruseles
+  fabricCanvasEl.style.pointerEvents = "none";
+
+  // Asegura superposición correcta
+  fabricCanvasEl.style.zIndex = "5";
+}, []);
+
+// === CENTRAR HORIZONTALMENTE EL CONJUNTO EN MÓVIL SIN REMAQUETAR ===
+useEffect(() => {
+  const shell = mobileShellRef?.current;
+  if (!shell) return;
+  const content = shell.querySelector(".container");
+  if (!content) return;
+  const center = () => {
+    try {
+      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
+      shell.scrollLeft = target;
+    } catch {}
+  };
+  center();
+  const onR = () => center();
+  window.addEventListener("resize", onR);
+  return () => window.removeEventListener("resize", onR);
+}, []);
+
+// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN SEGURA Y FINAL) ===
 useEffect(() => {
   let rafId;
   let resizeListener;
@@ -739,7 +783,6 @@ useEffect(() => {
       const potItem = potTrack?.children?.[selectedPotIndex];
       const plantItem = plantTrack?.children?.[selectedPlantIndex];
       const target = potItem || plantItem;
-
       if (!target) return;
 
       const stageRect = stage.getBoundingClientRect();
@@ -765,7 +808,6 @@ useEffect(() => {
     }
   };
 
-  // Espera a que el DOM termine de montar
   const init = () => {
     alignCanvas();
     resizeListener = () => alignCanvas();
