@@ -685,7 +685,7 @@ useEffect(() => {
   if (!stage) return;
 
   // Ajustes finos (si ves 2–10px de desfase, toca estos)
-  const OFFSET_X = 0;  // + derecha / - izquierda
+  const OFFSET_X = -110;  // + derecha / - izquierda
   const OFFSET_Y = 0;  // + abajo   / - arriba
 
   // 1) El stage debe ser ancla
