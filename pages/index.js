@@ -746,11 +746,13 @@ useEffect(() => {
   return () => window.removeEventListener("resize", center);
 }, []);
 
-// 6. Alinear canvas exactamente sobre la maceta/planta visible
+// 6. Alinear canvas exactamente sobre la maceta/planta visible (interactivo)
 useEffect(() => {
   const alignCanvas = () => {
     const stage = stageRef?.current;
     if (!stage) return;
+
+    // Identificar el canvas de Fabric
     const canvas =
       stage.querySelector("canvas.upper-canvas") ||
       stage.querySelector("canvas.lower-canvas") ||
@@ -765,37 +767,37 @@ useEffect(() => {
     const target = potItem || plantItem;
     if (!target) return;
 
-    // Coordenadas del elemento visible (maceta o planta)
+    // Coordenadas del elemento visible (maceta/planta)
     const targetRect = target.getBoundingClientRect();
-    const parentRect = stage.parentElement?.getBoundingClientRect() || stage.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
 
-    // Centro visual del ítem dentro del stage
-    const cx = targetRect.left + targetRect.width / 2 - parentRect.left;
-    const cy = targetRect.top + targetRect.height / 2 - parentRect.top;
+    // Calcular el centro relativo del target dentro del stage
+    const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
+    const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
 
-    // Medidas del canvas
     const cw = canvas.offsetWidth || canvas.width || 0;
     const ch = canvas.offsetHeight || canvas.height || 0;
 
-    // Ajuste de posición: centrado perfecto con corrección óptica
+    // Posicionar el canvas con precisión
     canvas.style.position = "absolute";
     canvas.style.left = `${cx - cw / 2}px`;
     canvas.style.top = `${cy - ch / 2}px`;
-    canvas.style.transform = "translate(0, 0)";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = "20";
+
+    // Sin translate para no romper eventos
+    canvas.style.transform = "none";
+    canvas.style.zIndex = "15";
+
+    // Mantener la interactividad de Fabric
+    canvas.style.pointerEvents = "auto";
   };
 
-  // Ejecutar y actualizar al cambiar vista
-  const init = () => {
-    alignCanvas();
-    window.addEventListener("resize", alignCanvas);
-    potScrollRef?.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
-    plantScrollRef?.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
-  };
+  // Ejecutar después del montaje
+  const raf = requestAnimationFrame(() => setTimeout(alignCanvas, 300));
 
-  // Espera breve para montaje del DOM
-  const raf = requestAnimationFrame(() => setTimeout(init, 300));
+  // Reajustar en eventos relevantes
+  window.addEventListener("resize", alignCanvas);
+  potScrollRef?.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+  plantScrollRef?.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
 
   return () => {
     cancelAnimationFrame(raf);
