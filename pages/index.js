@@ -679,14 +679,16 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-// en el efecto de montaje inicial
+// === EFECTOS DE MONTAJE Y ALINEACIÓN DEL CANVAS ===
+
+// 1. Zoom inicial en CSS
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
 
-// === OVERLAY: asegurar que el STAGE sea el ancla relativo ===
+// 2. Asegurar que el stage sea ancla relativa
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
@@ -695,60 +697,56 @@ useEffect(() => {
   }
 }, []);
 
-// === AJUSTE DE TRANSFORM-ORIGIN DEL CANVAS AL PIVOTE NUEVO ===
+// 3. Ajustar transform-origin del canvas al pivote visual
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
-  const fabricCanvasEl =
+  const canvas =
     stage.querySelector("canvas.upper-canvas") ||
     stage.querySelector("canvas.lower-canvas") ||
     stage.querySelector("canvas");
-  if (!fabricCanvasEl) return;
-  fabricCanvasEl.style.transformOrigin = "center bottom";
+  if (!canvas) return;
+  canvas.style.transformOrigin = "center bottom";
 }, []);
 
-// === CENTRAR CANVAS DEL CUSTOMIZER SOBRE EL STAGE ===
+// 4. Centrar canvas sobre el stage
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
-
-  const fabricCanvasEl =
+  const canvas =
     stage.querySelector("canvas.upper-canvas") ||
     stage.querySelector("canvas.lower-canvas") ||
     stage.querySelector("canvas");
+  if (!canvas) return;
 
-  if (!fabricCanvasEl) return;
+  canvas.style.position = "absolute";
+  canvas.style.left = "50%";
+  canvas.style.top = "50%";
+  canvas.style.transform = "translate(-50%, -50%)";
+  canvas.style.pointerEvents = "none";
+  canvas.style.zIndex = "5";
+}, []);
 
-  // Posicionamiento centrado respecto al stage
-  fabricCanvasEl.style.position = "absolute";
-  fabricCanvasEl.style.left = "50%";
-  fabricCanvasEl.style.top = "50%";
-  fabricCanvasEl.style.transform = "translate(-50%, -50%)";
-  fabricCanvasEl.style.pointerEvents = "none";
-  fabricCanvasEl.style.zIndex = "5";
-}, []); // ✅ cierre correcto del useEffect
-
-
-
-// === CENTRAR HORIZONTALMENTE EL CONJUNTO EN MÓVIL SIN REMAQUETAR ===
+// 5. Centrar horizontalmente el conjunto en móvil
 useEffect(() => {
   const shell = mobileShellRef?.current;
   if (!shell) return;
   const content = shell.querySelector(".container");
   if (!content) return;
+
   const center = () => {
     try {
       const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
       shell.scrollLeft = target;
     } catch {}
   };
+
   center();
-  const onR = () => center();
-  window.addEventListener("resize", onR);
-  return () => window.removeEventListener("resize", onR);
+  window.addEventListener("resize", center);
+  return () => window.removeEventListener("resize", center);
 }, []);
 
-// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN SEGURA) ===
+// 6. Alinear canvas según el carrusel visible
 useEffect(() => {
   let rafId;
   let resizeListener;
@@ -796,6 +794,7 @@ useEffect(() => {
     alignCanvas();
     resizeListener = () => alignCanvas();
     window.addEventListener("resize", resizeListener);
+
     if (potScrollRef?.current) {
       const potScroll = potScrollRef.current;
       potScroll.addEventListener("scroll", alignCanvas, { passive: true });
@@ -803,6 +802,7 @@ useEffect(() => {
         potScroll.removeEventListener("scroll", alignCanvas)
       );
     }
+
     if (plantScrollRef?.current) {
       const plantScroll = plantScrollRef.current;
       plantScroll.addEventListener("scroll", alignCanvas, { passive: true });
@@ -822,103 +822,6 @@ useEffect(() => {
   };
 }, [selectedPotIndex, selectedPlantIndex]);
 
-
-
-
-  // Intenta tomar el canvas principal de Fabric
-  const fabricCanvasEl =
-    stage.querySelector("canvas.upper-canvas") ||
-    stage.querySelector("canvas.lower-canvas") ||
-    stage.querySelector("canvas");
-
-  if (!fabricCanvasEl) return;
-
-  // Posicionamiento centrado respecto al stage
-  fabricCanvasEl.style.position = "absolute";
-  fabricCanvasEl.style.left = "50%";
-  fabricCanvasEl.style.top = "50%";
-  fabricCanvasEl.style.transform = "translate(-50%, -50%)";
-
-  // Para no bloquear interacciones con los carruseles
-  fabricCanvasEl.style.pointerEvents = "none";
-
-  // Asegura superposición correcta
-  fabricCanvasEl.style.zIndex = "5";
-}, []);
-
-// Centrar horizontalmente el conjunto en móvil sin remaquetar
-useEffect(() => {
-  const shell = mobileShellRef?.current;
-  if (!shell) return;
-  const content = shell.querySelector(".container");
-  if (!content) return;
-  const center = () => {
-    try {
-      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
-      shell.scrollLeft = target;
-    } catch {}
-  };
-  center();
-  const onR = () => center();
-  window.addEventListener("resize", onR);
-  return () => window.removeEventListener("resize", onR);
-}, []);
-
-// === NUEVO EFECTO: ALINEAR CANVAS AL CENTRO VISUAL DEL CARRUSEL ===
-useEffect(() => {
-  const stage = stageRef.current;
-  if (!stage) return;
-
-  const canvas =
-    stage.querySelector("canvas.upper-canvas") ||
-    stage.querySelector("canvas.lower-canvas") ||
-    stage.querySelector("canvas");
-  if (!canvas) return;
-
-  const alignCanvas = () => {
-    const potTrack = document.querySelector('[data-capture="pot-track"]');
-    const plantTrack = document.querySelector('[data-capture="plant-track"]');
-
-    const potItem =
-      potTrack?.children?.[selectedPotIndex] ||
-      potTrack?.querySelector(".carouselItem");
-    const plantItem =
-      plantTrack?.children?.[selectedPlantIndex] ||
-      plantTrack?.querySelector(".carouselItem");
-
-    const target = potItem || plantItem;
-    if (!target) return;
-
-    const stageRect = stage.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-
-    const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
-    const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
-
-    const cw = canvas.offsetWidth || canvas.width;
-    const ch = canvas.offsetHeight || canvas.height;
-
-    canvas.style.position = "absolute";
-    canvas.style.left = `${cx - cw / 2}px`;
-    canvas.style.top = `${cy - ch / 2}px`;
-    canvas.style.transform = "none";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = 20;
-  };
-
-  alignCanvas();
-
-  // Recalcula cuando cambian selección, tamaño o scroll
-  window.addEventListener("resize", alignCanvas);
-  potScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
-  plantScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
-
-  return () => {
-    window.removeEventListener("resize", alignCanvas);
-    potScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
-    plantScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
-  };
-}, [selectedPotIndex, selectedPlantIndex]);
 
 
 // ---------- fetch por tamaño y tipo ----------
