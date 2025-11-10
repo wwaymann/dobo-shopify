@@ -817,6 +817,123 @@ useEffect(() => {
 // Recalcula cuando cambian índices seleccionados
 }, [selectedPotIndex, selectedPlantIndex]);
 
+  // === DOBO: pivotes correctos + canvas centrado e interactivo (bloque único) ===
+useEffect(() => {
+  const stage = stageRef?.current;
+  if (!stage) return;
+
+  // Micro-ajustes si ves 2–10 px de desfase
+  const OFFSET_X = 0;  // + derecha / - izquierda
+  const OFFSET_Y = 0;  // + abajo   / - arriba
+
+  // Asegurar ancla y exponer zoom al CSS
+  if (getComputedStyle(stage).position === "static") stage.style.position = "relative";
+  stage.style.setProperty("--zoom", String(zoomRef.current));
+
+  // Helpers
+  const getCanvas = () =>
+    stage.querySelector("canvas.upper-canvas") ||
+    stage.querySelector("canvas.lower-canvas") ||
+    stage.querySelector("canvas");
+
+  const getTracks = () => ({
+    potTrack: document.querySelector('[data-capture="pot-track"]'),
+    plantTrack: document.querySelector('[data-capture="plant-track"]'),
+  });
+
+  const getTarget = () => {
+    const { potTrack, plantTrack } = getTracks();
+    const potItem = potTrack?.children?.[selectedPotIndex] || null;
+    const plantItem = plantTrack?.children?.[selectedPlantIndex] || null;
+    return potItem || plantItem || null;
+  };
+
+  const applyBaseCanvasStyles = (canvas) => {
+    canvas.style.position = "absolute";
+    canvas.style.transform = "none";
+    canvas.style.zIndex = "20";
+    canvas.style.pointerEvents = "auto";             // mantener edición
+    canvas.style.transformOrigin = "center bottom";  // pivote visual
+  };
+
+  // Forzar pivotes correctos en los tracks (sin tocar tu CSS existente)
+  const applyPivotToTracks = () => {
+    const { potTrack, plantTrack } = getTracks();
+    if (potTrack)  potTrack.style.transformOrigin   = "center top";     // boca maceta
+    if (plantTrack) plantTrack.style.transformOrigin = "center bottom"; // base planta
+  };
+
+  const align = () => {
+    const canvas = getCanvas();
+    const target = getTarget();
+    if (!canvas || !target) return;
+
+    const s = stage.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+
+    // Centro del ítem visible relativo al stage
+    const cx = t.left + t.width / 2 - s.left;
+    const cy = t.top + t.height / 2 - s.top;
+
+    const cw = canvas.offsetWidth  || canvas.width  || 0;
+    const ch = canvas.offsetHeight || canvas.height || 0;
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+
+    canvas.style.left = `${cx - cw / 2 + OFFSET_X}px`;
+    canvas.style.top  = `${cy - ch / 2 + OFFSET_Y}px`;
+  };
+
+  // Boot: esperar a que Fabric y los carruseles estén listos
+  let alive = true;
+  const boot = () => {
+    if (!alive) return;
+    applyPivotToTracks();
+    const canvas = getCanvas();
+    if (!canvas || !getTarget()) {
+      requestAnimationFrame(() => setTimeout(boot, 50));
+      return;
+    }
+    applyBaseCanvasStyles(canvas);
+    align();
+  };
+  requestAnimationFrame(() => setTimeout(boot, 150));
+
+  // Re-alinear en eventos relevantes
+  const onResize = () => align();
+  window.addEventListener("resize", onResize);
+
+  const unsubs = [];
+  if (potScrollRef?.current) {
+    const el = potScrollRef.current, h = () => align();
+    el.addEventListener("scroll", h, { passive: true });
+    unsubs.push(() => el.removeEventListener("scroll", h));
+  }
+  if (plantScrollRef?.current) {
+    const el = plantScrollRef.current, h = () => align();
+    el.addEventListener("scroll", h, { passive: true });
+    unsubs.push(() => el.removeEventListener("scroll", h));
+  }
+
+  // Observers por cambios de layout/ítem
+  const ro = new ResizeObserver(() => align());
+  ro.observe(stage);
+  const tEl = getTarget();
+  if (tEl) ro.observe(tEl);
+
+  const { potTrack, plantTrack } = getTracks();
+  const mo = new MutationObserver(() => { applyPivotToTracks(); align(); });
+  potTrack  && mo.observe(potTrack,  { attributes: true, childList: true, subtree: true });
+  plantTrack && mo.observe(plantTrack, { attributes: true, childList: true, subtree: true });
+
+  return () => {
+    alive = false;
+    window.removeEventListener("resize", onResize);
+    unsubs.forEach((off) => off());
+    ro.disconnect();
+    mo.disconnect();
+  };
+}, [selectedPotIndex, selectedPlantIndex]);
+
   
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
