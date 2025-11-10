@@ -686,6 +686,17 @@ useEffect(() => {
   // expone el zoom inicial al CSS si usas --zoom
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
+
+  // === OVERLAY: asegurar que el STAGE sea el ancla relativo ===
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
+  // Si el contenedor está 'static', el overlay absoluto se desancla
+  if (getComputedStyle(stage).position === "static") {
+    stage.style.position = "relative";
+  }
+}, []);
+
   
 // === AJUSTE DE TRANSFORM-ORIGIN DEL CANVAS AL PIVOTE NUEVO ===
 useEffect(() => {
