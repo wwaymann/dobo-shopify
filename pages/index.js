@@ -679,121 +679,31 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-// === DOBO: Overlay fijo al centro visual del carrusel (bloque único) ===
+  // en el efecto de montaje inicial
 useEffect(() => {
-  const stage = stageRef?.current;
+  const stage = stageRef.current;
   if (!stage) return;
+  // expone el zoom inicial al CSS si usas --zoom
+  stage.style.setProperty("--zoom", String(zoomRef.current));
+}, []);
 
-  // Ajustes finos (si ves 2–10px de desfase, toca estos)
-  const OFFSET_X = -110;  // + derecha / - izquierda
-  const OFFSET_Y = 0;  // + abajo   / - arriba
-
-  // 1) El stage debe ser ancla
-  if (getComputedStyle(stage).position === "static") {
-    stage.style.position = "relative";
-  }
-
-  // Helpers
-  const getCanvas = () =>
-    stage.querySelector("canvas.upper-canvas") ||
-    stage.querySelector("canvas.lower-canvas") ||
-    stage.querySelector("canvas");
-
-  const getTarget = () => {
-    const potTrack = document.querySelector('[data-capture="pot-track"]');
-    const plantTrack = document.querySelector('[data-capture="plant-track"]');
-    const potItem = potTrack?.children?.[selectedPotIndex] || null;
-    const plantItem = plantTrack?.children?.[selectedPlantIndex] || null;
-    return potItem || plantItem || null;
+// Centrar horizontalmente el conjunto en móvil sin remaquetar
+useEffect(() => {
+  const shell = mobileShellRef?.current;
+  if (!shell) return;
+  const content = shell.querySelector('.container');
+  if (!content) return;
+  const center = () => {
+    try {
+      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
+      shell.scrollLeft = target;
+    } catch {}
   };
-
-  const applyBaseCanvasStyles = (canvas) => {
-    canvas.style.position = "absolute";
-    canvas.style.transform = "none";
-    canvas.style.zIndex = "20";
-    canvas.style.pointerEvents = "auto";        // mantener edición
-    canvas.style.transformOrigin = "center bottom"; // pivote visual actual
-  };
-
-  const align = () => {
-    const canvas = getCanvas();
-    const target = getTarget();
-    if (!canvas || !target) return;
-
-    const s = stage.getBoundingClientRect();
-    const t = target.getBoundingClientRect();
-
-    // Centro del ítem visible relativo al stage
-    const cx = t.left + t.width / 2 - s.left;
-    const cy = t.top + t.height / 2 - s.top;
-
-    const cw = canvas.offsetWidth  || canvas.width  || 0;
-    const ch = canvas.offsetHeight || canvas.height || 0;
-
-    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
-
-    canvas.style.left = `${cx - cw / 2 + OFFSET_X}px`;
-    canvas.style.top  = `${cy - ch / 2 + OFFSET_Y}px`;
-  };
-
-  // Boot: esperar a que Fabric monte el canvas
-  let alive = true;
-  const boot = () => {
-    if (!alive) return;
-    const canvas = getCanvas();
-    if (!canvas) {
-      requestAnimationFrame(boot);
-      return;
-    }
-    applyBaseCanvasStyles(canvas);
-    align();
-  };
-  requestAnimationFrame(boot);
-
-  // Re-alinear en cambios relevantes
-  const onResize = () => align();
-  window.addEventListener("resize", onResize);
-
-  // Scroll de carruseles (si existen)
-  const unsubs = [];
-  if (potScrollRef?.current) {
-    const el = potScrollRef.current;
-    const h = () => align();
-    el.addEventListener("scroll", h, { passive: true });
-    unsubs.push(() => el.removeEventListener("scroll", h));
-  }
-  if (plantScrollRef?.current) {
-    const el = plantScrollRef.current;
-    const h = () => align();
-    el.addEventListener("scroll", h, { passive: true });
-    unsubs.push(() => el.removeEventListener("scroll", h));
-  }
-
-  // ResizeObserver para cualquier cambio de layout del stage o target
-  const ro = new ResizeObserver(() => align());
-  ro.observe(stage);
-  const targetForRO = getTarget();
-  if (targetForRO) ro.observe(targetForRO);
-
-  // MutationObserver por si cambia el item activo del carrusel
-  const mo = new MutationObserver(() => align());
-  const potTrack = document.querySelector('[data-capture="pot-track"]');
-  const plantTrack = document.querySelector('[data-capture="plant-track"]');
-  potTrack && mo.observe(potTrack, { attributes: true, childList: true, subtree: true });
-  plantTrack && mo.observe(plantTrack, { attributes: true, childList: true, subtree: true });
-
-  return () => {
-    alive = false;
-    window.removeEventListener("resize", onResize);
-    unsubs.forEach((off) => off());
-    ro.disconnect();
-    mo.disconnect();
-  };
-  // Recalcular cuando cambien los índices seleccionados
-}, [selectedPotIndex, selectedPlantIndex]);
-
-
-
+  center();
+  const onR = () => center();
+  window.addEventListener('resize', onR);
+  return () => window.removeEventListener('resize', onR);
+}, []);
 
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
@@ -1956,86 +1866,48 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 userSelect: "none",
               }}
             >
-            {/* Carrusel de macetas */}
-    <div
-      className={`${styles.carouselContainer} pot-carousel`}
-      ref={potScrollRef}
-      data-capture="pot-container"
-      style={{
-        zIndex: 1,
-        position: "absolute",
-        bottom: "2vh",
-        left: "50%",
-        transform: "translateX(-50%)",
-        pointerEvents: "auto",
-        touchAction: "pan-y",
-      }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
-      }
-      onAuxClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
-      {...potSwipeEvents}
-    >
-      <div
-        className={styles.carouselTrack}
-        data-capture="pot-track"
-        style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
-      >
-        {pots.map((product, idx) => {
-          const isSel = idx === selectedPotIndex;
-          const vImg = isSel
-            ? (selectedPotVariant?.image || selectedPotVariant?.imageUrl || null)
-            : null;
-          const imageUrl = vImg || product.image;
-          return (
-            <div key={product.id} className={styles.carouselItem}>
-              <img
-                src={imageUrl}
-                alt={product.title}
-                className={`${styles.carouselImage} pot-image`}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
+              {/* Macetas */}
+              <div
+                className={styles.carouselContainer}
+                ref={potScrollRef}
+                data-capture="pot-container"
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...potSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
+                  {pots.map((product, idx) => {
+                    const isSel = idx === selectedPotIndex;
+                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+                    const imageUrl = vImg || product.image;
+                    return (
+                      <div key={product.id} className={styles.carouselItem}>
+                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-    {/* Carrusel de plantas */}
-    <div
-      className={`${styles.carouselContainer} plant-carousel`}
-      ref={plantScrollRef}
-      data-capture="plant-container"
-      style={{
-        zIndex: 3,
-        position: "absolute",
-        bottom: "35vh",
-        left: "50%",
-        transform: "translateX(-50%)",
-        pointerEvents: "auto",
-        touchAction: "pan-y",
-      }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
-      }
-      onAuxClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
-      {...plantSwipeEvents}
-    >
-      <div
-        className={styles.carouselTrack}
-        data-capture="plant-track"
-        style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
-      >
-        {plants.map((product) => (
-          <div key={product.id} className={styles.carouselItem}>
-            <img
-              src={product.image}
-              alt={product.title}
-              className={`${styles.carouselImage} plant-image`}
-            />
+              {/* Plantas */}
+              <div
+                className={styles.carouselContainer}
+                ref={plantScrollRef}
+                data-capture="plant-container"
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+                onAuxClick={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+                {...plantSwipeEvents}
+              >
+                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
+                  {plants.map((product) => (
+                    <div key={product.id} className={styles.carouselItem}>
+                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
                     </div>
                   ))}
                 </div>
