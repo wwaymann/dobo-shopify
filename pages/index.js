@@ -679,132 +679,117 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-// === EFECTOS DE MONTAJE Y ALINEACIÓN DEL CANVAS ===
-
-// 1. Zoom inicial en CSS
+// === DOBO: Overlay fijo al centro visual del carrusel (bloque único) ===
 useEffect(() => {
-  const stage = stageRef.current;
+  const stage = stageRef?.current;
   if (!stage) return;
-  stage.style.setProperty("--zoom", String(zoomRef.current));
-}, []);
 
-// 2. Asegurar que el stage sea ancla relativa
-useEffect(() => {
-  const stage = stageRef.current;
-  if (!stage) return;
+  // Ajustes finos (si ves 2–10px de desfase, toca estos)
+  const OFFSET_X = 0;  // + derecha / - izquierda
+  const OFFSET_Y = 0;  // + abajo   / - arriba
+
+  // 1) El stage debe ser ancla
   if (getComputedStyle(stage).position === "static") {
     stage.style.position = "relative";
   }
-}, []);
 
-// 3. Ajustar transform-origin del canvas al pivote visual
-useEffect(() => {
-  const stage = stageRef.current;
-  if (!stage) return;
-  const canvas =
+  // Helpers
+  const getCanvas = () =>
     stage.querySelector("canvas.upper-canvas") ||
     stage.querySelector("canvas.lower-canvas") ||
     stage.querySelector("canvas");
-  if (!canvas) return;
-  canvas.style.transformOrigin = "center bottom";
-}, []);
 
-// 4. Centrar canvas sobre el stage
-useEffect(() => {
-  const stage = stageRef.current;
-  if (!stage) return;
-  const canvas =
-    stage.querySelector("canvas.upper-canvas") ||
-    stage.querySelector("canvas.lower-canvas") ||
-    stage.querySelector("canvas");
-  if (!canvas) return;
-
-  canvas.style.position = "absolute";
-  canvas.style.left = "50%";
-  canvas.style.top = "50%";
-  canvas.style.transform = "translate(-50%, -50%)";
-  canvas.style.pointerEvents = "none";
-  canvas.style.zIndex = "5";
-}, []);
-
-// 5. Centrar horizontalmente el conjunto en móvil
-useEffect(() => {
-  const shell = mobileShellRef?.current;
-  if (!shell) return;
-  const content = shell.querySelector(".container");
-  if (!content) return;
-
-  const center = () => {
-    try {
-      const target = Math.max(0, (content.scrollWidth - shell.clientWidth) / 2);
-      shell.scrollLeft = target;
-    } catch {}
-  };
-
-  center();
-  window.addEventListener("resize", center);
-  return () => window.removeEventListener("resize", center);
-}, []);
-
-// 6. Alinear canvas exactamente sobre la maceta/planta visible (interactivo)
-useEffect(() => {
-  const alignCanvas = () => {
-    const stage = stageRef?.current;
-    if (!stage) return;
-
-    // Identificar el canvas de Fabric
-    const canvas =
-      stage.querySelector("canvas.upper-canvas") ||
-      stage.querySelector("canvas.lower-canvas") ||
-      stage.querySelector("canvas");
-    if (!canvas) return;
-
-    // Detectar el carrusel activo
+  const getTarget = () => {
     const potTrack = document.querySelector('[data-capture="pot-track"]');
     const plantTrack = document.querySelector('[data-capture="plant-track"]');
-    const potItem = potTrack?.children?.[selectedPotIndex];
-    const plantItem = plantTrack?.children?.[selectedPlantIndex];
-    const target = potItem || plantItem;
-    if (!target) return;
+    const potItem = potTrack?.children?.[selectedPotIndex] || null;
+    const plantItem = plantTrack?.children?.[selectedPlantIndex] || null;
+    return potItem || plantItem || null;
+  };
 
-    // Coordenadas del elemento visible (maceta/planta)
-    const targetRect = target.getBoundingClientRect();
-    const stageRect = stage.getBoundingClientRect();
+  const applyBaseCanvasStyles = (canvas) => {
+    canvas.style.position = "absolute";
+    canvas.style.transform = "none";
+    canvas.style.zIndex = "20";
+    canvas.style.pointerEvents = "auto";        // mantener edición
+    canvas.style.transformOrigin = "center bottom"; // pivote visual actual
+  };
 
-    // Calcular el centro relativo del target dentro del stage
-    const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
-    const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
+  const align = () => {
+    const canvas = getCanvas();
+    const target = getTarget();
+    if (!canvas || !target) return;
 
-    const cw = canvas.offsetWidth || canvas.width || 0;
+    const s = stage.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+
+    // Centro del ítem visible relativo al stage
+    const cx = t.left + t.width / 2 - s.left;
+    const cy = t.top + t.height / 2 - s.top;
+
+    const cw = canvas.offsetWidth  || canvas.width  || 0;
     const ch = canvas.offsetHeight || canvas.height || 0;
 
-    // Posicionar el canvas con precisión
-    canvas.style.position = "absolute";
-    canvas.style.left = `${cx - cw / 2}px`;
-    canvas.style.top = `${cy - ch / 2}px`;
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
 
-    // Sin translate para no romper eventos
-    canvas.style.transform = "none";
-    canvas.style.zIndex = "15";
-
-    // Mantener la interactividad de Fabric
-    canvas.style.pointerEvents = "auto";
+    canvas.style.left = `${cx - cw / 2 + OFFSET_X}px`;
+    canvas.style.top  = `${cy - ch / 2 + OFFSET_Y}px`;
   };
 
-  // Ejecutar después del montaje
-  const raf = requestAnimationFrame(() => setTimeout(alignCanvas, 300));
+  // Boot: esperar a que Fabric monte el canvas
+  let alive = true;
+  const boot = () => {
+    if (!alive) return;
+    const canvas = getCanvas();
+    if (!canvas) {
+      requestAnimationFrame(boot);
+      return;
+    }
+    applyBaseCanvasStyles(canvas);
+    align();
+  };
+  requestAnimationFrame(boot);
 
-  // Reajustar en eventos relevantes
-  window.addEventListener("resize", alignCanvas);
-  potScrollRef?.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
-  plantScrollRef?.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+  // Re-alinear en cambios relevantes
+  const onResize = () => align();
+  window.addEventListener("resize", onResize);
+
+  // Scroll de carruseles (si existen)
+  const unsubs = [];
+  if (potScrollRef?.current) {
+    const el = potScrollRef.current;
+    const h = () => align();
+    el.addEventListener("scroll", h, { passive: true });
+    unsubs.push(() => el.removeEventListener("scroll", h));
+  }
+  if (plantScrollRef?.current) {
+    const el = plantScrollRef.current;
+    const h = () => align();
+    el.addEventListener("scroll", h, { passive: true });
+    unsubs.push(() => el.removeEventListener("scroll", h));
+  }
+
+  // ResizeObserver para cualquier cambio de layout del stage o target
+  const ro = new ResizeObserver(() => align());
+  ro.observe(stage);
+  const targetForRO = getTarget();
+  if (targetForRO) ro.observe(targetForRO);
+
+  // MutationObserver por si cambia el item activo del carrusel
+  const mo = new MutationObserver(() => align());
+  const potTrack = document.querySelector('[data-capture="pot-track"]');
+  const plantTrack = document.querySelector('[data-capture="plant-track"]');
+  potTrack && mo.observe(potTrack, { attributes: true, childList: true, subtree: true });
+  plantTrack && mo.observe(plantTrack, { attributes: true, childList: true, subtree: true });
 
   return () => {
-    cancelAnimationFrame(raf);
-    window.removeEventListener("resize", alignCanvas);
-    potScrollRef?.current?.removeEventListener?.("scroll", alignCanvas);
-    plantScrollRef?.current?.removeEventListener?.("scroll", alignCanvas);
+    alive = false;
+    window.removeEventListener("resize", onResize);
+    unsubs.forEach((off) => off());
+    ro.disconnect();
+    mo.disconnect();
   };
+  // Recalcular cuando cambien los índices seleccionados
 }, [selectedPotIndex, selectedPlantIndex]);
 
 
