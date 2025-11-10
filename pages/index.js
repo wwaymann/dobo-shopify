@@ -686,7 +686,24 @@ useEffect(() => {
   // expone el zoom inicial al CSS si usas --zoom
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
+  
+// === AJUSTE DE TRANSFORM-ORIGIN DEL CANVAS AL PIVOTE NUEVO ===
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
 
+  const fabricCanvasEl =
+    stage.querySelector("canvas.upper-canvas") ||
+    stage.querySelector("canvas.lower-canvas") ||
+    stage.querySelector("canvas");
+
+  if (!fabricCanvasEl) return;
+
+  // Cambia "center bottom" por "center center" o "center top" según tu pivote real
+  fabricCanvasEl.style.transformOrigin = "center bottom";
+}, []);
+
+  
 // === CENTRAR CANVAS DEL CUSTOMIZER SOBRE EL STAGE ===
 useEffect(() => {
   const stage = stageRef.current;
