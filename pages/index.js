@@ -679,7 +679,7 @@ const designMetaRef = useRef(null);
     return () => { s.style.touchAction = ps; c.style.touchAction = pc; };
   }, [editing]);
 
-  // en el efecto de montaje inicial
+// en el efecto de montaje inicial
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
@@ -687,7 +687,7 @@ useEffect(() => {
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
 
-  // === OVERLAY: asegurar que el STAGE sea el ancla relativo ===
+// === OVERLAY: asegurar que el STAGE sea el ancla relativo ===
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
@@ -697,7 +697,6 @@ useEffect(() => {
   }
 }, []);
 
-  
 // === AJUSTE DE TRANSFORM-ORIGIN DEL CANVAS AL PIVOTE NUEVO ===
 useEffect(() => {
   const stage = stageRef.current;
@@ -714,7 +713,6 @@ useEffect(() => {
   fabricCanvasEl.style.transformOrigin = "center bottom";
 }, []);
 
-  
 // === CENTRAR CANVAS DEL CUSTOMIZER SOBRE EL STAGE ===
 useEffect(() => {
   const stage = stageRef.current;
@@ -741,12 +739,11 @@ useEffect(() => {
   fabricCanvasEl.style.zIndex = "5";
 }, []);
 
-  
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
 useEffect(() => {
   const shell = mobileShellRef?.current;
   if (!shell) return;
-  const content = shell.querySelector('.container');
+  const content = shell.querySelector(".container");
   if (!content) return;
   const center = () => {
     try {
@@ -756,9 +753,66 @@ useEffect(() => {
   };
   center();
   const onR = () => center();
-  window.addEventListener('resize', onR);
-  return () => window.removeEventListener('resize', onR);
+  window.addEventListener("resize", onR);
+  return () => window.removeEventListener("resize", onR);
 }, []);
+
+// === NUEVO EFECTO: ALINEAR CANVAS AL CENTRO VISUAL DEL CARRUSEL ===
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
+
+  const canvas =
+    stage.querySelector("canvas.upper-canvas") ||
+    stage.querySelector("canvas.lower-canvas") ||
+    stage.querySelector("canvas");
+  if (!canvas) return;
+
+  const alignCanvas = () => {
+    const potTrack = document.querySelector('[data-capture="pot-track"]');
+    const plantTrack = document.querySelector('[data-capture="plant-track"]');
+
+    const potItem =
+      potTrack?.children?.[selectedPotIndex] ||
+      potTrack?.querySelector(".carouselItem");
+    const plantItem =
+      plantTrack?.children?.[selectedPlantIndex] ||
+      plantTrack?.querySelector(".carouselItem");
+
+    const target = potItem || plantItem;
+    if (!target) return;
+
+    const stageRect = stage.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
+    const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
+
+    const cw = canvas.offsetWidth || canvas.width;
+    const ch = canvas.offsetHeight || canvas.height;
+
+    canvas.style.position = "absolute";
+    canvas.style.left = `${cx - cw / 2}px`;
+    canvas.style.top = `${cy - ch / 2}px`;
+    canvas.style.transform = "none";
+    canvas.style.pointerEvents = "none";
+    canvas.style.zIndex = 20;
+  };
+
+  alignCanvas();
+
+  // Recalcula cuando cambian selección, tamaño o scroll
+  window.addEventListener("resize", alignCanvas);
+  potScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+  plantScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+
+  return () => {
+    window.removeEventListener("resize", alignCanvas);
+    potScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
+    plantScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
+  };
+}, [selectedPotIndex, selectedPlantIndex]);
+
 
 // ---------- fetch por tamaño y tipo ----------
 useEffect(() => {
