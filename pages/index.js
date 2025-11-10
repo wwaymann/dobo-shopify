@@ -713,10 +713,55 @@ useEffect(() => {
   fabricCanvasEl.style.transformOrigin = "center bottom";
 }, []);
 
-// === CENTRAR CANVAS DEL CUSTOMIZER SOBRE EL STAGE ===
+// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE ===
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
+
+  const canvas =
+    stage.querySelector("canvas.upper-canvas") ||
+    stage.querySelector("canvas.lower-canvas") ||
+    stage.querySelector("canvas");
+  if (!canvas) return;
+
+  const alignCanvas = () => {
+    const potTrack = document.querySelector('[data-capture="pot-track"]');
+    const plantTrack = document.querySelector('[data-capture="plant-track"]');
+    const potItem = potTrack?.children?.[selectedPotIndex];
+    const plantItem = plantTrack?.children?.[selectedPlantIndex];
+    const target = potItem || plantItem;
+    if (!target) return;
+
+    const stageRect = stage.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
+    const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
+
+    const cw = canvas.offsetWidth || canvas.width;
+    const ch = canvas.offsetHeight || canvas.height;
+
+    canvas.style.position = "absolute";
+    canvas.style.left = `${cx - cw / 2}px`;
+    canvas.style.top = `${cy - ch / 2}px`;
+    canvas.style.transform = "none";
+    canvas.style.pointerEvents = "none";
+    canvas.style.zIndex = 20;
+  };
+
+  alignCanvas();
+
+  window.addEventListener("resize", alignCanvas);
+  potScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+  plantScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+
+  return () => {
+    window.removeEventListener("resize", alignCanvas);
+    potScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
+    plantScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
+  };
+}, [selectedPotIndex, selectedPlantIndex]);
+
 
   // Intenta tomar el canvas principal de Fabric
   const fabricCanvasEl =
