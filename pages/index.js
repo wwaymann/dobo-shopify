@@ -713,65 +713,89 @@ useEffect(() => {
   fabricCanvasEl.style.transformOrigin = "center bottom";
 }, []);
 
-// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN ESTABLE) ===
+// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN DEFINITIVA Y SEGURA) ===
 useEffect(() => {
-  const stage = stageRef?.current;
-  if (!stage) return;
+  let rafId;
+  let resizeListener;
+  let scrollListeners = [];
 
   const alignCanvas = () => {
-    const canvas =
-      stage.querySelector("canvas.upper-canvas") ||
-      stage.querySelector("canvas.lower-canvas") ||
-      stage.querySelector("canvas");
-    if (!canvas) return;
+    try {
+      const stage = stageRef?.current;
+      if (!stage) return;
 
-    const potTrack = document.querySelector('[data-capture="pot-track"]');
-    const plantTrack = document.querySelector('[data-capture="plant-track"]');
+      const canvas =
+        stage.querySelector("canvas.upper-canvas") ||
+        stage.querySelector("canvas.lower-canvas") ||
+        stage.querySelector("canvas");
+      if (!canvas) return;
 
-    const potItems = potTrack?.children || [];
-    const plantItems = plantTrack?.children || [];
+      const potTrack = document.querySelector('[data-capture="pot-track"]');
+      const plantTrack = document.querySelector('[data-capture="plant-track"]');
 
-    const potItem = potItems[selectedPotIndex] || potItems[0];
-    const plantItem = plantItems[selectedPlantIndex] || plantItems[0];
-    const target = potItem || plantItem;
-    if (!target) return;
+      // Evita errores si los carruseles aún no están montados
+      if (!potTrack && !plantTrack) return;
 
-    const stageRect = stage.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
+      const potItem = potTrack?.children?.[selectedPotIndex];
+      const plantItem = plantTrack?.children?.[selectedPlantIndex];
+      const target = potItem || plantItem;
 
-    const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
-    const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
+      if (!target) return;
 
-    const cw = canvas.offsetWidth || canvas.width || 0;
-    const ch = canvas.offsetHeight || canvas.height || 0;
+      const stageRect = stage.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
 
-    // Ajusta suavemente
-    canvas.style.position = "absolute";
-    canvas.style.left = `${cx - cw / 2}px`;
-    canvas.style.top = `${cy - ch / 2}px`;
-    canvas.style.transform = "none";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = 20;
+      const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
+      const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
+
+      const cw = canvas.offsetWidth || canvas.width || 0;
+      const ch = canvas.offsetHeight || canvas.height || 0;
+
+      // Evita NaN y aplica el centrado seguro
+      if (!isFinite(cx) || !isFinite(cy)) return;
+
+      canvas.style.position = "absolute";
+      canvas.style.left = `${cx - cw / 2}px`;
+      canvas.style.top = `${cy - ch / 2}px`;
+      canvas.style.transform = "none";
+      canvas.style.pointerEvents = "none";
+      canvas.style.zIndex = 20;
+    } catch (err) {
+      console.warn("No se pudo alinear el canvas:", err);
+    }
   };
 
-  // Espera un frame para asegurar que todo está renderizado
-  const raf = requestAnimationFrame(alignCanvas);
+  // Espera a que el DOM termine de montar
+  const init = () => {
+    alignCanvas();
+    resizeListener = () => alignCanvas();
+    window.addEventListener("resize", resizeListener);
 
-  window.addEventListener("resize", alignCanvas);
+    // Añade listeners de scroll si existen
+    if (potScrollRef?.current) {
+      const potScroll = potScrollRef.current;
+      potScroll.addEventListener("scroll", alignCanvas, { passive: true });
+      scrollListeners.push(() =>
+        potScroll.removeEventListener("scroll", alignCanvas)
+      );
+    }
+    if (plantScrollRef?.current) {
+      const plantScroll = plantScrollRef.current;
+      plantScroll.addEventListener("scroll", alignCanvas, { passive: true });
+      scrollListeners.push(() =>
+        plantScroll.removeEventListener("scroll", alignCanvas)
+      );
+    }
+  };
 
-  // Evita errores si los refs no existen aún
-  if (potScrollRef?.current) {
-    potScrollRef.current.addEventListener("scroll", alignCanvas, { passive: true });
-  }
-  if (plantScrollRef?.current) {
-    plantScrollRef.current.addEventListener("scroll", alignCanvas, { passive: true });
-  }
+  // Retrasa la inicialización un poco para que todo esté montado
+  rafId = requestAnimationFrame(() => setTimeout(init, 300));
 
   return () => {
-    cancelAnimationFrame(raf);
-    window.removeEventListener("resize", alignCanvas);
-    potScrollRef?.current?.removeEventListener?.("scroll", alignCanvas);
-    plantScrollRef?.current?.removeEventListener?.("scroll", alignCanvas);
+    cancelAnimationFrame(rafId);
+    if (resizeListener)
+      window.removeEventListener("resize", resizeListener);
+    scrollListeners.forEach((off) => off());
   };
 }, [selectedPotIndex, selectedPlantIndex]);
 
