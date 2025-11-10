@@ -713,22 +713,26 @@ useEffect(() => {
   fabricCanvasEl.style.transformOrigin = "center bottom";
 }, []);
 
-// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE ===
+// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN ESTABLE) ===
 useEffect(() => {
-  const stage = stageRef.current;
+  const stage = stageRef?.current;
   if (!stage) return;
 
-  const canvas =
-    stage.querySelector("canvas.upper-canvas") ||
-    stage.querySelector("canvas.lower-canvas") ||
-    stage.querySelector("canvas");
-  if (!canvas) return;
-
   const alignCanvas = () => {
+    const canvas =
+      stage.querySelector("canvas.upper-canvas") ||
+      stage.querySelector("canvas.lower-canvas") ||
+      stage.querySelector("canvas");
+    if (!canvas) return;
+
     const potTrack = document.querySelector('[data-capture="pot-track"]');
     const plantTrack = document.querySelector('[data-capture="plant-track"]');
-    const potItem = potTrack?.children?.[selectedPotIndex];
-    const plantItem = plantTrack?.children?.[selectedPlantIndex];
+
+    const potItems = potTrack?.children || [];
+    const plantItems = plantTrack?.children || [];
+
+    const potItem = potItems[selectedPotIndex] || potItems[0];
+    const plantItem = plantItems[selectedPlantIndex] || plantItems[0];
     const target = potItem || plantItem;
     if (!target) return;
 
@@ -738,9 +742,10 @@ useEffect(() => {
     const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
     const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
 
-    const cw = canvas.offsetWidth || canvas.width;
-    const ch = canvas.offsetHeight || canvas.height;
+    const cw = canvas.offsetWidth || canvas.width || 0;
+    const ch = canvas.offsetHeight || canvas.height || 0;
 
+    // Ajusta suavemente
     canvas.style.position = "absolute";
     canvas.style.left = `${cx - cw / 2}px`;
     canvas.style.top = `${cy - ch / 2}px`;
@@ -749,18 +754,27 @@ useEffect(() => {
     canvas.style.zIndex = 20;
   };
 
-  alignCanvas();
+  // Espera un frame para asegurar que todo está renderizado
+  const raf = requestAnimationFrame(alignCanvas);
 
   window.addEventListener("resize", alignCanvas);
-  potScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
-  plantScrollRef.current?.addEventListener?.("scroll", alignCanvas, { passive: true });
+
+  // Evita errores si los refs no existen aún
+  if (potScrollRef?.current) {
+    potScrollRef.current.addEventListener("scroll", alignCanvas, { passive: true });
+  }
+  if (plantScrollRef?.current) {
+    plantScrollRef.current.addEventListener("scroll", alignCanvas, { passive: true });
+  }
 
   return () => {
+    cancelAnimationFrame(raf);
     window.removeEventListener("resize", alignCanvas);
-    potScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
-    plantScrollRef.current?.removeEventListener?.("scroll", alignCanvas);
+    potScrollRef?.current?.removeEventListener?.("scroll", alignCanvas);
+    plantScrollRef?.current?.removeEventListener?.("scroll", alignCanvas);
   };
 }, [selectedPotIndex, selectedPlantIndex]);
+
 
 
   // Intenta tomar el canvas principal de Fabric
