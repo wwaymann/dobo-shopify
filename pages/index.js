@@ -719,13 +719,15 @@ useEffect(() => {
 
   if (!fabricCanvasEl) return;
 
+  // Posicionamiento centrado respecto al stage
   fabricCanvasEl.style.position = "absolute";
   fabricCanvasEl.style.left = "50%";
   fabricCanvasEl.style.top = "50%";
   fabricCanvasEl.style.transform = "translate(-50%, -50%)";
   fabricCanvasEl.style.pointerEvents = "none";
   fabricCanvasEl.style.zIndex = "5";
-}, []); // 👈 Este cierre debe existir una sola vez
+}, []); // ✅ cierre correcto del useEffect
+
 
 
 // === CENTRAR HORIZONTALMENTE EL CONJUNTO EN MÓVIL SIN REMAQUETAR ===
