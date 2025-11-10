@@ -687,6 +687,33 @@ useEffect(() => {
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
 
+// === CENTRAR CANVAS DEL CUSTOMIZER SOBRE EL STAGE ===
+useEffect(() => {
+  const stage = stageRef.current;
+  if (!stage) return;
+
+  // Intenta tomar el canvas principal de Fabric
+  const fabricCanvasEl =
+    stage.querySelector("canvas.upper-canvas") ||
+    stage.querySelector("canvas.lower-canvas") ||
+    stage.querySelector("canvas");
+
+  if (!fabricCanvasEl) return;
+
+  // Posicionamiento centrado respecto al stage
+  fabricCanvasEl.style.position = "absolute";
+  fabricCanvasEl.style.left = "50%";
+  fabricCanvasEl.style.top = "50%";
+  fabricCanvasEl.style.transform = "translate(-50%, -50%)";
+
+  // Para no bloquear interacciones con los carruseles
+  fabricCanvasEl.style.pointerEvents = "none";
+
+  // Asegura superposición correcta
+  fabricCanvasEl.style.zIndex = "5";
+}, []);
+
+  
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
 useEffect(() => {
   const shell = mobileShellRef?.current;
