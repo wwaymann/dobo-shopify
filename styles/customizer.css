@@ -136,12 +136,13 @@ button.buy-button {
   z-index: 20 !important;
 }
 
+/* Centra el canvas respecto al punto visual común (base de la planta/maceta) */
 .customization-overlay {
   position: absolute;
-  top: 50%;
+  top: 60%; /* baja un poco el centro para alinearse con el pivote visual */
   left: 50%;
   transform: translate(-50%, -50%);
-  transform-origin: center center;
+  transform-origin: center bottom;
   pointer-events: auto;
   z-index: 20;
 }
