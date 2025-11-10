@@ -683,7 +683,6 @@ const designMetaRef = useRef(null);
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
-  // expone el zoom inicial al CSS si usas --zoom
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
 
@@ -691,7 +690,6 @@ useEffect(() => {
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
-  // Si el contenedor está 'static', el overlay absoluto se desancla
   if (getComputedStyle(stage).position === "static") {
     stage.style.position = "relative";
   }
@@ -701,15 +699,11 @@ useEffect(() => {
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
-
   const fabricCanvasEl =
     stage.querySelector("canvas.upper-canvas") ||
     stage.querySelector("canvas.lower-canvas") ||
     stage.querySelector("canvas");
-
   if (!fabricCanvasEl) return;
-
-  // Cambia "center bottom" por "center center" o "center top" según tu pivote real
   fabricCanvasEl.style.transformOrigin = "center bottom";
 }, []);
 
@@ -717,25 +711,16 @@ useEffect(() => {
 useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
-
-  // Intenta tomar el canvas principal de Fabric
   const fabricCanvasEl =
     stage.querySelector("canvas.upper-canvas") ||
     stage.querySelector("canvas.lower-canvas") ||
     stage.querySelector("canvas");
-
   if (!fabricCanvasEl) return;
-
-  // Posicionamiento centrado respecto al stage
   fabricCanvasEl.style.position = "absolute";
   fabricCanvasEl.style.left = "50%";
   fabricCanvasEl.style.top = "50%";
   fabricCanvasEl.style.transform = "translate(-50%, -50%)";
-
-  // Para no bloquear interacciones con los carruseles
   fabricCanvasEl.style.pointerEvents = "none";
-
-  // Asegura superposición correcta
   fabricCanvasEl.style.zIndex = "5";
 }, []);
 
@@ -757,17 +742,16 @@ useEffect(() => {
   return () => window.removeEventListener("resize", onR);
 }, []);
 
-// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN SEGURA Y FINAL) ===
+// === CENTRAR CANVAS SEGÚN EL CARRUSEL VISIBLE (VERSIÓN SEGURA) ===
 useEffect(() => {
   let rafId;
   let resizeListener;
-  let scrollListeners = [];
+  const scrollListeners = [];
 
   const alignCanvas = () => {
     try {
       const stage = stageRef?.current;
       if (!stage) return;
-
       const canvas =
         stage.querySelector("canvas.upper-canvas") ||
         stage.querySelector("canvas.lower-canvas") ||
@@ -776,8 +760,6 @@ useEffect(() => {
 
       const potTrack = document.querySelector('[data-capture="pot-track"]');
       const plantTrack = document.querySelector('[data-capture="plant-track"]');
-
-      // Evita errores si los carruseles aún no están montados
       if (!potTrack && !plantTrack) return;
 
       const potItem = potTrack?.children?.[selectedPotIndex];
@@ -787,14 +769,10 @@ useEffect(() => {
 
       const stageRect = stage.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
-
       const cx = targetRect.left + targetRect.width / 2 - stageRect.left;
       const cy = targetRect.top + targetRect.height / 2 - stageRect.top;
-
       const cw = canvas.offsetWidth || canvas.width || 0;
       const ch = canvas.offsetHeight || canvas.height || 0;
-
-      // Evita NaN y aplica el centrado seguro
       if (!isFinite(cx) || !isFinite(cy)) return;
 
       canvas.style.position = "absolute";
@@ -812,8 +790,6 @@ useEffect(() => {
     alignCanvas();
     resizeListener = () => alignCanvas();
     window.addEventListener("resize", resizeListener);
-
-    // Añade listeners de scroll si existen
     if (potScrollRef?.current) {
       const potScroll = potScrollRef.current;
       potScroll.addEventListener("scroll", alignCanvas, { passive: true });
@@ -830,7 +806,6 @@ useEffect(() => {
     }
   };
 
-  // Retrasa la inicialización un poco para que todo esté montado
   rafId = requestAnimationFrame(() => setTimeout(init, 300));
 
   return () => {
@@ -840,6 +815,7 @@ useEffect(() => {
     scrollListeners.forEach((off) => off());
   };
 }, [selectedPotIndex, selectedPlantIndex]);
+
 
 
 
