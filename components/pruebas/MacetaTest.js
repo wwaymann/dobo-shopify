@@ -1,67 +1,35 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function MacetaTest() {
-  const [macetas, setMacetas] = useState([]);
-  const [index, setIndex] = useState(0);
+export default function MacetaPrueba() {
   const [texto, setTexto] = useState("Texto DOBO");
   const canvasRef = useRef(null);
 
-  // Cargar productos desde Shopify
   useEffect(() => {
-    async function cargar() {
-      try {
-        const res = await fetch("/api/products");
-        const data = await res.json();
-
-        // Verifica estructura real del API
-        const productos = data?.products || [];
-
-        // Extrae solo la primera imagen de cada producto
-        const procesado = productos
-          .map((p) => ({
-            id: p.id,
-            title: p.title,
-            image: p.images?.[0]?.src || null,
-          }))
-          .filter((p) => p.image); // solo productos que tengan imagen
-
-        setMacetas(procesado);
-      } catch (err) {
-        console.error("ERROR cargando productos:", err);
-      }
-    }
-
-    cargar();
-  }, []);
-
-  // Redibuja cada vez que cambia la maceta o texto
-  useEffect(() => {
-    if (!macetas.length) return;
-
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
+    // cargamos tu imagen fija desde /public
     const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = macetas[index].image;
+    img.src = "/maceta4.png";
 
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const w = canvas.width * 0.7;
+      // dimensiones de la maceta dentro del canvas
+      const w = canvas.width * 0.75;
       const h = (img.height / img.width) * w;
       const x = (canvas.width - w) / 2;
       const y = (canvas.height - h) / 2;
 
       ctx.drawImage(img, x, y, w, h);
 
-      // ---------- TEXTO CURVADO SIMPLE ----------
+      // ----- TEXTO CURVADO SIMPLE -----
       ctx.font = "bold 34px sans-serif";
       ctx.fillStyle = "#000";
       ctx.textAlign = "center";
 
-      const baselineY = y + h * 0.55;
-      const curvature = 0.0028; // ajustable
+      const baselineY = y + h * 0.55; // zona donde cae el texto
+      const curvature = 0.0025;       // cuánta curva aplicar (ajustable)
 
       const letters = texto.split("");
       const textWidth = ctx.measureText(texto).width;
@@ -70,6 +38,7 @@ export default function MacetaTest() {
       for (let l of letters) {
         const w = ctx.measureText(l).width;
 
+        // curva tipo arco
         const dx = offsetX - canvas.width / 2;
         const dy = dx * dx * curvature;
 
@@ -81,26 +50,12 @@ export default function MacetaTest() {
         offsetX += w;
       }
     };
-
-    img.onerror = () => {
-      console.error("No se pudo cargar la imagen:", img.src);
-    };
-  }, [macetas, index, texto]);
-
-  if (!macetas.length) {
-    return <p>Cargando macetas…</p>;
-  }
-
-  const siguiente = () =>
-    setIndex((prev) => (prev + 1) % macetas.length);
-
-  const anterior = () =>
-    setIndex((prev) => (prev === 0 ? macetas.length - 1 : prev - 1));
+  }, [texto]); // redibuja solo cuando cambie el texto
 
   return (
-    <div style={{ width: "100%", maxWidth: "520px" }}>
-      <label style={{ display: "block", marginBottom: "6px" }}>
-        Texto DOBO:
+    <div style={{ width: "100%", maxWidth: "500px" }}>
+      <label style={{ display: "block", marginBottom: "8px" }}>
+        Escribe tu texto:
       </label>
 
       <input
@@ -114,17 +69,6 @@ export default function MacetaTest() {
           marginBottom: "20px",
         }}
       />
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: "10px",
-        }}
-      >
-        <button onClick={anterior}>◀︎</button>
-        <button onClick={siguiente}>▶︎</button>
-      </div>
 
       <canvas
         ref={canvasRef}
