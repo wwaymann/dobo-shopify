@@ -3,11 +3,7 @@ import { useEffect, useRef, useState } from "react";
 export default function MacetaCarrusel() {
   const [texto, setTexto] = useState("Texto DOBO");
   const [index, setIndex] = useState(0);
-
-  // posición vertical del texto (en coords del SVG)
   const [textoY, setTextoY] = useState(300);
-
-  // control manual del tamaño base
   const [fontBase, setFontBase] = useState(28);
 
   const [shape, setShape] = useState(null);
@@ -29,7 +25,7 @@ export default function MacetaCarrusel() {
   const CANVAS_SIZE = 500;
   const SAMPLE_COLUMNS = 40;
 
-  // Lee la silueta REAL: curva superior y curva inferior de la maceta
+  // Lee curva superior y curva inferior reales
   useEffect(() => {
     const img = new Image();
     img.src = macetas[index];
@@ -67,45 +63,37 @@ export default function MacetaCarrusel() {
         let topY = null;
         let bottomY = null;
 
-        // primer pixel no transparente desde arriba
+        // borde superior real
         for (let yy = 0; yy < CANVAS_SIZE; yy++) {
-          const idx = (yy * CANVAS_SIZE + colX) * 4 + 3;
-          const alpha = data[idx];
+          const alpha = data[(yy * CANVAS_SIZE + colX) * 4 + 3];
           if (alpha > 10) {
             topY = yy;
             break;
           }
         }
 
-        // primer pixel no transparente desde abajo
+        // borde inferior real
         for (let yy = CANVAS_SIZE - 1; yy >= 0; yy--) {
-          const idx = (yy * CANVAS_SIZE + colX) * 4 + 3;
-          const alpha = data[idx];
+          const alpha = data[(yy * CANVAS_SIZE + colX) * 4 + 3];
           if (alpha > 10) {
             bottomY = yy;
             break;
           }
         }
 
-        if (topY !== null && bottomY !== null && bottomY > topY) {
-          // guardamos pares alineados (misma columna)
+        if (topY != null && bottomY != null) {
           topPoints.push({ x: colX, y: topY });
           bottomPoints.push({ x: colX, y: bottomY });
         }
       }
 
-      if (!topPoints.length || !bottomPoints.length) {
-        setShape(null);
-        return;
-      }
-
       const avgTop =
         topPoints.reduce((s, p) => s + p.y, 0) / topPoints.length;
-      const avgBottom =
+      const avgBot =
         bottomPoints.reduce((s, p) => s + p.y, 0) / bottomPoints.length;
 
-      const yMinText = avgTop + 5;
-      const yMaxText = avgBottom - 5;
+      const yMinText = avgTop + 5;      // límite superior
+      const yMaxText = avgBot - 5;      // límite inferior
 
       setTextoY((yMinText + yMaxText) / 2);
 
@@ -117,25 +105,18 @@ export default function MacetaCarrusel() {
         imageRect: { x, y, w, h },
       });
     };
-
-    img.onerror = () => {
-      setShape(null);
-    };
   }, [index]);
 
-  // Drag del texto (vertical)
+  // Drag del texto
   const onMouseDownText = (e) => {
     if (!svgRef.current || !shape) return;
-
     const rect = svgRef.current.getBoundingClientRect();
-    const mouseY = e.clientY - rect.top;
-
-    dragOffsetRef.current = mouseY - textoY;
+    dragOffsetRef.current = e.clientY - rect.top - textoY;
     setIsDragging(true);
   };
 
   useEffect(() => {
-    const handleMove = (e) => {
+    const move = (e) => {
       if (!isDragging || !shape || !svgRef.current) return;
 
       const rect = svgRef.current.getBoundingClientRect();
@@ -147,18 +128,13 @@ export default function MacetaCarrusel() {
       setTextoY(newY);
     };
 
-    const handleUp = () => setIsDragging(false);
+    const up = () => setIsDragging(false);
 
-    if (typeof window !== "undefined") {
-      window.addEventListener("mousemove", handleMove);
-      window.addEventListener("mouseup", handleUp);
-    }
-
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
     return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("mousemove", handleMove);
-        window.removeEventListener("mouseup", handleUp);
-      }
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
     };
   }, [isDragging, shape]);
 
@@ -166,33 +142,31 @@ export default function MacetaCarrusel() {
 
   const { topPoints, bottomPoints, yMinText, yMaxText, imageRect } = shape;
 
-  // t = posición relativa del texto entre curva superior e inferior reales
-  const t =
-    yMaxText === yMinText
-      ? 0
-      : (textoY - yMinText) / (yMaxText - yMinText);
+  // t = interpolación vertical (0 = arriba, 1 = abajo)
+  const t = (textoY - yMinText) / (yMaxText - yMinText);
 
-  // 🔥 Interpolación entre curva superior e inferior:
-  // AHORA interpolamos X y Y → el ancho también se ajusta al inferior.
+  // 🔥 Interpolación solo de Y (NO de X)
+  // Esto mantiene la curva horizontal en top y bottom.
   const interp = topPoints.map((pTop, i) => {
     const pBottom = bottomPoints[i];
-    const x = pTop.x * (1 - t) + pBottom.x * t;
-    const y = pTop.y * (1 - t) + pBottom.y * t;
-    return { x, y };
+    return {
+      x: pTop.x,                     // SIEMPRE horizontal alineado
+      y: pTop.y * (1 - t) + pBottom.y * t,
+    };
   });
 
+  // Path final del texto
   let pathD = `M ${interp[0].x},${interp[0].y}`;
   for (let i = 1; i < interp.length; i++) {
     pathD += ` L ${interp[i].x},${interp[i].y}`;
   }
 
-  // Escalado dinámico + control manual
-  const fontScale = 0.6 + t * 0.8; // más arriba pequeño, más abajo grande
+  const fontScale = 0.6 + t * 0.8;
   const fontSize = fontBase * fontScale;
 
-  const prevMaceta = () =>
+  const prev = () =>
     setIndex((i) => (i === 0 ? macetas.length - 1 : i - 1));
-  const nextMaceta = () => setIndex((i) => (i + 1) % macetas.length);
+  const next = () => setIndex((i) => (i + 1) % macetas.length);
 
   return (
     <div style={{ width: "100%", maxWidth: "520px" }}>
@@ -209,8 +183,8 @@ export default function MacetaCarrusel() {
         }}
       />
 
-      {/* Tamaño base de fuente */}
-      <label>Tamaño base de la fuente: {fontBase}px</label>
+      {/* Tamaño base */}
+      <label>Tamaño base: {fontBase}px</label>
       <input
         type="range"
         min="10"
@@ -220,18 +194,17 @@ export default function MacetaCarrusel() {
         style={{ width: "100%", marginBottom: "16px" }}
       />
 
-      {/* Carrusel simple */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: "10px",
-        }}
-      >
-        <button onClick={prevMaceta}>◀︎</button>
-        <button onClick={nextMaceta}>▶︎</button>
+      {/* Carrusel */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: "10px",
+      }}>
+        <button onClick={prev}>◀︎</button>
+        <button onClick={next}>▶︎</button>
       </div>
 
+      {/* Render principal */}
       <svg
         ref={svgRef}
         width={CANVAS_SIZE}
@@ -240,23 +213,18 @@ export default function MacetaCarrusel() {
           width: "100%",
           border: "1px solid #ccc",
           background: "#fff",
-          touchAction: "none",
         }}
       >
-        {/* Imagen de la maceta, misma geometría que el análisis */}
         <image
           href={macetas[index]}
           x={imageRect.x}
           y={imageRect.y}
           width={imageRect.w}
           height={imageRect.h}
-          preserveAspectRatio="xMidYMid meet"
         />
 
-        {/* Path dinámico promedio entre curva superior e inferior reales */}
         <path id="curvaTexto" d={pathD} fill="none" />
 
-        {/* Texto arrastrable que sigue el path */}
         <text
           fill="black"
           fontSize={fontSize}
@@ -268,8 +236,6 @@ export default function MacetaCarrusel() {
           <textPath
             href="#curvaTexto"
             startOffset="50%"
-            method="stretch"
-            spacing="auto"
           >
             {texto}
           </textPath>
