@@ -29,7 +29,7 @@ export default function MacetaCarrusel() {
   const CANVAS_SIZE = 500;
   const SAMPLE_COLUMNS = 40;
 
-  // Detectar bordes reales (superior e inferior)
+  // Detectar bordes reales (superior) y una banda inferior de texto
   useEffect(() => {
     const img = new Image();
     img.src = macetas[index];
@@ -47,7 +47,9 @@ export default function MacetaCarrusel() {
       const x = (CANVAS_SIZE - w) / 2;
       const y = (CANVAS_SIZE - h) / 2;
 
+      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
       ctx.drawImage(img, x, y, w, h);
+
       const { data } = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
       const topPoints = [];
@@ -61,9 +63,10 @@ export default function MacetaCarrusel() {
           xStart + ((xEnd - xStart) * i) / SAMPLE_COLUMNS
         );
 
-        let topY = null;
-        let bottomY = null;
+        let topY: number | null = null;
+        let bottomY: number | null = null;
 
+        // primer pixel no transparente desde arriba
         for (let yy = 0; yy < CANVAS_SIZE; yy++) {
           const idx = (yy * CANVAS_SIZE + colX) * 4 + 3;
           if (data[idx] > 10) {
@@ -72,6 +75,7 @@ export default function MacetaCarrusel() {
           }
         }
 
+        // primer pixel no transparente desde abajo
         for (let yy = CANVAS_SIZE - 1; yy >= 0; yy--) {
           const idx = (yy * CANVAS_SIZE + colX) * 4 + 3;
           if (data[idx] > 10) {
@@ -80,26 +84,52 @@ export default function MacetaCarrusel() {
           }
         }
 
-        if (topY && bottomY && bottomY > topY) {
+        if (topY !== null && bottomY !== null && bottomY > topY) {
           topPoints.push({ x: colX, y: topY });
           bottomPoints.push({ x: colX, y: bottomY });
         }
       }
 
+      if (!topPoints.length || !bottomPoints.length) {
+        setShape(null);
+        return;
+      }
+
       const avgTop =
         topPoints.reduce((s, p) => s + p.y, 0) / topPoints.length;
-      const avgBot =
+      const avgBottom =
         bottomPoints.reduce((s, p) => s + p.y, 0) / bottomPoints.length;
 
-      setTextoY((avgTop + avgBot) / 2);
+      // 🔥 Definimos una banda inferior de texto que NO llega al pie:
+      // tomamos un punto intermedio entre el borde superior e inferior reales
+      const LABEL_FACTOR = 0.55; // 0 = cerca del borde superior, 1 = abajo del todo
+      const labelBottomPoints = topPoints.map((pTop, i) => {
+        const pBottom = bottomPoints[i];
+        const yLabel =
+          pTop.y + (pBottom.y - pTop.y) * LABEL_FACTOR;
+        return { x: pTop.x, y: yLabel };
+      });
+
+      const avgLabelBottom =
+        labelBottomPoints.reduce((s, p) => s + p.y, 0) /
+        labelBottomPoints.length;
+
+      const yMinText = avgTop + 5;
+      const yMaxText = avgLabelBottom - 5;
+
+      setTextoY((yMinText + yMaxText) / 2);
 
       setShape({
         topPoints,
-        bottomPoints,
-        yMinText: avgTop + 5,
-        yMaxText: avgBot - 5,
+        labelBottomPoints,
+        yMinText,
+        yMaxText,
         imageRect: { x, y, w, h },
       });
+    };
+
+    img.onerror = () => {
+      setShape(null);
     };
   }, [index]);
 
@@ -135,12 +165,14 @@ export default function MacetaCarrusel() {
 
   if (!shape) return <p>Cargando…</p>;
 
-  const { topPoints, bottomPoints, yMinText, yMaxText, imageRect } = shape;
+  const { topPoints, labelBottomPoints, yMinText, yMaxText, imageRect } =
+    shape;
 
+  // t = posición relativa del texto entre la curva superior y la banda inferior
   const t = (textoY - yMinText) / (yMaxText - yMinText);
 
   const interp = topPoints.map((pTop, i) => {
-    const pBottom = bottomPoints[i];
+    const pBottom = labelBottomPoints[i];
     const y = pTop.y * (1 - t) + pBottom.y * t;
     return { x: pTop.x, y };
   });
@@ -150,13 +182,17 @@ export default function MacetaCarrusel() {
     pathD += ` L ${interp[i].x},${interp[i].y}`;
   }
 
-  // 🔥 ESCALADO FINAL
+  // Escalado dinámico + control manual
   const fontScale = 0.6 + t * 0.8; // más arriba pequeño, más abajo grande
   const fontSize = fontBase * fontScale;
 
+  const prevMaceta = () =>
+    setIndex((i) => (i === 0 ? macetas.length - 1 : i - 1));
+  const nextMaceta = () => setIndex((i) => (i + 1) % macetas.length);
+
   return (
     <div style={{ width: "100%", maxWidth: "520px" }}>
-      {/* Control del texto */}
+      {/* Texto */}
       <label>Texto:</label>
       <input
         value={texto}
@@ -164,12 +200,12 @@ export default function MacetaCarrusel() {
         style={{
           width: "100%",
           padding: "10px",
-          marginBottom: "15px",
+          marginBottom: "12px",
           fontSize: "18px",
         }}
       />
 
-      {/* 🔥 Control del tamaño base */}
+      {/* Tamaño base de fuente */}
       <label>Tamaño base de la fuente: {fontBase}px</label>
       <input
         type="range"
@@ -177,14 +213,19 @@ export default function MacetaCarrusel() {
         max="60"
         value={fontBase}
         onChange={(e) => setFontBase(Number(e.target.value))}
-        style={{ width: "100%", marginBottom: "20px" }}
+        style={{ width: "100%", marginBottom: "16px" }}
       />
 
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <button onClick={() => setIndex((i) => (i === 0 ? 7 : i - 1))}>
-          ◀︎
-        </button>
-        <button onClick={() => setIndex((i) => (i + 1) % 8)}>▶︎</button>
+      {/* Carrusel simple */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "10px",
+        }}
+      >
+        <button onClick={prevMaceta}>◀︎</button>
+        <button onClick={nextMaceta}>▶︎</button>
       </div>
 
       <svg
@@ -195,21 +236,23 @@ export default function MacetaCarrusel() {
           width: "100%",
           border: "1px solid #ccc",
           background: "#fff",
+          touchAction: "none",
         }}
       >
-        {/* imagen */}
+        {/* Imagen de la maceta, misma geometría que el análisis */}
         <image
           href={macetas[index]}
           x={imageRect.x}
           y={imageRect.y}
           width={imageRect.w}
           height={imageRect.h}
+          preserveAspectRatio="xMidYMid meet"
         />
 
-        {/* nueva curva */}
+        {/* Path dinámico promedio entre curva superior y banda inferior */}
         <path id="curvaTexto" d={pathD} fill="none" />
 
-        {/* texto arrastrable */}
+        {/* Texto arrastrable que sigue el path */}
         <text
           fill="black"
           fontSize={fontSize}
