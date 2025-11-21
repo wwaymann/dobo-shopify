@@ -4,7 +4,7 @@ export default function MacetaCarrusel() {
   const [texto, setTexto] = useState("Texto DOBO");
   const [index, setIndex] = useState(0);
 
-  // posición vertical del texto
+  // posición vertical del texto (en coords del SVG)
   const [textoY, setTextoY] = useState(300);
 
   // control manual del tamaño base
@@ -29,7 +29,7 @@ export default function MacetaCarrusel() {
   const CANVAS_SIZE = 500;
   const SAMPLE_COLUMNS = 40;
 
-  // Detectar bordes reales (superior) y una banda inferior "usable" para texto
+  // Lee la silueta REAL: curva superior y curva inferior de la maceta
   useEffect(() => {
     const img = new Image();
     img.src = macetas[index];
@@ -88,6 +88,7 @@ export default function MacetaCarrusel() {
         }
 
         if (topY !== null && bottomY !== null && bottomY > topY) {
+          // guardamos pares alineados (misma columna)
           topPoints.push({ x: colX, y: topY });
           bottomPoints.push({ x: colX, y: bottomY });
         }
@@ -103,27 +104,14 @@ export default function MacetaCarrusel() {
       const avgBottom =
         bottomPoints.reduce((s, p) => s + p.y, 0) / bottomPoints.length;
 
-      // Banda inferior “usable” (no el pie estrecho)
-      const LABEL_FACTOR = 0.55; // 0 = borde superior, 1 = borde inferior total
-      const labelBottomPoints = topPoints.map((pTop, i) => {
-        const pBottom = bottomPoints[i];
-        const yLabel =
-          pTop.y + (pBottom.y - pTop.y) * LABEL_FACTOR;
-        return { x: pTop.x, y: yLabel };
-      });
-
-      const avgLabelBottom =
-        labelBottomPoints.reduce((s, p) => s + p.y, 0) /
-        labelBottomPoints.length;
-
       const yMinText = avgTop + 5;
-      const yMaxText = avgLabelBottom - 5;
+      const yMaxText = avgBottom - 5;
 
       setTextoY((yMinText + yMaxText) / 2);
 
       setShape({
         topPoints,
-        labelBottomPoints,
+        bottomPoints,
         yMinText,
         yMaxText,
         imageRect: { x, y, w, h },
@@ -135,7 +123,7 @@ export default function MacetaCarrusel() {
     };
   }, [index]);
 
-  // Drag del texto
+  // Drag del texto (vertical)
   const onMouseDownText = (e) => {
     if (!svgRef.current || !shape) return;
 
@@ -172,23 +160,25 @@ export default function MacetaCarrusel() {
         window.removeEventListener("mouseup", handleUp);
       }
     };
-  }, [isDragging, shape, textoY]);
+  }, [isDragging, shape]);
 
   if (!shape) return <p>Cargando…</p>;
 
-  const { topPoints, labelBottomPoints, yMinText, yMaxText, imageRect } =
-    shape;
+  const { topPoints, bottomPoints, yMinText, yMaxText, imageRect } = shape;
 
-  // t = posición relativa del texto entre curva superior y banda inferior
+  // t = posición relativa del texto entre curva superior e inferior reales
   const t =
     yMaxText === yMinText
       ? 0
       : (textoY - yMinText) / (yMaxText - yMinText);
 
+  // 🔥 Interpolación entre curva superior e inferior:
+  // AHORA interpolamos X y Y → el ancho también se ajusta al inferior.
   const interp = topPoints.map((pTop, i) => {
-    const pBottom = labelBottomPoints[i];
+    const pBottom = bottomPoints[i];
+    const x = pTop.x * (1 - t) + pBottom.x * t;
     const y = pTop.y * (1 - t) + pBottom.y * t;
-    return { x: pTop.x, y };
+    return { x, y };
   });
 
   let pathD = `M ${interp[0].x},${interp[0].y}`;
@@ -263,7 +253,7 @@ export default function MacetaCarrusel() {
           preserveAspectRatio="xMidYMid meet"
         />
 
-        {/* Path dinámico promedio entre curva superior y banda inferior */}
+        {/* Path dinámico promedio entre curva superior e inferior reales */}
         <path id="curvaTexto" d={pathD} fill="none" />
 
         {/* Texto arrastrable que sigue el path */}
