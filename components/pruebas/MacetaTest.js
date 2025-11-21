@@ -1,21 +1,35 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function MacetaPrueba() {
+export default function MacetaCarrusel() {
   const [texto, setTexto] = useState("Texto DOBO");
+  const [index, setIndex] = useState(0);
   const canvasRef = useRef(null);
 
+  // Lista fija de imágenes
+  const macetas = [
+    "/maceta1.png",
+    "/maceta2.png",
+    "/maceta3.png",
+    "/maceta4.png",
+    "/maceta5.png",
+    "/maceta6.png",
+    "/maceta7.png",
+    "/maceta8.png",
+  ];
+
+  // Redibujar maceta + texto
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
-    // cargamos tu imagen fija desde /public
     const img = new Image();
-    img.src = "/maceta4.png";
+    img.src = macetas[index];
+    img.crossOrigin = "anonymous";
 
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // dimensiones de la maceta dentro del canvas
+      // Dibujar maceta
       const w = canvas.width * 0.75;
       const h = (img.height / img.width) * w;
       const x = (canvas.width - w) / 2;
@@ -23,13 +37,13 @@ export default function MacetaPrueba() {
 
       ctx.drawImage(img, x, y, w, h);
 
-      // ----- TEXTO CURVADO SIMPLE -----
-      ctx.font = "bold 34px sans-serif";
+      // ----- TEXTO CURVADO -----
+      ctx.font = "bold 32px sans-serif";
       ctx.fillStyle = "#000";
       ctx.textAlign = "center";
 
-      const baselineY = y + h * 0.55; // zona donde cae el texto
-      const curvature = 0.0025;       // cuánta curva aplicar (ajustable)
+      const baselineY = y + h * 0.55;
+      const curvature = 0.0025;
 
       const letters = texto.split("");
       const textWidth = ctx.measureText(texto).width;
@@ -37,8 +51,6 @@ export default function MacetaPrueba() {
 
       for (let l of letters) {
         const w = ctx.measureText(l).width;
-
-        // curva tipo arco
         const dx = offsetX - canvas.width / 2;
         const dy = dx * dx * curvature;
 
@@ -50,12 +62,20 @@ export default function MacetaPrueba() {
         offsetX += w;
       }
     };
-  }, [texto]); // redibuja solo cuando cambie el texto
+  }, [index, texto]);
+
+  const siguiente = () =>
+    setIndex((prev) => (prev + 1) % macetas.length);
+
+  const anterior = () =>
+    setIndex((prev) =>
+      prev === 0 ? macetas.length - 1 : prev - 1
+    );
 
   return (
-    <div style={{ width: "100%", maxWidth: "500px" }}>
-      <label style={{ display: "block", marginBottom: "8px" }}>
-        Escribe tu texto:
+    <div style={{ width: "100%", maxWidth: "520px" }}>
+      <label style={{ display: "block", marginBottom: "6px" }}>
+        Texto DOBO:
       </label>
 
       <input
@@ -66,9 +86,20 @@ export default function MacetaPrueba() {
           width: "100%",
           padding: "10px",
           fontSize: "18px",
-          marginBottom: "20px",
+          marginBottom: "18px",
         }}
       />
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "10px",
+        }}
+      >
+        <button onClick={anterior}>◀︎</button>
+        <button onClick={siguiente}>▶︎</button>
+      </div>
 
       <canvas
         ref={canvasRef}
@@ -76,7 +107,7 @@ export default function MacetaPrueba() {
         height={500}
         style={{
           width: "100%",
-          border: "1px solid #ccc",
+          border: "1px solid #aaa",
           background: "#fff",
         }}
       />
