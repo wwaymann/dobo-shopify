@@ -1,10 +1,11 @@
-import MacetaPrueba from "../../../components/pruebas/MacetaPrueba";
+import MacetaCarrusel from "../../../components/pruebas/MacetaCarrusel";
 
 export default function TestMacetaPage() {
   return (
-    <div style={{ width: "100%", padding: "20px" }}>
-      <h2>Prueba DOBO – Texto sobre maceta fija</h2>
-      <MacetaPrueba />
+    <div style={{ padding: "20px" }}>
+      <h2>Prueba DOBO – Carrusel de Macetas y Texto Adaptado</h2>
+      <MacetaCarrusel />
     </div>
   );
 }
+
