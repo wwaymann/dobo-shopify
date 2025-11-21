@@ -5,7 +5,7 @@ export default function MacetaCarrusel() {
   const [index, setIndex] = useState(0);
   const canvasRef = useRef(null);
 
-  // Lista fija de imágenes
+  // Lista fija de imágenes en public/
   const macetas = [
     "/maceta1.png",
     "/maceta2.png",
@@ -17,19 +17,18 @@ export default function MacetaCarrusel() {
     "/maceta8.png",
   ];
 
-  // Redibujar maceta + texto
+  // Dibujar la maceta y el texto curvado
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
     const img = new Image();
     img.src = macetas[index];
-    img.crossOrigin = "anonymous";
 
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Dibujar maceta
+      // Tamaño de maceta
       const w = canvas.width * 0.75;
       const h = (img.height / img.width) * w;
       const x = (canvas.width - w) / 2;
@@ -42,8 +41,8 @@ export default function MacetaCarrusel() {
       ctx.fillStyle = "#000";
       ctx.textAlign = "center";
 
-      const baselineY = y + h * 0.55;
-      const curvature = 0.0025;
+      const baselineY = y + h * 0.55; // zona de texto
+      const curvature = 0.0025;       // curva ajustable
 
       const letters = texto.split("");
       const textWidth = ctx.measureText(texto).width;
@@ -74,8 +73,8 @@ export default function MacetaCarrusel() {
 
   return (
     <div style={{ width: "100%", maxWidth: "520px" }}>
-      <label style={{ display: "block", marginBottom: "6px" }}>
-        Texto DOBO:
+      <label style={{ display: "block", marginBottom: "8px" }}>
+        Escribe tu texto:
       </label>
 
       <input
@@ -107,7 +106,7 @@ export default function MacetaCarrusel() {
         height={500}
         style={{
           width: "100%",
-          border: "1px solid #aaa",
+          border: "1px solid #ccc",
           background: "#fff",
         }}
       />
