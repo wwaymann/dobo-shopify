@@ -29,7 +29,7 @@ export default function MacetaCarrusel() {
   const CANVAS_SIZE = 500;
   const SAMPLE_COLUMNS = 40;
 
-  // Detectar bordes reales (superior) y una banda inferior de texto
+  // Detectar bordes reales (superior) y una banda inferior "usable" para texto
   useEffect(() => {
     const img = new Image();
     img.src = macetas[index];
@@ -50,7 +50,8 @@ export default function MacetaCarrusel() {
       ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
       ctx.drawImage(img, x, y, w, h);
 
-      const { data } = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      const imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      const data = imageData.data;
 
       const topPoints = [];
       const bottomPoints = [];
@@ -63,13 +64,14 @@ export default function MacetaCarrusel() {
           xStart + ((xEnd - xStart) * i) / SAMPLE_COLUMNS
         );
 
-        let topY: number | null = null;
-        let bottomY: number | null = null;
+        let topY = null;
+        let bottomY = null;
 
         // primer pixel no transparente desde arriba
         for (let yy = 0; yy < CANVAS_SIZE; yy++) {
           const idx = (yy * CANVAS_SIZE + colX) * 4 + 3;
-          if (data[idx] > 10) {
+          const alpha = data[idx];
+          if (alpha > 10) {
             topY = yy;
             break;
           }
@@ -78,7 +80,8 @@ export default function MacetaCarrusel() {
         // primer pixel no transparente desde abajo
         for (let yy = CANVAS_SIZE - 1; yy >= 0; yy--) {
           const idx = (yy * CANVAS_SIZE + colX) * 4 + 3;
-          if (data[idx] > 10) {
+          const alpha = data[idx];
+          if (alpha > 10) {
             bottomY = yy;
             break;
           }
@@ -100,9 +103,8 @@ export default function MacetaCarrusel() {
       const avgBottom =
         bottomPoints.reduce((s, p) => s + p.y, 0) / bottomPoints.length;
 
-      // 🔥 Definimos una banda inferior de texto que NO llega al pie:
-      // tomamos un punto intermedio entre el borde superior e inferior reales
-      const LABEL_FACTOR = 0.55; // 0 = cerca del borde superior, 1 = abajo del todo
+      // Banda inferior “usable” (no el pie estrecho)
+      const LABEL_FACTOR = 0.55; // 0 = borde superior, 1 = borde inferior total
       const labelBottomPoints = topPoints.map((pTop, i) => {
         const pBottom = bottomPoints[i];
         const yLabel =
@@ -144,32 +146,44 @@ export default function MacetaCarrusel() {
     setIsDragging(true);
   };
 
-  const onMouseMove = (e) => {
-    if (!isDragging || !shape || !svgRef.current) return;
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!isDragging || !shape || !svgRef.current) return;
 
-    const rect = svgRef.current.getBoundingClientRect();
-    let newY = e.clientY - rect.top - dragOffsetRef.current;
+      const rect = svgRef.current.getBoundingClientRect();
+      let newY = e.clientY - rect.top - dragOffsetRef.current;
 
-    if (newY < shape.yMinText) newY = shape.yMinText;
-    if (newY > shape.yMaxText) newY = shape.yMaxText;
+      if (newY < shape.yMinText) newY = shape.yMinText;
+      if (newY > shape.yMaxText) newY = shape.yMaxText;
 
-    setTextoY(newY);
-  };
+      setTextoY(newY);
+    };
 
-  const onMouseUp = () => setIsDragging(false);
+    const handleUp = () => setIsDragging(false);
 
-  if (typeof window !== "undefined") {
-    window.onmouseup = onMouseUp;
-    window.onmousemove = onMouseMove;
-  }
+    if (typeof window !== "undefined") {
+      window.addEventListener("mousemove", handleMove);
+      window.addEventListener("mouseup", handleUp);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("mousemove", handleMove);
+        window.removeEventListener("mouseup", handleUp);
+      }
+    };
+  }, [isDragging, shape, textoY]);
 
   if (!shape) return <p>Cargando…</p>;
 
   const { topPoints, labelBottomPoints, yMinText, yMaxText, imageRect } =
     shape;
 
-  // t = posición relativa del texto entre la curva superior y la banda inferior
-  const t = (textoY - yMinText) / (yMaxText - yMinText);
+  // t = posición relativa del texto entre curva superior y banda inferior
+  const t =
+    yMaxText === yMinText
+      ? 0
+      : (textoY - yMinText) / (yMaxText - yMinText);
 
   const interp = topPoints.map((pTop, i) => {
     const pBottom = labelBottomPoints[i];
