@@ -25,7 +25,7 @@ export default function MacetaCarrusel() {
   const svgRef = useRef(null);
 
   // -----------------------------------------------------
-  // LECTURA DE CURVAS SUPERIOR E INFERIOR DE LA MACETA
+  // LECTURA DE CURVA SUPERIOR E INFERIOR
   // -----------------------------------------------------
   useEffect(() => {
     const img = new Image();
@@ -40,7 +40,6 @@ export default function MacetaCarrusel() {
       const maxW = CANVAS_SIZE * 0.75;
       const w = maxW;
       const h = (img.height / img.width) * w;
-
       const x = (CANVAS_SIZE - w) / 2;
       const y = (CANVAS_SIZE - h) / 2;
 
@@ -87,8 +86,7 @@ export default function MacetaCarrusel() {
         }
       }
 
-      const avgTop =
-        topPoints.reduce((s, p) => s + p.y, 0) / topPoints.length;
+      const avgTop = topPoints.reduce((s, p) => s + p.y, 0) / topPoints.length;
       const avgBottom =
         bottomPoints.reduce((s, p) => s + p.y, 0) / bottomPoints.length;
 
@@ -105,32 +103,21 @@ export default function MacetaCarrusel() {
   }, [index]);
 
   // -----------------------------------------------------
-  // DRAG MOUSE + TOUCH
+  // DRAG TOUCH + MOUSE
   // -----------------------------------------------------
-  const startDragMouse = (e) => {
+  const startDrag = (clientY) => {
     if (!shape || !svgRef.current) return;
 
     const rect = svgRef.current.getBoundingClientRect();
-    offsetRef.current = e.clientY - rect.top - textoY;
+    offsetRef.current = clientY - rect.top - textoY;
 
     isDragging.current = true;
-  };
-
-  const startDragTouch = (e) => {
-    if (!shape || !svgRef.current) return;
-
-    const rect = svgRef.current.getBoundingClientRect();
-    offsetRef.current = e.touches[0].clientY - rect.top - textoY;
-
-    isDragging.current = true;
-    e.preventDefault();
   };
 
   const moveDrag = (clientY) => {
     if (!isDragging.current || !shape || !svgRef.current) return;
 
     const rect = svgRef.current.getBoundingClientRect();
-
     let newY = clientY - rect.top - offsetRef.current;
 
     if (newY < shape.yMinText) newY = shape.yMinText;
@@ -140,20 +127,23 @@ export default function MacetaCarrusel() {
   };
 
   useEffect(() => {
-    const moveMouse = (e) => moveDrag(e.clientY);
-    const moveTouch = (e) => moveDrag(e.touches[0].clientY);
-    const stop = () => (isDragging.current = false);
+    const mm = (e) => moveDrag(e.clientY);
+    const tm = (e) => {
+      moveDrag(e.touches[0].clientY);
+      e.preventDefault();
+    };
+    const end = () => (isDragging.current = false);
 
-    window.addEventListener("mousemove", moveMouse);
-    window.addEventListener("touchmove", moveTouch, { passive: false });
-    window.addEventListener("mouseup", stop);
-    window.addEventListener("touchend", stop);
+    window.addEventListener("mousemove", mm);
+    window.addEventListener("touchmove", tm, { passive: false });
+    window.addEventListener("mouseup", end);
+    window.addEventListener("touchend", end);
 
     return () => {
-      window.removeEventListener("mousemove", moveMouse);
-      window.removeEventListener("touchmove", moveTouch);
-      window.removeEventListener("mouseup", stop);
-      window.removeEventListener("touchend", stop);
+      window.removeEventListener("mousemove", mm);
+      window.removeEventListener("touchmove", tm);
+      window.removeEventListener("mouseup", end);
+      window.removeEventListener("touchend", end);
     };
   }, [shape]);
 
@@ -163,17 +153,16 @@ export default function MacetaCarrusel() {
 
   const t = (textoY - yMinText) / (yMaxText - yMinText);
 
-  // -----------------------------------------------
-  // VERSIÓN A → DEFORMACIÓN REAL PERO CONTROLADA
-  // -----------------------------------------------
-  const deformFactor = 0.15; // controla cuánto sigue el cono
-
+  // -----------------------------------------------------
+  // ⭐⭐ VERSIÓN B — SIN DEFORMACIÓN VERTICAL
+  // Solo se promedia la altura. X NO SE TOCA.
+  // -----------------------------------------------------
   const interp = topPoints.map((pTop, i) => {
     const pBottom = bottomPoints[i];
 
     return {
-      x: pTop.x * (1 - deformFactor * t) + pBottom.x * (deformFactor * t),
-      y: pTop.y * (1 - t) + pBottom.y * t,
+      x: pTop.x, // X se mantiene fija → NO sigue el cono
+      y: pTop.y * (1 - t) + pBottom.y * t, // Y se interpola → curva solo vertical
     };
   });
 
@@ -190,7 +179,7 @@ export default function MacetaCarrusel() {
       <input
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
-        style={{ width: "100%", padding: 10, marginBottom: 12 }}
+        style={{ width: "100%", marginBottom: 12, padding: 8 }}
       />
 
       <label>Tamaño base: {fontBase}px</label>
@@ -233,8 +222,8 @@ export default function MacetaCarrusel() {
           fontSize={fontSize}
           fontWeight="bold"
           textAnchor="middle"
-          onMouseDown={startDragMouse}
-          onTouchStart={startDragTouch}
+          onMouseDown={(e) => startDrag(e.clientY)}
+          onTouchStart={(e) => startDrag(e.touches[0].clientY)}
           style={{ cursor: "grab" }}
         >
           <textPath href="#curvaTexto" startOffset="50%">
