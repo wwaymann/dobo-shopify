@@ -1,4 +1,4 @@
-import MacetaCarrusel from "../../../components/pruebas/MacetaCarrusel";
+import MacetaCarrusel from "../../../components/pruebas/MacetaFinalResponsive";
 
 export default function TestMacetaPage() {
   return (
