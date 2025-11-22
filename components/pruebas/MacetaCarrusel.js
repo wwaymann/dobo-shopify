@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function MacetaFinal() {
+export default function MacetaFinalResponsive() {
   const macetas = [
     "/maceta1.png",
     "/maceta2.png",
@@ -14,31 +14,42 @@ export default function MacetaFinal() {
 
   const [index, setIndex] = useState(0);
 
-  // Texto 1
   const [texto1, setTexto1] = useState("Texto 1");
   const [color1, setColor1] = useState("#000000");
   const [fontBase1, setFontBase1] = useState(60);
   const [textoY1, setTextoY1] = useState(300);
 
-  // Texto 2
   const [texto2, setTexto2] = useState("Texto 2");
   const [color2, setColor2] = useState("#000000");
   const [fontBase2, setFontBase2] = useState(40);
-  const [textoY2, setTextoY2] = useState(350);
+  const [textoY2, setTextoY2] = useState(340);
 
   const [shape, setShape] = useState(null);
 
   const svgRef = useRef(null);
-
-  // Drag control
-  const draggingRef = useRef(null);
-  const offsetRef = useRef(0);
+  const dragTarget = useRef(null);
+  const dragOffset = useRef(0);
 
   const CANVAS = 500;
   const SAMPLES = 40;
 
+  // RESPONSIVE: Detecta ancho disponible del contenedor
+  const containerRef = useRef(null);
+  const [viewSize, setViewSize] = useState(500);
+
+  useEffect(() => {
+    const resize = () => {
+      if (!containerRef.current) return;
+      const w = containerRef.current.offsetWidth;
+      setViewSize(Math.min(w, 500)); // escala fluidamente
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
   // ---------------------------------------
-  // LECTURA MEJORADA DE CURVAS
+  // LECTURA DE CURVAS OPTIMIZADAS
   // ---------------------------------------
   useEffect(() => {
     const img = new Image();
@@ -56,7 +67,6 @@ export default function MacetaFinal() {
       const h = (img.height / img.width) * w;
       const x = (CANVAS - w) / 2;
       const y = (CANVAS - h) / 2;
-
       ctx.drawImage(img, x, y, w, h);
 
       const data = ctx.getImageData(0, 0, CANVAS, CANVAS).data;
@@ -73,15 +83,12 @@ export default function MacetaFinal() {
         let topY = null;
         let bottomY = null;
 
-        // detectar borde superior
         for (let yy = 0; yy < CANVAS; yy++) {
           if (data[(yy * CANVAS + colX) * 4 + 3] > 10) {
             topY = yy;
             break;
           }
         }
-
-        // detectar borde inferior
         for (let yy = CANVAS - 1; yy >= 0; yy--) {
           if (data[(yy * CANVAS + colX) * 4 + 3] > 10) {
             bottomY = yy;
@@ -95,23 +102,16 @@ export default function MacetaFinal() {
         }
       }
 
-      // -----------------------------------------
-      // BORDE INFERIOR OPTIMIZADO (no el real)
-      // Tomamos SOLO una parte superior del cuerpo
-      // para evitar zonas de estrechamiento.
-      // -----------------------------------------
+      // Límite inferior seguro (evita zona cónica)
       const bottomPoints = bottomPointsRaw.map((p, i) => {
         const top = topPoints[i];
-        const realBottom = p.y;
-        const safeBottom = top.y + (realBottom - top.y) * 0.35; // límite seguro
+        const safeBottom = top.y + (p.y - top.y) * 0.38;
         return { x: p.x, y: safeBottom };
       });
 
-      const avgTop =
-        topPoints.reduce((s, p) => s + p.y, 0) / topPoints.length;
-
+      const avgTop = topPoints.reduce((a, p) => a + p.y, 0) / topPoints.length;
       const avgBottom =
-        bottomPoints.reduce((s, p) => s + p.y, 0) / bottomPoints.length;
+        bottomPoints.reduce((a, p) => a + p.y, 0) / bottomPoints.length;
 
       const yMin = avgTop + 5;
       const yMax = avgBottom - 5;
@@ -119,70 +119,64 @@ export default function MacetaFinal() {
       setTextoY1((yMin + yMax) / 2);
       setTextoY2((yMin + yMax) / 2 + 40);
 
-      setShape({
-        topPoints,
-        bottomPoints,
-        yMin,
-        yMax,
-        imageRect: { x, y, w, h },
-      });
+      setShape({ topPoints, bottomPoints, yMin, yMax, imageRect: { x, y, w, h } });
     };
   }, [index]);
 
   // ---------------------------------------
-  // DRAG UNIVERSAL (touch + mouse)
+  // DRAG UNIVERSAL TOUCH + MOUSE + RESPONSIVO
   // ---------------------------------------
-  const startDrag = (textId, clientY) => {
-    draggingRef.current = textId;
-    const currentY = textId === 1 ? textoY1 : textoY2;
-    offsetRef.current = clientY - currentY;
+  const startDrag = (id, clientY) => {
+    dragTarget.current = id;
+    dragOffset.current =
+      clientY - (id === 1 ? textoY1 : textoY2);
   };
 
   const moveDrag = (clientY) => {
-    if (!shape || !draggingRef.current) return;
+    if (!shape || !dragTarget.current) return;
 
     const rect = svgRef.current.getBoundingClientRect();
-    let newY = clientY - rect.top - offsetRef.current;
+    let newY = clientY - rect.top - dragOffset.current;
 
     if (newY < shape.yMin) newY = shape.yMin;
     if (newY > shape.yMax) newY = shape.yMax;
 
-    if (draggingRef.current === 1) setTextoY1(newY);
-    if (draggingRef.current === 2) setTextoY2(newY);
+    if (dragTarget.current === 1) setTextoY1(newY);
+    else setTextoY2(newY);
   };
 
   useEffect(() => {
-    const move = (e) => moveDrag(e.clientY);
-    const moveTouch = (e) => {
+    const mouseMove = (e) => moveDrag(e.clientY);
+    const mouseUp = () => (dragTarget.current = null);
+
+    const touchMove = (e) => {
       moveDrag(e.touches[0].clientY);
       e.preventDefault();
     };
-    const end = () => (draggingRef.current = null);
 
-    window.addEventListener("mousemove", move);
-    window.addEventListener("touchmove", moveTouch, { passive: false });
-    window.addEventListener("mouseup", end);
-    window.addEventListener("touchend", end);
+    const touchEnd = () => (dragTarget.current = null);
+
+    window.addEventListener("mousemove", mouseMove);
+    window.addEventListener("mouseup", mouseUp);
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    window.addEventListener("touchend", touchEnd);
 
     return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("touchmove", moveTouch);
-      window.removeEventListener("mouseup", end);
-      window.removeEventListener("touchend", end);
+      window.removeEventListener("mousemove", mouseMove);
+      window.removeEventListener("mouseup", mouseUp);
+      window.removeEventListener("touchmove", touchMove);
+      window.removeEventListener("touchend", touchEnd);
     };
   }, [shape]);
 
-  if (!shape) return <p>Cargando…</p>;
+  if (!shape) return <p style={{ textAlign: "center" }}>Cargando…</p>;
 
   const { topPoints, bottomPoints, yMin, yMax, imageRect } = shape;
 
-  // ---------------------------------------
-  // FUNCIÓN PARA CREAR UN PATH SUAVE
-  // ---------------------------------------
-  const createPath = (t) => {
+  // Curva horizontal estable según t
+  const makeCurve = (t) => {
     const interp = topPoints.map((pTop, i) => {
       const pBottom = bottomPoints[i];
-
       return {
         x: pTop.x,
         y: pTop.y * (1 - t) + pBottom.y * t,
@@ -190,31 +184,39 @@ export default function MacetaFinal() {
     });
 
     let d = `M ${interp[0].x} ${interp[0].y}`;
-    for (let i = 1; i < interp.length; i++) {
-      d += ` L ${interp[i].x} ${interp[i].y}`;
-    }
+    interp.forEach((pt, i) => {
+      if (i > 0) d += ` L ${pt.x} ${pt.y}`;
+    });
     return d;
   };
 
   const t1 = (textoY1 - yMin) / (yMax - yMin);
   const t2 = (textoY2 - yMin) / (yMax - yMin);
 
-  const font1 = Math.min(fontBase1, 200) * (0.7 + 0.4 * (1 - t1));
-  const font2 = Math.min(fontBase2, 200) * (0.7 + 0.4 * (1 - t2));
+  const font1 = Math.min(fontBase1, 200) * (0.8 + 0.35 * (1 - t1));
+  const font2 = Math.min(fontBase2, 200) * (0.8 + 0.35 * (1 - t2));
 
-  const d1 = createPath(t1);
-  const d2 = createPath(t2);
+  const d1 = makeCurve(t1);
+  const d2 = makeCurve(t2);
 
   return (
-    <div style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
-      <h3>DOBO – Editor Optimizado</h3>
+    <div
+      ref={containerRef}
+      style={{
+        width: "100%",
+        padding: "10px",
+        maxWidth: "520px",
+        margin: "0 auto",
+      }}
+    >
+      <h3 style={{ textAlign: "center" }}>DOBO – Editor Responsive</h3>
 
       {/* TEXTOS */}
-      <label>Texto 1:</label>
+      <label>Texto 1</label>
       <input
         value={texto1}
         onChange={(e) => setTexto1(e.target.value)}
-        style={{ width: "100%", marginBottom: 10 }}
+        style={{ width: "100%", marginBottom: 8 }}
       />
 
       <label>Color:</label>
@@ -222,24 +224,24 @@ export default function MacetaFinal() {
         type="color"
         value={color1}
         onChange={(e) => setColor1(e.target.value)}
-        style={{ width: 60, marginBottom: 20 }}
+        style={{ marginBottom: 15, display: "block" }}
       />
 
-      <label>Tamaño base (máx 200): {fontBase1}px</label>
+      <label>Tamaño (máx 200): {fontBase1}px</label>
       <input
         type="range"
-        min={10}
-        max={200}
+        min="10"
+        max="200"
         value={fontBase1}
         onChange={(e) => setFontBase1(Number(e.target.value))}
         style={{ width: "100%", marginBottom: 20 }}
       />
 
-      <label>Texto 2:</label>
+      <label>Texto 2</label>
       <input
         value={texto2}
         onChange={(e) => setTexto2(e.target.value)}
-        style={{ width: "100%", marginBottom: 10 }}
+        style={{ width: "100%", marginBottom: 8 }}
       />
 
       <label>Color:</label>
@@ -247,31 +249,46 @@ export default function MacetaFinal() {
         type="color"
         value={color2}
         onChange={(e) => setColor2(e.target.value)}
-        style={{ width: 60, marginBottom: 20 }}
+        style={{ marginBottom: 15, display: "block" }}
       />
 
-      <label>Tamaño base (máx 200): {fontBase2}px</label>
+      <label>Tamaño (máx 200): {fontBase2}px</label>
       <input
         type="range"
-        min={10}
-        max={200}
+        min="10"
+        max="200"
         value={fontBase2}
         onChange={(e) => setFontBase2(Number(e.target.value))}
         style={{ width: "100%", marginBottom: 20 }}
       />
 
       {/* CARRUSEL */}
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
         <button onClick={() => setIndex((i) => (i === 0 ? 7 : i - 1))}>◀︎</button>
         <button onClick={() => setIndex((i) => (i + 1) % 8)}>▶︎</button>
       </div>
 
-      {/* SVG PRINCIPAL */}
+      {/* SVG RESPONSIVO */}
       <svg
         ref={svgRef}
-        width={CANVAS}
-        height={CANVAS}
-        style={{ width: "100%", border: "1px solid #ccc", marginTop: 20 }}
+        viewBox={`0 0 ${CANVAS} ${CANVAS}`}
+        width={viewSize}
+        height={viewSize}
+        style={{
+          touchAction: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          border: "1px solid #ccc",
+          background: "#fff",
+          width: "100%",
+          height: "auto",
+        }}
       >
         <image
           href={macetas[index]}
@@ -281,36 +298,34 @@ export default function MacetaFinal() {
           height={imageRect.h}
         />
 
-        {/* TEXT PATH 1 */}
-        <path id="text1" d={d1} fill="none" />
-
+        {/* TEXTO 1 */}
+        <path id="curve1" d={d1} fill="none" />
         <text
           fill={color1}
           fontSize={font1}
           fontWeight="bold"
           textAnchor="middle"
-          style={{ cursor: "grab" }}
           onMouseDown={(e) => startDrag(1, e.clientY)}
           onTouchStart={(e) => startDrag(1, e.touches[0].clientY)}
+          style={{ cursor: "grab" }}
         >
-          <textPath href="#text1" startOffset="50%">
+          <textPath href="#curve1" startOffset="50%">
             {texto1}
           </textPath>
         </text>
 
-        {/* TEXT PATH 2 */}
-        <path id="text2" d={d2} fill="none" />
-
+        {/* TEXTO 2 */}
+        <path id="curve2" d={d2} fill="none" />
         <text
           fill={color2}
           fontSize={font2}
           fontWeight="bold"
           textAnchor="middle"
-          style={{ cursor: "grab" }}
           onMouseDown={(e) => startDrag(2, e.clientY)}
           onTouchStart={(e) => startDrag(2, e.touches[0].clientY)}
+          style={{ cursor: "grab" }}
         >
-          <textPath href="#text2" startOffset="50%">
+          <textPath href="#curve2" startOffset="50%">
             {texto2}
           </textPath>
         </text>
