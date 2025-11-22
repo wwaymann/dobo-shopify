@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useMacetaCurvas } from "./useMacetaCurvas";
 
-export default function MacetaCarrusel_A() {
+export default function MacetaCarrusel_B() {
   const macetas = [
     "/maceta1.png",
     "/maceta2.png",
@@ -23,7 +23,6 @@ export default function MacetaCarrusel_A() {
   const dragRef = useRef(false);
   const offsetRef = useRef(0);
 
-  // --- drag básico (mouse + touch) ---
   const startDrag = (clientY) => {
     if (!shape) return;
     dragRef.current = true;
@@ -32,6 +31,7 @@ export default function MacetaCarrusel_A() {
 
   const moveDrag = (clientY) => {
     if (!dragRef.current || !shape) return;
+
     let newY = clientY - offsetRef.current;
 
     if (newY < shape.yMinText) newY = shape.yMinText;
@@ -64,13 +64,14 @@ export default function MacetaCarrusel_A() {
 
   const t = (textoY - yMinText) / (yMaxText - yMinText);
 
-  // ⭐ DEFORMACIÓN SUAVE CONTROLADA
-  const deformFactor = 0.15; // controla cuanto “sigue” el cono
+  // ⭐ SOLO DOS HORIZONTALES
   const interp = topPoints.map((pTop, i) => {
     const pBottom = bottomPoints[i];
-    const fx = pTop.x * (1 - deformFactor * t) + pBottom.x * (deformFactor * t);
-    const fy = pTop.y * (1 - t) + pBottom.y * t;
-    return { x: fx, y: fy };
+
+    return {
+      x: pTop.x, // NO sigue la forma
+      y: pTop.y * (1 - t) + pBottom.y * t,
+    };
   });
 
   let pathD = `M ${interp[0].x} ${interp[0].y}`;
@@ -84,7 +85,7 @@ export default function MacetaCarrusel_A() {
       <input
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
-        style={{ width: "100%", marginBottom: 12, padding: 8 }}
+        style={{ width: "100%", padding: 8, marginBottom: 12 }}
       />
 
       <label>Tamaño base: {fontBase}px</label>
@@ -103,7 +104,6 @@ export default function MacetaCarrusel_A() {
       </div>
 
       <svg
-        ref={svgRef}
         width={500}
         height={500}
         style={{ width: "100%", background: "#fff", border: "1px solid #ccc" }}
@@ -116,7 +116,7 @@ export default function MacetaCarrusel_A() {
           height={imageRect.h}
         />
 
-        <path id="curvaA" d={pathD} fill="none" />
+        <path id="curvaB" d={pathD} fill="none" />
 
         <text
           fontSize={fontSize}
@@ -126,7 +126,7 @@ export default function MacetaCarrusel_A() {
           onTouchStart={(e) => startDrag(e.touches[0].clientY)}
           style={{ cursor: "grab" }}
         >
-          <textPath href="#curvaA" startOffset="50%">
+          <textPath href="#curvaB" startOffset="50%">
             {texto}
           </textPath>
         </text>
