@@ -31,7 +31,7 @@ export default function MacetaFinalResponsive() {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
 
-  const dragTarget = useRef(null); // 1 o 2
+  const dragTarget = useRef(null);
   const offsetRef = useRef(0);
 
   const CANVAS = 500;
@@ -39,7 +39,7 @@ export default function MacetaFinalResponsive() {
 
   const [viewSize, setViewSize] = useState(500);
 
-  // RESPONSIVE: ajusta tamaño visible del SVG
+  // RESPONSIVE
   useEffect(() => {
     const resize = () => {
       if (!containerRef.current) return;
@@ -51,21 +51,20 @@ export default function MacetaFinalResponsive() {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
-  // Helper para suavizar y hacer la curva más natural
+  // Suavizado de curvas
   const smoothPoints = (points, passes = 2) => {
     let result = points.map((p) => ({ ...p }));
     for (let k = 0; k < passes; k++) {
-      const copy = result.map((p) => ({ ...p }));
+      const c = result.map((p) => ({ ...p }));
       for (let i = 1; i < result.length - 1; i++) {
-        result[i].y =
-          (copy[i - 1].y + copy[i].y + copy[i + 1].y) / 3;
+        result[i].y = (c[i - 1].y + c[i].y + c[i + 1].y) / 3;
       }
     }
     return result;
   };
 
   // ---------------------------------------
-  // LECTURA DE BORDES + CURVA INFERIOR "A"
+  // DETECCIÓN DE BORDES + EXTENSIÓN INFERIOR (A)
   // ---------------------------------------
   useEffect(() => {
     const img = new Image();
@@ -130,37 +129,41 @@ export default function MacetaFinalResponsive() {
         return;
       }
 
-      // Suavizamos el borde superior e inferior real
+      // Curvas suavizadas
       const topSmooth = smoothPoints(topPoints, 3);
       const bottomSmoothReal = smoothPoints(
         bottomPointsReal,
         3
       );
 
-      // Opción A: borde inferior "seguro" pero llegando más abajo
-      const bottomSafe = bottomSmoothReal.map((p, i) => {
+      // EXTENSIÓN INFERIOR “A” → 85–90% del ancho visual
+      const bottomExtended = bottomSmoothReal.map((p, i) => {
         const t = topSmooth[i];
-        // 0.6 → más cerca del fondo que antes (0.38), pero aún seguro
-        const ySafe =
-          t.y + (p.y - t.y) * 0.6;
-        return { x: p.x, y: ySafe };
+        const realHeight = p.y - t.y;
+
+        // Extiende hacia abajo un extra del 50%
+        const extension = realHeight * 0.5;
+
+        let yExt = p.y + extension;
+        if (yExt > CANVAS - 10) yExt = CANVAS - 10;
+
+        return { x: p.x, y: yExt };
       });
 
       const avgTop =
         topSmooth.reduce((s, p) => s + p.y, 0) / topSmooth.length;
       const avgBottom =
-        bottomSafe.reduce((s, p) => s + p.y, 0) / bottomSafe.length;
+        bottomExtended.reduce((s, p) => s + p.y, 0) / bottomExtended.length;
 
       const yMin = avgTop + 5;
       const yMax = avgBottom - 5;
 
-      // Posiciones iniciales de texto dentro de la banda
       setTextoY1((yMin + yMax) / 2);
       setTextoY2((yMin + yMax) / 2 + 40);
 
       setShape({
         topPoints: topSmooth,
-        bottomPoints: bottomSafe,
+        bottomPoints: bottomExtended,
         yMin,
         yMax,
         imageRect: { x, y, w, h },
@@ -169,7 +172,7 @@ export default function MacetaFinalResponsive() {
   }, [index]);
 
   // ---------------------------------------
-  // COORDENADAS SVG (para touch/mouse correctos)
+  // COORDENADAS SVG PARA TOUCH/MOUSE
   // ---------------------------------------
   const getSVGCoords = (clientX, clientY) => {
     const svg = svgRef.current;
@@ -186,10 +189,8 @@ export default function MacetaFinalResponsive() {
     if (!shape || !svgRef.current) return;
 
     dragTarget.current = id;
-
     const { y } = getSVGCoords(clientX, clientY);
     const currentY = id === 1 ? textoY1 : textoY2;
-
     offsetRef.current = y - currentY;
   };
 
@@ -211,20 +212,14 @@ export default function MacetaFinalResponsive() {
       if (!dragTarget.current) return;
       moveDrag(e.clientX, e.clientY);
     };
-    const onMouseUp = () => {
-      dragTarget.current = null;
-    };
+    const onMouseUp = () => (dragTarget.current = null);
 
     const onTouchMove = (e) => {
       if (!dragTarget.current) return;
       const t = e.touches[0];
       moveDrag(t.clientX, t.clientY);
-      // NO hacemos preventDefault global → la página puede seguir respondiendo
     };
-
-    const onTouchEnd = () => {
-      dragTarget.current = null;
-    };
+    const onTouchEnd = () => (dragTarget.current = null);
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -241,13 +236,11 @@ export default function MacetaFinalResponsive() {
     };
   }, [shape]);
 
-  if (!shape) {
-    return <p style={{ textAlign: "center" }}>Cargando…</p>;
-  }
+  if (!shape) return <p style={{ textAlign: "center" }}>Cargando…</p>;
 
   const { topPoints, bottomPoints, yMin, yMax, imageRect } = shape;
 
-  // Construye curva natural entre top y bottom según t
+  // CURVAS NATURALES
   const makeCurve = (t) => {
     const interp = topPoints.map((pTop, i) => {
       const pBottom = bottomPoints[i];
@@ -286,7 +279,7 @@ export default function MacetaFinalResponsive() {
       }}
     >
       <h3 style={{ textAlign: "center" }}>
-        DOBO – Editor Responsive (A optimizado)
+        DOBO – Editor Final (Curva A Extendida)
       </h3>
 
       {/* CONTROLES TEXTO 1 */}
@@ -341,7 +334,7 @@ export default function MacetaFinalResponsive() {
         style={{ width: "100%", marginBottom: 20 }}
       />
 
-      {/* CARRUSEL DE MACETAS */}
+      {/* CARRUSEL */}
       <div
         style={{
           display: "flex",
@@ -365,7 +358,7 @@ export default function MacetaFinalResponsive() {
         </button>
       </div>
 
-      {/* SVG RESPONSIVE */}
+      {/* SVG */}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${CANVAS} ${CANVAS}`}
@@ -376,12 +369,9 @@ export default function MacetaFinalResponsive() {
           height: "auto",
           background: "#fff",
           border: "1px solid #ccc",
-          // evita gestos raros dentro del área de diseño,
-          // pero NO bloquea el resto de la página
           touchAction: "none",
         }}
       >
-        {/* Imagen de la maceta */}
         <image
           href={macetas[index]}
           x={imageRect.x}
@@ -390,7 +380,6 @@ export default function MacetaFinalResponsive() {
           height={imageRect.h}
         />
 
-        {/* Curva y texto 1 */}
         <path id="curve1" d={d1} fill="none" />
         <text
           fill={color1}
@@ -411,7 +400,6 @@ export default function MacetaFinalResponsive() {
           </textPath>
         </text>
 
-        {/* Curva y texto 2 */}
         <path id="curve2" d={d2} fill="none" />
         <text
           fill={color2}
