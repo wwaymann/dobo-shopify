@@ -10,32 +10,30 @@ export default async function handler(req, res) {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Construimos el prompt para OpenAI
     const fullPrompt = `
-      Genera un diseño gráfico transparente (PNG con alpha) 
-      para decorar una maceta llamada "${macetaName}". 
-      El usuario quiere: "${prompt}".  
-      El diseño debe ser limpio, elegante y usable en un objeto físico.
-      No incluyas imágenes de la maceta ni la planta, solo el diseño.
-      Fondo transparente.
-      Formato: PNG 1024x1024.
+      Genera un diseño decorativo artístico con fondo transparente (PNG con alpha)
+      para colocar sobre una maceta llamada "${macetaName}".
+      El usuario pide: "${prompt}".
+      No incluyas imágenes de macetas ni plantas, solo el diseño decorativo.
+      Estilo elegante, limpio y apto para impresión física.
+      Formato final: PNG 1024x1024, fondo transparente.
     `;
 
     const result = await openai.images.generate({
-      model: "gpt-image-1", // OpenAI Images 3.5
+      model: "gpt-image-1",
       prompt: fullPrompt,
       size: "1024x1024",
       quality: "high",
       response_format: "b64_json",
     });
 
-    const imageBase64 = result.data[0].b64_json;
+    const base64 = result.data[0].b64_json;
 
     return res.status(200).json({
-      imageBase64,
+      imageBase64: base64,
     });
-  } catch (err) {
-    console.error("Error en generación IA:", err);
+  } catch (error) {
+    console.error("Error IA:", error);
     return res.status(500).json({ error: "Error generando diseño." });
   }
 }
