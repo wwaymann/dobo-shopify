@@ -129,18 +129,45 @@ export default function IADoboPage() {
     };
   }, [macetaIndex, plantaIndex, designUrl]);
 
+  // ----------------------------
+  // IA REAL – API OpenAI
+  // ----------------------------
   const handleGenerateIA = async () => {
     if (!prompt.trim()) {
-      alert("Escribe algo primero.");
+      alert("Escribe una descripción.");
       return;
     }
 
     setIsGenerating(true);
 
-    setTimeout(() => {
-      setDesignUrl("/demo-design.png"); // imagen dummy
-      setIsGenerating(false);
-    }, 1200);
+    try {
+      const response = await fetch("/api/generar-diseno", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          macetaName: macetaActual.name,
+          plantaName: plantaActual.name,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        console.error(data.error);
+        alert("Error generando diseño.");
+      }
+
+      if (data.imageBase64) {
+        const url = `data:image/png;base64,${data.imageBase64}`;
+        setDesignUrl(url);
+      }
+    } catch (e) {
+      console.error("Error:", e);
+      alert("No se pudo generar el diseño.");
+    }
+
+    setIsGenerating(false);
   };
 
   const downloadFile = (dataUrl, filename) => {
