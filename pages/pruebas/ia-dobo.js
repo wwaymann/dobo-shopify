@@ -16,14 +16,12 @@ export default function IADoboPage() {
   const [macetaIndex, setMacetaIndex] = useState(0);
   const [plantaIndex, setPlantaIndex] = useState(0);
   const [prompt, setPrompt] = useState("");
-  const [designUrl, setDesignUrl] = useState(null); // diseño IA (PNG)
+  const [designUrl, setDesignUrl] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
   const designObjectRef = useRef(null);
-
-  // ----------- NAVEGACIÓN CARRUSELES -----------
 
   const nextMaceta = () =>
     setMacetaIndex((prev) => (prev + 1) % MACETAS.length);
@@ -38,414 +36,257 @@ export default function IADoboPage() {
   const macetaActual = MACETAS[macetaIndex];
   const plantaActual = PLANTAS[plantaIndex];
 
-  // ----------- SETUP DE CANVAS CON FABRIC -----------
-
   useEffect(() => {
-    let isCancelled = false;
+    let disposed = false;
 
-    async function setupCanvas() {
-      const canvasElement = canvasRef.current;
-      if (!canvasElement) return;
+    async function init() {
+      const canvasEl = canvasRef.current;
+      if (!canvasEl) return;
 
-      // Import dinámico de fabric (solo en cliente)
       const fabricModule = await import("fabric");
-      const fabric = fabricModule.fabric || fabricModule.default || fabricModule;
+      const fabric =
+        fabricModule.fabric ||
+        fabricModule.default ||
+        fabricModule;
 
-      // Destruye el canvas anterior si existe
       if (fabricCanvasRef.current) {
         fabricCanvasRef.current.dispose();
-        fabricCanvasRef.current = null;
       }
 
-      const canvas = new fabric.Canvas(canvasElement, {
-        backgroundColor: "#f5f5f5",
+      const canvas = new fabric.Canvas(canvasEl, {
+        backgroundColor: "#fafafa",
         selection: false,
       });
       fabricCanvasRef.current = canvas;
 
-      const width = canvas.getWidth();
-      const height = canvas.getHeight();
+      const w = canvas.getWidth();
+      const h = canvas.getHeight();
 
-      // Helper para cargar imagen como promise
-      const loadImage = (url) =>
+      const load = (url) =>
         new Promise((resolve, reject) => {
           fabric.Image.fromURL(
             url,
-            (img) => {
-              if (!img) {
-                reject(new Error("No se pudo cargar la imagen: " + url));
-              } else {
-                resolve(img);
-              }
-            },
+            (img) => (img ? resolve(img) : reject(url)),
             { crossOrigin: "anonymous" }
           );
         });
 
       try {
-        // 1) Maceta (base)
-        const macetaImg = await loadImage(macetaActual.img);
-        const macetaScale =
-          (width * 0.7) / macetaImg.width; // maceta ocupa 70% del ancho
-        macetaImg.set({
-          left: width / 2,
-          top: height * 0.6,
+        const maceta = await load(macetaActual.img);
+        const sMaceta = (w * 0.7) / maceta.width;
+        maceta.set({
+          left: w / 2,
+          top: h * 0.62,
           originX: "center",
           originY: "center",
           selectable: false,
         });
-        macetaImg.scale(macetaScale);
-        canvas.add(macetaImg);
+        maceta.scale(sMaceta);
+        canvas.add(maceta);
 
-        // 2) Planta (encima de la maceta)
-        const plantaImg = await loadImage(plantaActual.img);
-        const plantaScale =
-          (width * 0.6) / plantaImg.width; // un poco más pequeña
-        plantaImg.set({
-          left: width / 2,
-          top: height * 0.25,
+        const planta = await load(plantaActual.img);
+        const sPlanta = (w * 0.6) / planta.width;
+        planta.set({
+          left: w / 2,
+          top: h * 0.22,
           originX: "center",
           originY: "center",
           selectable: false,
         });
-        plantaImg.scale(plantaScale);
-        canvas.add(plantaImg);
+        planta.scale(sPlanta);
+        canvas.add(planta);
 
-        // 3) Diseño IA (superpuesto en el frente de la maceta)
         if (designUrl) {
-          const designImg = await loadImage(designUrl);
+          const diseño = await load(designUrl);
+          const sDiseño = (w * 0.45) / diseño.width;
 
-          // Lo colocamos centrado sobre la "panza" de la maceta
-          const designScale =
-            (width * 0.45) / designImg.width; // 45% del ancho
-          designImg.set({
-            left: width / 2,
-            top: height * 0.62,
+          diseño.set({
+            left: w / 2,
+            top: h * 0.63,
             originX: "center",
             originY: "center",
             selectable: true,
-            hasBorders: true,
-            hasControls: true,
           });
-          designImg.scale(designScale);
-          canvas.add(designImg);
-          designObjectRef.current = designImg;
-          canvas.setActiveObject(designImg);
+
+          diseño.scale(sDiseño);
+          canvas.add(diseño);
+          designObjectRef.current = diseño;
+          canvas.setActiveObject(diseño);
         } else {
           designObjectRef.current = null;
         }
 
         canvas.renderAll();
-      } catch (error) {
-        console.error("Error al cargar imágenes en el canvas:", error);
+      } catch (err) {
+        console.error("Error cargando imágenes:", err);
       }
     }
 
-    if (!isCancelled) {
-      setupCanvas();
-    }
+    if (!disposed) init();
 
     return () => {
-      isCancelled = true;
+      disposed = true;
     };
-  }, [macetaIndex, plantaIndex, designUrl, macetaActual.img, plantaActual.img]);
-
-  // ----------- SIMULACIÓN DE GENERACIÓN IA -----------
+  }, [macetaIndex, plantaIndex, designUrl]);
 
   const handleGenerateIA = async () => {
     if (!prompt.trim()) {
-      alert("Escribe una descripción para el diseño primero.");
+      alert("Escribe algo primero.");
       return;
     }
 
     setIsGenerating(true);
 
-    // Por ahora usamos una imagen dummy en /public
-    // Coloca por ejemplo: /public/demo-design.png
-    // Luego conectamos esto a tu API real de OpenAI.
     setTimeout(() => {
-      setDesignUrl("/demo-design.png");
+      setDesignUrl("/demo-design.png"); // imagen dummy
       setIsGenerating(false);
-    }, 1500);
+    }, 1200);
   };
 
-  // ----------- EXPORTS -----------
-
-  const downloadDataUrl = (dataUrl, filename) => {
+  const downloadFile = (dataUrl, filename) => {
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = filename;
     a.click();
   };
 
-  const handleExportPNGComposicion = () => {
+  const exportPNGComplete = () => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
     const dataUrl = canvas.toDataURL({
       format: "png",
-      multiplier: 2, // más resolución
+      multiplier: 2,
     });
-    downloadDataUrl(dataUrl, "dobo-composicion.png");
+    downloadFile(dataUrl, "dobo-completo.png");
   };
 
-  const handleExportPNGDiseno = () => {
-    const design = designObjectRef.current;
-    if (!design) {
-      alert("No hay diseño IA aplicado aún.");
+  const exportPNGDesign = async () => {
+    const diseño = designObjectRef.current;
+    if (!diseño) {
+      alert("No hay diseño IA aún.");
       return;
     }
 
-    // Creamos un canvas temporal solo con el diseño
-    import("fabric").then((fabricModule) => {
-      const fabric =
-        fabricModule.fabric || fabricModule.default || fabricModule;
+    const fabricModule = await import("fabric");
+    const fabric =
+      fabricModule.fabric || fabricModule.default || fabricModule;
 
-      const tempCanvas = new fabric.Canvas(document.createElement("canvas"), {
-        width: design.getScaledWidth(),
-        height: design.getScaledHeight(),
-      });
+    const sw = diseño.getScaledWidth();
+    const sh = diseño.getScaledHeight();
 
-      const cloned = fabric.util.object.clone(design);
-      cloned.set({
-        left: tempCanvas.getWidth() / 2,
-        top: tempCanvas.getHeight() / 2,
-        originX: "center",
-        originY: "center",
-      });
-      tempCanvas.add(cloned);
-      tempCanvas.renderAll();
-
-      const dataUrl = tempCanvas.toDataURL({
-        format: "png",
-        multiplier: 2,
-      });
-      downloadDataUrl(dataUrl, "dobo-diseno-ia.png");
-      tempCanvas.dispose();
+    const tmp = new fabric.Canvas(document.createElement("canvas"), {
+      width: sw,
+      height: sh,
     });
+
+    const clone = fabric.util.object.clone(diseño);
+    clone.set({
+      left: sw / 2,
+      top: sh / 2,
+      originX: "center",
+      originY: "center",
+    });
+    tmp.add(clone);
+    tmp.renderAll();
+
+    const dataUrl = tmp.toDataURL({
+      format: "png",
+      multiplier: 2,
+    });
+
+    downloadFile(dataUrl, "dobo-design-ia.png");
+    tmp.dispose();
   };
 
-  const handleExportSVGDiseno = () => {
-    const design = designObjectRef.current;
-    if (!design) {
-      alert("No hay diseño IA aplicado aún.");
+  const exportSVGDesign = () => {
+    const diseño = designObjectRef.current;
+    if (!diseño) {
+      alert("No hay diseño IA aún.");
       return;
     }
 
-    const svgString = design.toSVG();
-    const blob = new Blob([svgString], { type: "image/svg+xml" });
+    const svg = diseño.toSVG();
+    const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement("a");
     a.href = url;
-    a.download = "dobo-diseno-ia.svg";
+    a.download = "dobo-design-ia.svg";
     a.click();
-
     URL.revokeObjectURL(url);
   };
 
-  // ----------- RENDER -----------
-
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        padding: 20,
-        display: "flex",
-        flexDirection: "column",
-        gap: 20,
-        alignItems: "center",
-        boxSizing: "border-box",
-      }}
-    >
+    <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
       <h2 style={{ textAlign: "center" }}>DOBO – Prototipo IA</h2>
 
-      {/* CONTENEDOR PRINCIPAL RESPONSIVO */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 20,
-          width: "100%",
-          maxWidth: 1100,
-        }}
-      >
-        {/* Carruseles arriba (stack en mobile) */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            gap: 20,
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-          }}
-        >
-          {/* CARRUSEL MACETA */}
-          <div
-            style={{
-              flex: "1 1 250px",
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 12,
-            }}
-          >
-            <h4 style={{ marginTop: 0, textAlign: "center" }}>Maceta</h4>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-              }}
-            >
-              <button onClick={prevMaceta}>◀</button>
-              <div style={{ textAlign: "center" }}>
-                <img
-                  src={macetaActual.img}
-                  alt={macetaActual.name}
-                  style={{
-                    width: 100,
-                    height: 100,
-                    objectFit: "contain",
-                    display: "block",
-                    margin: "0 auto",
-                  }}
-                />
-                <small>{macetaActual.name}</small>
-              </div>
-              <button onClick={nextMaceta}>▶</button>
-            </div>
-          </div>
-
-          {/* CARRUSEL PLANTA */}
-          <div
-            style={{
-              flex: "1 1 250px",
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 12,
-            }}
-          >
-            <h4 style={{ marginTop: 0, textAlign: "center" }}>Planta</h4>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-              }}
-            >
-              <button onClick={prevPlanta}>◀</button>
-              <div style={{ textAlign: "center" }}>
-                <img
-                  src={plantaActual.img}
-                  alt={plantaActual.name}
-                  style={{
-                    width: 100,
-                    height: 100,
-                    objectFit: "contain",
-                    display: "block",
-                    margin: "0 auto",
-                  }}
-                />
-                <small>{plantaActual.name}</small>
-              </div>
-              <button onClick={nextPlanta}>▶</button>
-            </div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 300px", border: "1px solid #ccc", padding: 10, borderRadius: 12 }}>
+          <h4 style={{ textAlign: "center" }}>Maceta</h4>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+            <button onClick={prevMaceta}>◀</button>
+            <img src={macetaActual.img} style={{ width: 100 }} />
+            <button onClick={nextMaceta}>▶</button>
           </div>
         </div>
 
-        {/* Centro: Canvas + Prompt IA */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 20,
-          }}
-        >
-          {/* Lienzo de composición */}
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 10,
-              display: "flex",
-              justifyContent: "center",
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              width={600}
-              height={600}
-              style={{
-                width: "100%",
-                maxWidth: 600,
-                height: "auto",
-                background: "#fafafa",
-                borderRadius: 12,
-              }}
-            />
-          </div>
-
-          {/* Prompt estilo chat + botón IA */}
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 12,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            <label style={{ fontSize: 14, opacity: 0.8 }}>
-              Describe el diseño que quieres generar:
-            </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={
-                "Ej: Diseño para el Día de la Madre para Juanita, flores suaves, estilo acuarela."
-              }
-              style={{
-                width: "100%",
-                minHeight: 80,
-                padding: 10,
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                resize: "vertical",
-              }}
-            />
-            <button
-              onClick={handleGenerateIA}
-              disabled={isGenerating}
-              style={{
-                alignSelf: "flex-end",
-                padding: "8px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: isGenerating ? "#999" : "#222",
-                color: "white",
-                cursor: isGenerating ? "default" : "pointer",
-              }}
-            >
-              {isGenerating ? "Generando diseño..." : "Generar diseño con IA"}
-            </button>
+        <div style={{ flex: "1 1 300px", border: "1px solid #ccc", padding: 10, borderRadius: 12 }}>
+          <h4 style={{ textAlign: "center" }}>Planta</h4>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+            <button onClick={prevPlanta}>◀</button>
+            <img src={plantaActual.img} style={{ width: 100 }} />
+            <button onClick={nextPlanta}>▶</button>
           </div>
         </div>
+      </div>
 
-        {/* Exportaciones */}
-        <div
+      <div style={{ marginTop: 30, textAlign: "center" }}>
+        <canvas
+          ref={canvasRef}
+          width={600}
+          height={600}
           style={{
-            border: "1px solid #ddd",
+            width: "100%",
+            maxWidth: 600,
+            background: "#fafafa",
             borderRadius: 12,
-            padding: 12,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 10,
-            justifyContent: "center",
+          }}
+        ></canvas>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Describe el diseño que quieres..."
+          style={{
+            width: "100%",
+            padding: 10,
+            minHeight: 80,
+            borderRadius: 8,
+            border: "1px solid #ccc",
+          }}
+        ></textarea>
+        <button
+          onClick={handleGenerateIA}
+          disabled={isGenerating}
+          style={{
+            marginTop: 10,
+            padding: "8px 20px",
+            background: "#222",
+            color: "white",
+            borderRadius: 8,
+            cursor: "pointer",
           }}
         >
-          <button onClick={handleExportPNGComposicion}>
-            Exportar PNG composición completa
-          </button>
-          <button on
+          {isGenerating ? "Generando..." : "Generar diseño IA"}
+        </button>
+      </div>
+
+      <div style={{ marginTop: 30, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button onClick={exportPNGComplete}>Exportar PNG composición</button>
+        <button onClick={exportPNGDesign}>Exportar PNG diseño IA</button>
+        <button onClick={exportSVGDesign}>Exportar SVG diseño IA</button>
+      </div>
+    </div>
+  );
+}
