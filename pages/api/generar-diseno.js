@@ -1,3 +1,5 @@
+import OpenAI from "openai";
+
 export default async function handler(req, res) {
   console.log("🔵 API generar-diseno ejecutada");
   console.log("BODY RECIBIDO:", req.body);
@@ -11,21 +13,22 @@ export default async function handler(req, res) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      console.log("❌ OPENAI_API_KEY no configurada en Vercel");
+      console.log("❌ OPENAI_API_KEY no configurada");
       return res.status(500).json({ error: "OPENAI_API_KEY no configurada." });
     }
 
-    const { OpenAI } = require("openai");
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
     const fullPrompt = `
-      Genera un diseño artístico decorativo (PNG con fondo transparente)
-      para una maceta llamada "${macetaName}".
-      El usuario quiere: "${prompt}".
-      No generes macetas ni plantas. Solo el diseño.
-      Transparente. 1024x1024.
+      Genera un diseño artístico decorativo con fondo transparente (PNG),
+      para colocar sobre una maceta llamada "${macetaName}".
+      El usuario pide: "${prompt}".
+      No generes la maceta ni la planta.
+      Solo el diseño.
+      Estilo elegante, limpio y apto para impresión física.
+      Formato final: PNG 1024x1024 con transparencia.
     `;
 
     console.log("🔵 Enviando a OpenAI...");
@@ -34,8 +37,8 @@ export default async function handler(req, res) {
       model: "gpt-image-1",
       prompt: fullPrompt,
       size: "1024x1024",
-      quality: "high",
-      response_format: "b64_json",
+      // ESTA ES LA CLAVE: quitar "response_format"
+      // el modelo ahora siempre devuelve base64
     });
 
     console.log("🟢 Respuesta recibida de OpenAI");
@@ -46,6 +49,7 @@ export default async function handler(req, res) {
       ok: true,
       imageBase64,
     });
+
   } catch (error) {
     console.log("❌ ERROR OPENAI:", error);
     return res.status(500).json({
