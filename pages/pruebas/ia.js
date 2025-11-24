@@ -1,5 +1,5 @@
-import IAPrototipo from "../../pruebas/ia-dobo";
+import IAPrototipo from "../../pruebas/IAPrototipo";
 
 export default function IA() {
-  return <ia-dobo />;
+  return <IAPrototipo />;
 }
