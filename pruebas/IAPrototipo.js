@@ -2,18 +2,19 @@ import { useState } from "react";
 
 export default function IAPrototipo() {
   // CARRUSELES DE PRUEBA (usa tus imágenes reales si quieres)
-  const macetas = [
-    { id: 1, name: "Maceta 01", img: "/maceta1.png" },
-    { id: 2, name: "Maceta 02", img: "/maceta2.png" },
-    { id: 3, name: "Maceta 03", img: "/maceta3.png" },
-  ];
-
+ 
   const plantas = [
     { id: 1, name: "Planta 01", img: "/planta1.png" },
     { id: 2, name: "Planta 02", img: "/planta2.png" },
     { id: 3, name: "Planta 03", img: "/planta3.png" },
   ];
-
+  
+ const macetas = [
+    { id: 1, name: "Maceta 01", img: "/maceta1.png" },
+    { id: 2, name: "Maceta 02", img: "/maceta2.png" },
+    { id: 3, name: "Maceta 03", img: "/maceta3.png" },
+  ];
+  
   const [macetaIndex, setMacetaIndex] = useState(0);
   const [plantaIndex, setPlantaIndex] = useState(0);
   const [prompt, setPrompt] = useState("");
