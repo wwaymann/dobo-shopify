@@ -30,25 +30,6 @@ const gidToNum = (id) => {
   return s.includes("gid://") ? s.split("/").pop() : s;
 };
 
-async function compressDataUrl(dataUrl, maxW = 900, quality = 0.72) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(1, maxW / img.width);
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.src = dataUrl;
-  });
-}
-
-
 // Sube dataURL/blob/http a https (Cloudinary) mediante tu API local
 async function ensureHttpsUrl(u, namePrefix = "img") {
   try {
@@ -56,15 +37,10 @@ async function ensureHttpsUrl(u, namePrefix = "img") {
     if (!s) return "";
     if (/^https:\/\//i.test(s)) return s;
     if (/^data:|^blob:|^http:\/\//i.test(s)) {
-      const compressed = await compressDataUrl(s, 900, 0.72);
       const r = await fetch("/api/upload-design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({
-  dataUrl: compressed,
-  filename: `${namePrefix}-${Date.now()}.jpg`
-})
-
+        body: JSON.stringify({ dataUrl: s, filename: `${namePrefix}-${Date.now()}.png` })
       });
       const j = await r.json().catch(() => ({}));
       return j?.url || "";
@@ -1052,24 +1028,14 @@ useEffect(() => {
       });
     };
     const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
-   let png = canvas.toDataURL("image/png");
-png = await compressDataUrl(png, 900, 0.72);
-return png;
-
+    return canvas.toDataURL("image/png");
   }
   async function prepareDesignAttributes() {
     let previewUrl = "";
     try {
-    const dataUrl = await captureDesignPreview();
-if (dataUrl) {
-  const compressed = await compressDataUrl(dataUrl, 900, 0.72);
-
-  const resp = await fetch("/api/upload-design", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataUrl: compressed })
-  });
-
+      const dataUrl = await captureDesignPreview();
+      if (dataUrl) {
+        const resp = await fetch("/api/upload-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) });
         const json = await resp.json();
         if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
         previewUrl = json.url || "";
