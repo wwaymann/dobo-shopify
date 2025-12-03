@@ -1875,116 +1875,140 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   </button>
 
 
-  {/* NODO ESCALADO */}
+{/* NODO ESCALADO */}
+<div
+  ref={stageRef}
+  data-capture-stage="1"
+  style={{
+    height: "100%",
+    "--zoom": 0.75,
+    transform: "scale(var(--zoom))",
+    transformOrigin: "50% 70%",
+    position: "relative",
+    width: "100%",
+    willChange: "transform",
+    backfaceVisibility: "hidden",
+    touchAction: "pan-y",
+    userSelect: "none",
+  }}
+>
+
+  {/* CONTENEDOR DE COMPOSICIÓN – controla pivotes reales */}
   <div
-    ref={stageRef}
-    data-capture-stage="1"
-    className="d-flex justify-content-center align-items-center"
+    id="compositionContainer"
     style={{
-      height: "100%",
-      "--zoom": 0.75,
-      transform: "scale(var(--zoom))",
-      transformOrigin: "50% 70%",
-      position: "relative",
+      position: "absolute",
+      left: "50%",
+      transform: "translateX(-50%)",
       width: "100%",
-      willChange: "transform",
-      backfaceVisibility: "hidden",
-      touchAction: "pan-y",
-      userSelect: "none",
+      height: "100%",
+      top: 0,
+      pointerEvents: "none", // deja que carruseles manejen eventos
     }}
   >
 
-
     {/* MACETA – pivote arriba */}
     <div
-      className={styles.carouselContainer}
-      ref={potScrollRef}
-      data-capture="pot-container"
       style={{
-        zIndex: 2,
         position: "absolute",
-        bottom: "0px",
+        top: "52%",               // ← ajusta fino, pivote arriba real
         left: "50%",
         transform: "translateX(-50%)",
         transformOrigin: "top center",
-        touchAction: "pan-y",
-        userSelect: "none",
+        pointerEvents: "auto",
+        zIndex: 2,
       }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(
-          e,
-          potDownRef,
-          createHandlers(pots, setSelectedPotIndex)
-        )
-      }
-      {...potSwipeEvents}
     >
       <div
-        className={styles.carouselTrack}
-        data-capture="pot-track"
+        className={styles.carouselContainer}
+        ref={potScrollRef}
+        data-capture="pot-container"
         style={{
-          transform: `translateX(-${selectedPotIndex * 100}%)`,
+          touchAction: "pan-y",
+          userSelect: "none",
         }}
+        onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+        onPointerUpCapture={(e) =>
+          handlePointerUpCap(
+            e,
+            potDownRef,
+            createHandlers(pots, setSelectedPotIndex)
+          )
+        }
+        {...potSwipeEvents}
       >
-        {pots.map((product, idx) => {
-          const vImg = idx === selectedPotIndex
-            ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
-            : null;
-          const imageUrl = vImg || product.image;
+        <div
+          className={styles.carouselTrack}
+          data-capture="pot-track"
+          style={{
+            transform: `translateX(-${selectedPotIndex * 100}%)`,
+          }}
+        >
+          {pots.map((product, idx) => {
+            const vImg =
+              idx === selectedPotIndex
+                ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
+                : null;
+            const imageUrl = vImg || product.image;
 
-          return (
-            <div key={product.id} className={styles.carouselItem}>
-              <img src={imageUrl} className={styles.carouselImage} />
-            </div>
-          );
-        })}
+            return (
+              <div key={product.id} className={styles.carouselItem}>
+                <img src={imageUrl} className={styles.carouselImage} />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
 
 
-
     {/* PLANTA – pivote abajo */}
     <div
-      className={styles.carouselContainer}
-      ref={plantScrollRef}
-      data-capture="plant-container"
       style={{
-        zIndex: 3,
         position: "absolute",
-        bottom: "360px",
+        bottom: "52%",            // ← ajusta fino, pivote abajo real
         left: "50%",
         transform: "translateX(-50%)",
         transformOrigin: "bottom center",
-        height: "530px",
-        touchAction: "pan-y",
-        userSelect: "none",
+        pointerEvents: "auto",
+        zIndex: 3,
       }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(
-          e,
-          plantDownRef,
-          createHandlers(plants, setSelectedPlantIndex)
-        )
-      }
-      {...plantSwipeEvents}
     >
       <div
-        className={styles.carouselTrack}
-        data-capture="plant-track"
+        className={styles.carouselContainer}
+        ref={plantScrollRef}
+        data-capture="plant-container"
         style={{
-          transform: `translateX(-${selectedPlantIndex * 100}%)`,
+          height: "530px",
+          touchAction: "pan-y",
+          userSelect: "none",
         }}
+        onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+        onPointerUpCapture={(e) =>
+          handlePointerUpCap(
+            e,
+            plantDownRef,
+            createHandlers(plants, setSelectedPlantIndex)
+          )
+        }
+        {...plantSwipeEvents}
       >
-        {plants.map((product) => (
-          <div key={product.id} className={styles.carouselItem}>
-            <img
-              src={product.image}
-              className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
-            />
-          </div>
-        ))}
+        <div
+          className={styles.carouselTrack}
+          data-capture="plant-track"
+          style={{
+            transform: `translateX(-${selectedPlantIndex * 100}%)`,
+          }}
+        >
+          {plants.map((product) => (
+            <div key={product.id} className={styles.carouselItem}>
+              <img
+                src={product.image}
+                className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
 
