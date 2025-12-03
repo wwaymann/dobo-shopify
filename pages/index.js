@@ -1756,321 +1756,387 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
 // === /DOBO loader ===
 
-return (
-  <div
-    className={`container mt-lg-3 mt-0 ${styles.container}`}
-    style={{ paddingBottom: "150px" }}
+
+  
+  return (
+<div className={`container mt-lg-3 mt-0 ${styles.container}`} style={{ paddingBottom: "150px" }}>
+
+
+
+      <div className="row justify-content-center align-items-start gx-5 gy-4">
+        <div className="col-lg-5 col-md-8 col-12 text-center">
+          {/* Selector de tamaño */}
+          <div className="btn-group mb-3" role="group" aria-label="Tamaño">
+         {["Pequeño", "Mediano", "Grande"].map((s) => (
+  <button
+    key={s}
+    className={`btn btn-sm ${activeSize === s ? "btn-dark" : "btn-outline-secondary"}`}
+    onClick={() => {
+      userPickedSizeRef.current = true;        // el usuario eligió
+      appliedMetaOnceRef.current = true;       // no volver a aplicar meta luego
+      setActiveSize(s);                        // dispara fetch por tamaño
+    }}
   >
+    {s}
+  </button>
+))}
 
-    <div className="row justify-content-center align-items-start gx-5 gy-4">
 
-      {/* COLUMNA IZQUIERDA — ESCENA */}
-      <div className="col-lg-5 col-md-8 col-12 text-center">
+          </div>
 
-        {/* Selector de tamaño */}
-        <div className="btn-group mb-3" role="group" aria-label="Tamaño">
-          {["Pequeño", "Mediano", "Grande"].map((s) => (
-            <button
-              key={s}
-              className={`btn btn-sm ${
-                activeSize === s ? "btn-dark" : "btn-outline-secondary"
-              }`}
-              onClick={() => {
-                userPickedSizeRef.current = true;
-                appliedMetaOnceRef.current = true;
-                setActiveSize(s);
-              }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
-        {/* Escena */}
-        <div
-          className="position-relative"
-          ref={sceneWrapRef}
-          style={{
-            width: "100%",
-            maxWidth: "500px",
-            aspectRatio: "500 / 650",
-            backgroundImage: "url('/images/fondo-dobo.jpg')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-            borderRadius: "20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-            touchAction: "pan-y",
-            userSelect: "none",
-          }}
-        >
-          {/* Dots y flechas PLANTAS */}
-          <IndicatorDots
-            count={plants.length}
-            current={selectedPlantIndex}
-            onSelect={(i) =>
-              setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))
-            }
-            position="top"
-          />
-
-          <button
-            className={`${styles.chev} ${styles.chevTopLeft}`}
-            aria-label="Anterior planta"
-            onClick={() =>
-              setSelectedPlantIndex((p) => (p > 0 ? p - 1 : plants.length - 1))
-            }
-          >
-            <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-
-          <button
-            className={`${styles.chev} ${styles.chevTopRight}`}
-            aria-label="Siguiente planta"
-            onClick={() =>
-              setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
-            }
-          >
-            <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </button>
-
-          {/* Dots y flechas MACETAS */}
-          <IndicatorDots
-            count={pots.length}
-            current={selectedPotIndex}
-            onSelect={(i) =>
-              setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))
-            }
-            position="bottom"
-          />
-
-          <button
-            className={`${styles.chev} ${styles.chevBottomLeft}`}
-            aria-label="Anterior maceta"
-            onClick={() =>
-              setSelectedPotIndex((p) => (p > 0 ? p - 1 : pots.length - 1))
-            }
-          >
-            <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-
-          <button
-            className={`${styles.chev} ${styles.chevBottomRight}`}
-            aria-label="Siguiente maceta"
-            onClick={() =>
-              setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
-            }
-          >
-            <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </button>
-
-          {/* NODO ESCALADO */}
+          {/* Escena */}
           <div
-            ref={stageRef}
-            data-capture-stage="1"
+            className="position-relative"
+            ref={sceneWrapRef}
             style={{
-              height: "100%",
-              "--zoom": 0.75,
-              transform: "scale(var(--zoom))",
-              transformOrigin: "50% 70%",
-              position: "relative",
-              width: "100%",
-              willChange: "transform",
-              backfaceVisibility: "hidden",
+              width: "500px",
+              height: "650px",
+              width: "100%", maxWidth: "500px",
+              aspectRatio: "500 / 650",
+              backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              border: "3px dashed #6c757d",
+              borderRadius: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
               touchAction: "pan-y",
               userSelect: "none",
             }}
           >
-            {/* CONTENEDOR NEUTRAL */}
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                pointerEvents: "none",
-              }}
+            {/* Dots y flechas PLANTAS */}
+            <IndicatorDots
+              count={plants.length}
+              current={selectedPlantIndex}
+              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              position="top"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevTopLeft}`}
+              aria-label="Anterior"
+              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
             >
-              {/* MACETA */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: "55%",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  transformOrigin: "top center",
-                  pointerEvents: "auto",
-                  zIndex: 2,
-                }}
-              >
-                <div
-                  className={styles.carouselContainer}
-                  ref={potScrollRef}
-                  data-capture="pot-container"
-                  style={{ touchAction: "pan-y", userSelect: "none" }}
-                  onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-                  onPointerUpCapture={(e) =>
-                    handlePointerUpCap(
-                      e,
-                      potDownRef,
-                      createHandlers(pots, setSelectedPotIndex)
-                    )
-                  }
-                  onContextMenu={(e) => e.preventDefault()}
-                  {...potSwipeEvents}
-                >
-                  <div
-                    className={styles.carouselTrack}
-                    data-capture="pot-track"
-                    style={{
-                      transform: `translateX(-${selectedPotIndex * 100}%)`,
-                    }}
-                  >
-                    {pots.map((product, idx) => {
-                      const vImg =
-                        idx === selectedPotIndex
-                          ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
-                          : null;
-                      const imageUrl = vImg || product.image;
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevTopRight}`}
+              aria-label="Siguiente"
+              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
 
+            {/* Dots y flechas MACETAS */}
+            <IndicatorDots
+              count={pots.length}
+              current={selectedPotIndex}
+              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              position="bottom"
+            />
+            <button
+              className={`${styles.chev} ${styles.chevBottomLeft}`}
+              aria-label="Anterior"
+              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button
+              className={`${styles.chev} ${styles.chevBottomRight}`}
+              aria-label="Siguiente"
+              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
+           {/* Nodo escalado con carruseles */}
+<div
+  ref={stageRef}
+  data-capture-stage="1"
+  style={{
+    position: "relative",
+    height: "100%",
+    width: "100%",
+    "--zoom": 0.75,
+    transform: "scale(var(--zoom))",
+    transformOrigin: "50% 70%",
+    willChange: "transform",
+    backfaceVisibility: "hidden",
+    touchAction: "pan-y",
+    userSelect: "none",
+  }}
+>
+
+  {/* MACETA — pivote arriba */}
+  <div
+    className={styles.carouselContainer}
+    ref={potScrollRef}
+    data-capture="pot-container"
+    style={{
+      position: "absolute",
+      bottom: "0px",                     // pegada abajo
+      left: "50%",
+      transform: "translateX(-50%)",
+      transformOrigin: "top center",     // ← pivote corregido
+      zIndex: 2,
+      touchAction: "pan-y",
+      userSelect: "none",
+    }}
+    onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+    onPointerUpCapture={(e) =>
+      handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
+    }
+    onContextMenu={(e) => e.preventDefault()}
+    {...potSwipeEvents}
+  >
+    <div
+      className={styles.carouselTrack}
+      data-capture="pot-track"
+      style={{
+        transform: `translateX(-${selectedPotIndex * 100}%)`,
+      }}
+    >
+      {pots.map((product, idx) => {
+        const isSel = idx === selectedPotIndex;
+        const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
+        const imageUrl = vImg || product.image;
+        return (
+          <div key={product.id} className={styles.carouselItem}>
+            <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+          </div>
+        );
+      })}
+    </div>
+  </div>
+
+
+  {/* PLANTA — pivote abajo */}
+  <div
+    className={styles.carouselContainer}
+    ref={plantScrollRef}
+    data-capture="plant-container"
+    style={{
+      position: "absolute",
+      bottom: "300px",                   // la altura que tú ya usabas
+      left: "50%",
+      transform: "translateX(-50%)",
+      transformOrigin: "bottom center",  // ← pivote corregido
+      height: "530px",
+      zIndex: 3,
+      touchAction: "pan-y",
+      userSelect: "none",
+    }}
+    onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+    onPointerUpCapture={(e) =>
+      handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
+    }
+    onContextMenu={(e) => e.preventDefault()}
+    {...plantSwipeEvents}
+  >
+    <div
+      className={styles.carouselTrack}
+      data-capture="plant-track"
+      style={{
+        transform: `translateX(-${selectedPlantIndex * 100}%)`,
+      }}
+    >
+      {plants.map((product) => (
+        <div key={product.id} className={styles.carouselItem}>
+          <img
+            src={product.image}
+            alt={product.title}
+            className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+          />
+        </div>
+      ))}
+    </div>
+  </div>
+
+</div>
+
+{/* Dock menú DOBO debajo de carruseles */}
+<div id="dobo-menu-dock" className={styles.menuDock} />
+
+       
+        </div>
+
+        {/* Overlay de edición (restaurado) */}
+        <CustomizationOverlay mode="both" stageRef={stageRef} anchorRef={potScrollRef} containerRef={sceneWrapRef} docked={false} />
+
+        {/* Panel derecho */}
+        <div className="col-lg-5 col-md-8 col-12">
+          {pots.length > 0 && plants.length > 0 && (
+            <div className="text-center">
+              <div className="d-flex justify-content-center align-items-baseline gap-3 mb-4" style={{ marginTop: 20 }}>
+                {totalBase > totalNow && (
+                  <p style={{ marginTop: 8, fontSize: "1.2rem", color: "#6c757d" }}>
+                    <span style={{ textDecoration: "line-through" }}>{money(totalBase, baseCode)}</span>
+                  </p>
+                )}
+                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>{money(totalNow, baseCode)}</span>
+              </div>
+
+              {/* SOLO color */}
+              {colorOptions.length > 0 && (
+                <div className="mb-4">
+                  <h5>Color</h5>
+                  <div className="d-flex justify-content-center gap-3 flex-wrap">
+                    {colorOptions.map((color, index) => {
+                      const bg = resolveColor(color);
+                      const isWhite = bg.toLowerCase() === "#ffffff" || bg.toLowerCase() === "#fff";
+                      const isSelected = selectedColor === color;
                       return (
-                        <div key={product.id} className={styles.carouselItem}>
-                          <img
-                            src={imageUrl}
-                            alt={product.title}
-                            className={styles.carouselImage}
-                          />
-                        </div>
+                        <div
+                          key={index}
+                          onClick={() => setSelectedColor(color)}
+                          title={color}
+                          aria-label={color}
+                          aria-selected={isSelected}
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "50%",
+                            backgroundColor: bg,              // <- FIX: usar color real
+                            border: isSelected ? "3px solid #000" : (isWhite ? "1px solid #999" : "1px solid #ccc"),
+                            boxShadow: isSelected ? "0 0 0 3px rgba(0,0,0,0.15) inset" : "none",
+                            cursor: "pointer",
+                            transition: "transform .12s ease",
+                          }}
+                        />
                       );
                     })}
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* PLANTA */}
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: "55%",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  transformOrigin: "bottom center",
-                  pointerEvents: "auto",
-                  zIndex: 3,
-                }}
-              >
-                <div
-                  className={styles.carouselContainer}
-                  ref={plantScrollRef}
-                  data-capture="plant-container"
-                  style={{
-                    height: "530px",
-                    touchAction: "pan-y",
-                    userSelect: "none",
-                  }}
-                  onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-                  onPointerUpCapture={(e) =>
-                    handlePointerUpCap(
-                      e,
-                      plantDownRef,
-                      createHandlers(plants, setSelectedPlantIndex)
-                    )
-                  }
-                  onContextMenu={(e) => e.preventDefault()}
-                  {...plantSwipeEvents}
-                >
-                  <div
-                    className={styles.carouselTrack}
-                    data-capture="plant-track"
-                    style={{
-                      transform: `translateX(-${selectedPlantIndex * 100}%)`,
-                    }}
-                  >
-                    {plants.map((product) => (
-                      <div key={product.id} className={styles.carouselItem}>
-                        <img
-                          src={product.image}
-                          alt={product.title}
-                          className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
-                        />
-                      </div>
-                    ))}
+   {/* Accesorios: bloque ORIGINAL tipo grilla con preview */}
+          {accessories && accessories.length > 0 && (
+            <div className="mb-4 mt-4">
+              <h5>Accesorios</h5>
+              <div className="d-flex justify-content-center gap-3 flex-wrap">
+                {accessories.map((product, index) => {
+                  const img =
+                    product?.image?.src || product?.image ||
+                    (Array.isArray(product?.images) && product.images[0]?.src) ||
+                    "/placeholder.png";
+                  const title = product?.title || product?.name || `Accesorio ${index + 1}`;
+                  const selected = selectedAccessoryIndices.includes(index);
+                  return (
+                    <div
+                      key={product?.id || index}
+                      onClick={(e) => {
+                        setSelectedAccessoryIndices((prev) =>
+                          prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+                        );
+                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                        setAccPreview({
+                          visible: true,
+                          x: cx + 16,
+                          y: cy + 16,
+                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                        });
+                      }}
+                      onMouseEnter={(e) => {
+                        const cx = typeof e?.clientX === "number" ? e.clientX : 0;
+                        const cy = typeof e?.clientY === "number" ? e.clientY : 0;
+                        setAccPreview({
+                          visible: true,
+                          x: cx + 16,
+                          y: cy + 16,
+                          html: buildIframeHTML(img, title, product?.description || product?.body_html || ""),
+                        });
+                      }}
+                      onMouseMove={(e) =>
+                        setAccPreview((p) => (p.visible ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p))
+                      }
+                      onMouseLeave={() => setAccPreview((p) => ({ ...p, visible: false }))}
+                      aria-label={title}
+                      style={{
+                        border: selected ? "3px solid black" : "1px solid #ccc",
+                        borderRadius: "12px",
+                        padding: "6px",
+                        cursor: "zoom-in",
+                        width: "100px",
+                        height: "100px",
+                        overflow: "hidden",
+                        transition: "transform 0.2s ease",
+                      }}
+                    >
+                      <img src={img} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "6px" }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+              {/* Cantidad + botones */}
+              <div className="d-flex flex-column align-items-center mb-5">
+                <div className="mb-3 text-center">
+                  <label className="form-label d-block">Cantidad</label>
+                  <div className="input-group justify-content-center" style={{ maxWidth: 200, margin: "0 auto" }}>
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.max(1, p - 1))}>-</button>
+                    <input
+                      type="number"
+                      className="form-control text-center"
+                      value={quantity}
+                      min="1"
+                      max="1000"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (/^\d*$/.test(val)) {
+                          const n = parseInt(val, 10);
+                          if (!isNaN(n) && n >= 1 && n <= 1000) setQuantity(n);
+                          else if (val === "") setQuantity("");
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const n = parseInt(e.target.value, 10);
+                        if (isNaN(n) || n < 1) setQuantity(1);
+                        else if (n > 1000) setQuantity(1000);
+                      }}
+                    />
+                    <button className="btn btn-outline-secondary" onClick={() => setQuantity((p) => Math.min(1000, p + 1))}>+</button>
                   </div>
                 </div>
+
+                <div className="d-flex gap-3">
+                  <button className="btn btn-outline-dark px-4 py-2" onClick={addToCart}>Añadir al carro</button>
+                  <button className="btn btn-dark px-4 py-2" onClick={buyNow}>Comprar ahora</button>
+                </div>
               </div>
-
-            </div>
-          </div>
-
-          {/* DOCK menú DOBO */}
-          <div id="dobo-menu-dock" className={styles.menuDock} />
-
-        </div>
-
-        {/* Overlay de edición */}
-        <CustomizationOverlay
-          mode="both"
-          stageRef={stageRef}
-          anchorRef={potScrollRef}
-          containerRef={sceneWrapRef}
-          docked={false}
-        />
-
-        {/* Panel derecho */}
-        <div className="col-lg-5 col-md-8 col-12">
-          {/** TODO TU PANEL DERECHO ORIGINAL AQUÍ (ya estaba bien) **/}
-
-          {pots.length > 0 && plants.length > 0 && (
-            <div className="text-center">
-
-              {/* PRECIO */}
-              <div
-                className="d-flex justify-content-center align-items-baseline gap-3 mb-4"
-                style={{ marginTop: 20 }}
-              >
-                {totalBase > totalNow && (
-                  <p
-                    style={{
-                      marginTop: 8,
-                      fontSize: "1.2rem",
-                      color: "#6c757d",
-                    }}
-                  >
-                    <span style={{ textDecoration: "line-through" }}>
-                      {money(totalBase, baseCode)}
-                    </span>
-                  </p>
-                )}
-
-                <span style={{ fontWeight: "bold", fontSize: "3rem" }}>
-                  {money(totalNow, baseCode)}
-                </span>
-              </div>
-
-              {/* Colores */}
-              {/** ... (DEJO TODO ESTO TAL COMO LO TENÍAS, SIN CAMBIO) **/}
-
-              {/* Accesorios */}
-              {/** ... TAMBIÉN IGUAL **/}
-
-              {/* Cantidad y botones */}
-              {/** IGUAL **/}
-
             </div>
           )}
 
           {/* Descripciones */}
-          {/** IGUAL TU BLOQUE ORIGINAL **/}
+          <div className="text-start px-3 mb-4" style={{ maxWidth: 500, margin: "0 auto" }}>
+            <h6><strong>Planta</strong></h6>
+            {(() => {
+              const p = plants[selectedPlantIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+              );
+            })()}
 
+            <h6 className="mt-3"><strong>Maceta</strong></h6>
+            {(() => {
+              const p = pots[selectedPotIndex];
+              const html = p?.descriptionHtml;
+              const d = p?.description;
+              return html ? (
+                <div style={{ fontSize: "1.2rem" }} dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <p style={{ fontSize: "1.2rem" }}>{d || "Descripción no disponible."}</p>
+              );
+            })()}
+          </div>
         </div>
       </div>
 
@@ -2083,25 +2149,12 @@ return (
         onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
       />
 
-      {/* CSS global inline */}
       <style jsx global>{`
-        .pot-carousel--locked {
-          pointer-events: none;
-          user-select: none;
-          -webkit-user-drag: none;
-          touch-action: none;
-          overflow: hidden !important;
-          scrollbar-width: none;
-        }
-        .pot-carousel--locked::-webkit-scrollbar {
-          display: none;
-        }
+        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
+        .pot-carousel--locked::-webkit-scrollbar { display: none; }
       `}</style>
-
     </div>
-  </div>
-);
+  );
 
 }
-
 export default dynamic(() => Promise.resolve(Home), { ssr: false });
