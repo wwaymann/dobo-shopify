@@ -1783,137 +1783,227 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
           </div>
 
-          {/* Escena */}
-          <div
-            className="position-relative"
-            ref={sceneWrapRef}
-            style={{
-              width: "500px",
-              height: "650px",
-              width: "100%", maxWidth: "500px",
-              aspectRatio: "500 / 650",
-              backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              border: "3px dashed #6c757d",
-              borderRadius: "20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-              touchAction: "pan-y",
-              userSelect: "none",
-            }}
-          >
-            {/* Dots y flechas PLANTAS */}
-            <IndicatorDots
-              count={plants.length}
-              current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-              position="top"
-            />
-            <button
-              className={`${styles.chev} ${styles.chevTopLeft}`}
-              aria-label="Anterior"
-              onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : Math.max(plants.length - 1, 0)))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-            <button
-              className={`${styles.chev} ${styles.chevTopRight}`}
-              aria-label="Siguiente"
-              onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
+        {/* Escena */}
+<div
+  className="position-relative"
+  ref={sceneWrapRef}
+  style={{
+    width: "100%",
+    maxWidth: "500px",
+    aspectRatio: "500 / 650",
+    backgroundImage: "url('/images/fondo-dobo.jpg')",
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    borderRadius: "20px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    touchAction: "pan-y",
+    userSelect: "none",
+  }}
+>
 
-            {/* Dots y flechas MACETAS */}
-            <IndicatorDots
-              count={pots.length}
-              current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-              position="bottom"
-            />
-            <button
-              className={`${styles.chev} ${styles.chevBottomLeft}`}
-              aria-label="Anterior"
-              onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : Math.max(pots.length - 1, 0)))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            </button>
-            <button
-              className={`${styles.chev} ${styles.chevBottomRight}`}
-              aria-label="Siguiente"
-              onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
+  {/* Dots y flechas PLANTAS */}
+  <IndicatorDots
+    count={plants.length}
+    current={selectedPlantIndex}
+    onSelect={(i) =>
+      setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))
+    }
+    position="top"
+  />
 
-            {/* Nodo escalado con carruseles */}
-            <div
-              ref={stageRef}
-              data-capture-stage="1"
-              className="d-flex justify-content-center align-items-end"
-              style={{
-                height: "100%",
-                "--zoom": 0.75,
-                transform: "scale(var(--zoom))",
-                transformOrigin: "50% 70%",
-                willChange: "transform",
-                backfaceVisibility: "hidden",
-                touchAction: "pan-y",
-                userSelect: "none",
-              }}
-            >
-              {/* Macetas */}
-              <div
-                className={styles.carouselContainer}
-                ref={potScrollRef}
-                data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...potSwipeEvents}
-              >
-                <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
-                  {pots.map((product, idx) => {
-                    const isSel = idx === selectedPotIndex;
-                    const vImg = isSel ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null : null;
-                    const imageUrl = vImg || product.image;
-                    return (
-                      <div key={product.id} className={styles.carouselItem}>
-                        <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+  <button
+    className={`${styles.chev} ${styles.chevTopLeft}`}
+    aria-label="Anterior"
+    onClick={() =>
+      setSelectedPlantIndex((p) => (p > 0 ? p - 1 : plants.length - 1))
+    }
+  >
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  </button>
 
-              {/* Plantas */}
-              <div
-                className={styles.carouselContainer}
-                ref={plantScrollRef}
-                data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
-                onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-                onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
-                onAuxClick={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                {...plantSwipeEvents}
-              >
-                <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
-                  {plants.map((product) => (
-                    <div key={product.id} className={styles.carouselItem}>
-                      <img src={product.image} alt={product.title} className={`${styles.carouselImage} ${styles.plantImageOverlay}`} />
-                    </div>
-                  ))}
-                </div>
-              </div>
+  <button
+    className={`${styles.chev} ${styles.chevTopRight}`}
+    aria-label="Siguiente"
+    onClick={() =>
+      setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
+    }
+  >
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  </button>
+
+
+  {/* Dots y flechas MACETAS */}
+  <IndicatorDots
+    count={pots.length}
+    current={selectedPotIndex}
+    onSelect={(i) =>
+      setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))
+    }
+    position="bottom"
+  />
+
+  <button
+    className={`${styles.chev} ${styles.chevBottomLeft}`}
+    aria-label="Anterior"
+    onClick={() =>
+      setSelectedPotIndex((p) => (p > 0 ? p - 1 : pots.length - 1))
+    }
+  >
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  </button>
+
+  <button
+    className={`${styles.chev} ${styles.chevBottomRight}`}
+    aria-label="Siguiente"
+    onClick={() =>
+      setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
+    }
+  >
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  </button>
+
+
+  {/* ===========================================
+      NODO ESCALADO (PIVOTES CORREGIDOS)
+      =========================================== */}
+  <div
+    ref={stageRef}
+    data-capture-stage="1"
+    style={{
+      height: "100%",
+      width: "100%",
+      position: "relative",
+      "--zoom": 0.75,
+      transform: "scale(var(--zoom))",
+      transformOrigin: "50% 70%",
+      willChange: "transform",
+      backfaceVisibility: "hidden",
+      touchAction: "pan-y",
+      userSelect: "none",
+    }}
+  >
+
+    {/* === MACETA — PIVOTE ARRIBA === */}
+    <div
+      className={styles.carouselContainer}
+      ref={potScrollRef}
+      data-capture="pot-container"
+      style={{
+        position: "absolute",
+        bottom: "0px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        transformOrigin: "top center",
+        zIndex: 2,
+        touchAction: "pan-y",
+        userSelect: "none",
+      }}
+      onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+      onPointerUpCapture={(e) =>
+        handlePointerUpCap(
+          e,
+          potDownRef,
+          createHandlers(pots, setSelectedPotIndex)
+        )
+      }
+      onAuxClick={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      {...potSwipeEvents}
+    >
+      <div
+        className={styles.carouselTrack}
+        data-capture="pot-track"
+        style={{
+          transform: `translateX(-${selectedPotIndex * 100}%)`,
+          transformOrigin: "top center",
+        }}
+      >
+        {pots.map((product, idx) => {
+          const isSel = idx === selectedPotIndex;
+          const vImg =
+            isSel
+              ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
+              : null;
+          const imageUrl = vImg || product.image;
+
+          return (
+            <div key={product.id} className={styles.carouselItem}>
+              <img
+                src={imageUrl}
+                alt={product.title}
+                className={styles.carouselImage}
+              />
             </div>
+          );
+        })}
+      </div>
+    </div>
+
+
+    {/* === PLANTA — PIVOTE ABAJO === */}
+    <div
+      className={styles.carouselContainer}
+      ref={plantScrollRef}
+      data-capture="plant-container"
+      style={{
+        position: "absolute",
+        bottom: "360px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        transformOrigin: "bottom center",
+        height: "530px",
+        zIndex: 3,
+        touchAction: "pan-y",
+        userSelect: "none",
+      }}
+      onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+      onPointerUpCapture={(e) =>
+        handlePointerUpCap(
+          e,
+          plantDownRef,
+          createHandlers(plants, setSelectedPlantIndex)
+        )
+      }
+      onAuxClick={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      {...plantSwipeEvents}
+    >
+
+      <div
+        className={styles.carouselTrack}
+        data-capture="plant-track"
+        style={{
+          transform: `translateX(-${selectedPlantIndex * 100}%)`,
+          transformOrigin: "bottom center",
+        }}
+      >
+        {plants.map((product) => (
+          <div key={product.id} className={styles.carouselItem}>
+            <img
+              src={product.image}
+              alt={product.title}
+              className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+            />
           </div>
+        ))}
+      </div>
+    </div>
+
+  </div>
+</div>
+
 {/* Dock menú DOBO debajo de carruseles */}
 <div id="dobo-menu-dock" className={styles.menuDock} />
 
