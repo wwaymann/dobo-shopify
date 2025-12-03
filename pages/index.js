@@ -1875,120 +1875,88 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   </button>
 
 
-  {/* NODO ESCALADO */}
-  <div
-    ref={stageRef}
-    data-capture-stage="1"
-    className="d-flex justify-content-center align-items-center"
-    style={{
-      height: "100%",
-      "--zoom": 0.75,
-      transform: "scale(var(--zoom))",
-      transformOrigin: "50% 70%",
-      position: "relative",
-      width: "100%",
-      willChange: "transform",
-      backfaceVisibility: "hidden",
-      touchAction: "pan-y",
-      userSelect: "none",
-    }}
-  >
+ {/* NODO ESCALADO */}
+<div
+  ref={stageRef}
+  data-capture-stage="1"
+  style={{
+    height: "100%",
+    "--zoom": 0.75,
+    transform: "scale(var(--zoom))",
+    transformOrigin: "50% 70%",
+    position: "relative",
+    width: "100%",
+    willChange: "transform",
+    backfaceVisibility: "hidden",
+    touchAction: "pan-y",
+    userSelect: "none",
+  }}
+>
 
-    {/* MACETA – pivote arriba */}
-    <div
-      className={styles.carouselContainer}
-      ref={potScrollRef}
-      data-capture="pot-container"
-      style={{
-        zIndex: 2,
-        position: "absolute",
-        bottom: "0px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        transformOrigin: "top center",
-        touchAction: "pan-y",
-        userSelect: "none",
-      }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(
-          e,
-          potDownRef,
-          createHandlers(pots, setSelectedPotIndex)
-        )
-      }
-      {...potSwipeEvents}
-    >
+  <div className={styles.doboComposition}>
+    
+    {/* MACETA */}
+    <div className={styles.doboPotLayer}>
       <div
-        className={styles.carouselTrack}
-        data-capture="pot-track"
-        style={{
-          transform: `translateX(-${selectedPotIndex * 100}%)`,
-        }}
+        className={styles.carouselContainer}
+        ref={potScrollRef}
+        {...potSwipeEvents}
+        onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+        onPointerUpCapture={(e) =>
+          handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
+        }
       >
-        {pots.map((product, idx) => {
-          const vImg =
-            idx === selectedPotIndex
-              ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
-              : null;
-          const imageUrl = vImg || product.image;
+        <div
+          className={styles.carouselTrack}
+          style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
+        >
+          {pots.map((product, idx) => {
+            const imageUrl =
+              idx === selectedPotIndex
+                ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
+                : product.image;
 
-          return (
-            <div key={product.id} className={styles.carouselItem}>
-              <img src={imageUrl} className={styles.carouselImage} />
-            </div>
-          );
-        })}
+            return (
+              <div key={product.id} className={styles.carouselItem}>
+                <img src={imageUrl} className={styles.carouselImage} />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
 
-
-    {/* PLANTA – pivote abajo */}
-    <div
-      className={styles.carouselContainer}
-      ref={plantScrollRef}
-      data-capture="plant-container"
-      style={{
-        zIndex: 3,
-        position: "absolute",
-        bottom: "360px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        transformOrigin: "bottom center",
-        height: "530px",
-        touchAction: "pan-y",
-        userSelect: "none",
-      }}
-      onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
-      onPointerUpCapture={(e) =>
-        handlePointerUpCap(
-          e,
-          plantDownRef,
-          createHandlers(plants, setSelectedPlantIndex)
-        )
-      }
-      {...plantSwipeEvents}
-    >
+    {/* PLANTA */}
+    <div className={styles.doboPlantLayer}>
       <div
-        className={styles.carouselTrack}
-        data-capture="plant-track"
-        style={{
-          transform: `translateX(-${selectedPlantIndex * 100}%)`,
-        }}
+        className={styles.carouselContainer}
+        ref={plantScrollRef}
+        {...plantSwipeEvents}
+        onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+        onPointerUpCapture={(e) =>
+          handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
+        }
+        style={{ height: "530px" }}
       >
-        {plants.map((product) => (
-          <div key={product.id} className={styles.carouselItem}>
-            <img
-              src={product.image}
-              className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
-            />
-          </div>
-        ))}
+        <div
+          className={styles.carouselTrack}
+          style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
+        >
+          {plants.map((product) => (
+            <div key={product.id} className={styles.carouselItem}>
+              <img
+                src={product.image}
+                className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
 
   </div>
 </div>
+
 
 
 
