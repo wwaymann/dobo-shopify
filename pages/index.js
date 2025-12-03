@@ -687,6 +687,11 @@ useEffect(() => {
   stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
 
+useEffect(() => {
+  setTimeout(() => alignPlantAndPot(), 200);
+}, [plants, pots]);
+
+  
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
 useEffect(() => {
   const shell = mobileShellRef?.current;
