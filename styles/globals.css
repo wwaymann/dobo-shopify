@@ -41,4 +41,16 @@ canvas.upper-canvas {
   pointer-events: none; /* deja pasar los toques al fondo y carruseles */
 }
 
+/* DESACTIVAR centrado forzado */
+.carouselContainer,
+.carouselTrack,
+.carouselItem {
+  align-items: unset !important;
+  justify-content: unset !important;
+}
+
+/* PERMITIR QUE EL PIVOTE FUNCIONE */
+.carouselImage {
+  transform-origin: inherit !important;
+}
 
