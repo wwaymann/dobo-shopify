@@ -1753,6 +1753,10 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     }
   })();
 }, []);
+
+console.log(">> INDEX.JS REAL EJECUTÁNDOSE <<");
+
+  
 // === /DOBO loader ===
 
 
