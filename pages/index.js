@@ -1908,6 +1908,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         bottom: "0px",
         left: "50%",
         transform: "translateX(-50%)",
+        transformOrigin: "top center", 
         touchAction: "pan-y",
         userSelect: "none",
       }}
@@ -1958,6 +1959,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         bottom: "360px",  // ← AJUSTE CLAVE: planta encima de maceta
         left: "50%",
         transform: "translateX(-50%)",
+        transformOrigin: "bottom center",
         height: "530px",
         touchAction: "pan-y",
         userSelect: "none",
