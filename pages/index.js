@@ -1875,7 +1875,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   </button>
 
 
- {/* NODO ESCALADO */}
+{/* NODO ESCALADO */}
 <div
   ref={stageRef}
   data-capture-stage="1"
@@ -1893,32 +1893,66 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   }}
 >
 
-  <div className={styles.doboComposition}>
-    
-    {/* MACETA */}
-    <div className={styles.doboPotLayer}>
+  {/* CONTENEDOR NEUTRAL */}
+  <div
+    className={styles.doboComposition}
+    style={{
+      position: "absolute",
+      inset: 0,
+      pointerEvents: "none"
+    }}
+  >
+
+    {/* CAPA MACETA */}
+    <div
+      className={styles.doboPotLayer}
+      style={{
+        position: "absolute",
+        top: "55%",
+        left: "50%",
+        transform: "translateX(-50%)",
+        transformOrigin: "top center",
+        pointerEvents: "auto",
+        zIndex: 2
+      }}
+    >
       <div
         className={styles.carouselContainer}
         ref={potScrollRef}
-        {...potSwipeEvents}
+        data-capture="pot-container"
+        style={{
+          touchAction: "pan-y",
+          userSelect: "none"
+        }}
         onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
         onPointerUpCapture={(e) =>
           handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))
         }
+        onAuxClick={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+        {...potSwipeEvents}
       >
         <div
           className={styles.carouselTrack}
-          style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}
+          data-capture="pot-track"
+          style={{
+            transform: `translateX(-${selectedPotIndex * 100}%)`
+          }}
         >
           {pots.map((product, idx) => {
-            const imageUrl =
+            const vImg =
               idx === selectedPotIndex
                 ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
-                : product.image;
+                : null;
+            const imageUrl = vImg || product.image;
 
             return (
               <div key={product.id} className={styles.carouselItem}>
-                <img src={imageUrl} className={styles.carouselImage} />
+                <img
+                  src={imageUrl}
+                  alt={product.title}
+                  className={styles.carouselImage}
+                />
               </div>
             );
           })}
@@ -1926,26 +1960,53 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       </div>
     </div>
 
-    {/* PLANTA */}
-    <div className={styles.doboPlantLayer}>
+
+    {/* CAPA PLANTA */}
+    <div
+      className={styles.doboPlantLayer}
+      style={{
+        position: "absolute",
+        bottom: "55%",
+        left: "50%",
+        transform: "translateX(-50%)",
+        transformOrigin: "bottom center",
+        pointerEvents: "auto",
+        zIndex: 3
+      }}
+    >
       <div
         className={styles.carouselContainer}
         ref={plantScrollRef}
-        {...plantSwipeEvents}
+        data-capture="plant-container"
+        style={{
+          height: "530px",
+          touchAction: "pan-y",
+          userSelect: "none"
+        }}
         onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
         onPointerUpCapture={(e) =>
-          handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))
+          handlePointerUpCap(
+            e,
+            plantDownRef,
+            createHandlers(plants, setSelectedPlantIndex)
+          )
         }
-        style={{ height: "530px" }}
+        onAuxClick={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+        {...plantSwipeEvents}
       >
         <div
           className={styles.carouselTrack}
-          style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
+          data-capture="plant-track"
+          style={{
+            transform: `translateX(-${selectedPlantIndex * 100}%)`
+          }}
         >
           {plants.map((product) => (
             <div key={product.id} className={styles.carouselItem}>
               <img
                 src={product.image}
+                alt={product.title}
                 className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
               />
             </div>
