@@ -1923,13 +1923,15 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       onContextMenu={(e) => e.preventDefault()}
       {...potSwipeEvents}
     >
-      <div
-        className={styles.carouselTrack}
-        data-capture="pot-track"
-        style={{
-          transform: `translateX(-${selectedPotIndex * 100}%)`,
-        }}
-      >
+    <div
+  className={styles.carouselTrack}
+  data-capture="plant-track"
+  style={{
+    transform: `translateX(-${selectedPlantIndex * 100}%)`,
+    transformOrigin: "bottom center"  // <-- PIVOTE ABAJO
+  }}
+>
+
         {pots.map((product, idx) => {
           const isSel = idx === selectedPotIndex;
           const vImg = isSel
@@ -1972,11 +1974,15 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       onContextMenu={(e) => e.preventDefault()}
       {...plantSwipeEvents}
     >
-      <div
-        className={styles.carouselTrack}
-        data-capture="plant-track"
-        style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}
-      >
+     <div
+  className={styles.carouselTrack}
+  data-capture="pot-track"
+  style={{
+    transform: `translateX(-${selectedPotIndex * 100}%)`,
+    transformOrigin: "top center"   // <-- PIVOTE ARRIBA
+  }}
+>
+
         {plants.map((product) => (
           <div key={product.id} className={styles.carouselItem}>
             <img
