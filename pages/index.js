@@ -1795,7 +1795,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     backgroundSize: "cover",
     backgroundPosition: "center",
     backgroundRepeat: "no-repeat",
-    border: "3px dashed #6c757d",
+    border: "0px dashed #6c757d",
     borderRadius: "20px",
     display: "flex",
     alignItems: "center",
@@ -1953,7 +1953,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       style={{
         zIndex: 3,
         position: "absolute",
-        bottom: "160px",  // ← AJUSTE CLAVE: planta encima de maceta
+        bottom: "60px",  // ← AJUSTE CLAVE: planta encima de maceta
         left: "50%",
         transform: "translateX(-50%)",
         height: "530px",
