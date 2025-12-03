@@ -1914,21 +1914,21 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
   {/* --- CAPA MACETA --- */}
   <div 
+    ref={potScrollRef}
     id="potLayer"
     style={{
       position: "absolute",
       left: "50%",
       transform: "translateX(-50%)",
-      bottom: "22%",   // <-- AJUSTA FINO SI QUIERES
+      bottom: "22%",   // ajusta fino si quieres
       zIndex: 5,
       width: "100%",
       pointerEvents: "auto"
     }}
   >
-    {/* --- CARRUSEL REAL DE MACETAS --- */}
+    {/* --- CARRUSEL ORIGINAL DE MACETAS (CORRECTO) --- */}
     <div
       className={styles.carouselContainer}
-      ref={potScrollRef}
       data-capture="pot-container"
       style={{ zIndex: 5, touchAction: "pan-y", userSelect: "none" }}
       onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
@@ -1950,6 +1950,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null
             : null;
           const imageUrl = vImg || product.image;
+
           return (
             <div key={product.id} className={styles.carouselItem}>
               <img
@@ -1968,21 +1969,21 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
   {/* --- CAPA PLANTA --- */}
   <div 
+    ref={plantScrollRef}
     id="plantLayer"
     style={{
       position: "absolute",
       left: "50%",
       transform: "translateX(-50%)",
-      bottom: "52%",    // <-- AJUSTA FINO SI QUIERES
+      bottom: "54%",    // ajusta fino si quieres
       zIndex: 4,
       width: "100%",
       pointerEvents: "auto"
     }}
   >
-    {/* --- CARRUSEL REAL DE PLANTAS --- */}
+    {/* --- CARRUSEL ORIGINAL DE PLANTAS (CORRECTO) --- */}
     <div
       className={styles.carouselContainer}
-      ref={plantScrollRef}
       data-capture="plant-container"
       style={{
         zIndex: 4,
@@ -2024,6 +2025,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
   </div>
 
 </div>
+
 
 {/* Dock menú DOBO debajo de carruseles */}
 <div id="dobo-menu-dock" className={styles.menuDock} />
