@@ -762,6 +762,33 @@ useEffect(() => {
       }
     }
   })();
+ 
+// === DOBO: Alineación entre planta y maceta ===
+function alignPlantAndPot() {
+  const stage = stageRef.current;
+  const pot = potScrollRef.current;
+  const plant = plantScrollRef.current;
+  if (!stage || !pot || !plant) return;
+
+  // Punto común donde deben tocarse
+  const joinY = stage.clientHeight * 0.55;
+
+  // ---- Maceta (anclada desde abajo hacia joinY) ----
+  pot.style.position = "absolute";
+  pot.style.left = "50%";
+  pot.style.transform = "translateX(-50%)";
+  pot.style.bottom = `${stage.clientHeight - joinY}px`;
+
+  // ---- Planta (anclada desde arriba hacia joinY) ----
+  plant.style.position = "absolute";
+  plant.style.left = "50%";
+  plant.style.transform = "translateX(-50%)";
+  plant.style.bottom = `${joinY}px`;
+}
+
+
+  
+  
   return () => { cancelled = true; };
 }, [activeSize]);
 
