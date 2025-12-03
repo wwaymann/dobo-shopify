@@ -225,5 +225,17 @@
   transform-origin: bottom center !important;
   pointer-events: auto;
 }
+/* DESACTIVAR centrado forzado */
+.carouselContainer,
+.carouselTrack,
+.carouselItem {
+  align-items: unset !important;
+  justify-content: unset !important;
+}
+
+/* PERMITIR QUE EL PIVOTE FUNCIONE */
+.carouselImage {
+  transform-origin: inherit !important;
+}
 
 
