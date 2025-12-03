@@ -1898,7 +1898,75 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 userSelect: "none",
               }}
             >
-              {/* Macetas */}
+           
+
+
+{/* === DOBO ALIGNMENT: CONTENEDOR DE COMPOSICIÓN === */}
+<div 
+  id="compositionContainer"
+  style={{
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    overflow: "visible",
+  }}
+>
+
+  {/* --- CAPA MACETA --- */}
+  <div 
+    ref={potScrollRef}
+    id="potLayer"
+    style={{
+      position: "absolute",
+      left: "50%",
+      transform: "translateX(-50%)",
+      bottom: "32%",   // ajusta fino si quieres
+      zIndex: 5,
+      width: "100%",
+      display: "flex",
+      justifyContent: "center",
+      pointerEvents: "auto"
+    }}
+  >
+    {/* --- AQUÍ PEGAS TU CARRUSEL ORIGINAL DE MACETAS --- */}
+    {/** START original pot carousel content **/}
+    {pots.length > 0 && (
+      <div style={{ display: "flex", overflowX: "scroll", gap: "20px" }}>
+        {pots.map((pot, i) => (
+          <img
+            key={i}
+            src={pot.src}
+            style={{
+              width: "auto",
+              height: "200px",
+              opacity: i === selectedPotIndex ? 1 : 0.35,
+              transition: "opacity 0.3s"
+            }}
+          />
+        ))}
+      </div>
+    )}
+    {/** END original pot carousel content **/}
+  </div>
+
+
+  {/* --- CAPA PLANTA --- */}
+  <div 
+    ref={plantScrollRef}
+    id="plantLayer"
+    style={{
+      position: "absolute",
+      left: "50%",
+      transform: "translateX(-50%)",
+      bottom: "58%",   // ajusta fino si quieres
+      zIndex: 4,
+      width: "100%",
+      display: "flex",
+      justifyContent: "center",
+      pointerEvents: "auto"
+    }}
+  > 
+{/* Macetas */}
               <div
                 className={styles.carouselContainer}
                 ref={potScrollRef}
@@ -1944,6 +2012,36 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                   ))}
                 </div>
               </div>
+ 
+    {plants.length > 0 && (
+      <div style={{ display: "flex", overflowX: "scroll", gap: "20px" }}>
+        {plants.map((plant, i) => (
+          <img
+            key={i}
+            src={plant.src}
+            style={{
+              width: "auto",
+              height: "260px",
+              opacity: i === selectedPlantIndex ? 1 : 0.35,
+              transition: "opacity 0.3s"
+            }}
+          />
+        ))}
+      </div>
+    )}
+    {/** END original plant carousel content **/}
+  </div>
+
+</div>
+
+
+
+
+
+
+
+
+          
             </div>
           </div>
 {/* Dock menú DOBO debajo de carruseles */}
