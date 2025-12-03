@@ -1783,7 +1783,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
           </div>
 
-  {/* Escena */}
+{/* Escena */}
 <div
   className="position-relative"
   ref={sceneWrapRef}
@@ -1795,7 +1795,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     backgroundSize: "cover",
     backgroundPosition: "center",
     backgroundRepeat: "no-repeat",
-    border: "0px dashed #6c757d",
     borderRadius: "20px",
     display: "flex",
     alignItems: "center",
@@ -1815,32 +1814,31 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     }
     position="top"
   />
+
   <button
     className={`${styles.chev} ${styles.chevTopLeft}`}
     aria-label="Anterior"
     onClick={() =>
-      setSelectedPlantIndex((p) =>
-        p > 0 ? p - 1 : Math.max(plants.length - 1, 0)
-      )
+      setSelectedPlantIndex((p) => (p > 0 ? p - 1 : plants.length - 1))
     }
   >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
       <path d="M15 18l-6-6 6-6" />
     </svg>
   </button>
+
   <button
     className={`${styles.chev} ${styles.chevTopRight}`}
     aria-label="Siguiente"
     onClick={() =>
-      setSelectedPlantIndex((p) =>
-        p < plants.length - 1 ? p + 1 : 0
-      )
+      setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
     }
   >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
       <path d="M9 6l6 6-6 6" />
     </svg>
   </button>
+
 
   {/* Dots y flechas MACETAS */}
   <IndicatorDots
@@ -1851,34 +1849,33 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
     }
     position="bottom"
   />
+
   <button
     className={`${styles.chev} ${styles.chevBottomLeft}`}
     aria-label="Anterior"
     onClick={() =>
-      setSelectedPotIndex((p) =>
-        p > 0 ? p - 1 : Math.max(pots.length - 1, 0)
-      )
+      setSelectedPotIndex((p) => (p > 0 ? p - 1 : pots.length - 1))
     }
   >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
       <path d="M15 18l-6-6 6-6" />
     </svg>
   </button>
+
   <button
     className={`${styles.chev} ${styles.chevBottomRight}`}
     aria-label="Siguiente"
     onClick={() =>
-      setSelectedPotIndex((p) =>
-        p < pots.length - 1 ? p + 1 : 0
-      )
+      setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
     }
   >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
       <path d="M9 6l6 6-6 6" />
     </svg>
   </button>
 
-  {/* NODO ESCALADO + ALINEADO */}
+
+  {/* NODO ESCALADO */}
   <div
     ref={stageRef}
     data-capture-stage="1"
@@ -1888,16 +1885,17 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       "--zoom": 0.75,
       transform: "scale(var(--zoom))",
       transformOrigin: "50% 70%",
+      position: "relative",
+      width: "100%",
       willChange: "transform",
       backfaceVisibility: "hidden",
       touchAction: "pan-y",
       userSelect: "none",
-      position: "relative",
-      width: "100%",
     }}
   >
 
-    {/* MACETA */}
+
+    {/* MACETA – pivote arriba */}
     <div
       className={styles.carouselContainer}
       ref={potScrollRef}
@@ -1908,7 +1906,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         bottom: "0px",
         left: "50%",
         transform: "translateX(-50%)",
-        transformOrigin: "top center", 
+        transformOrigin: "top center",
         touchAction: "pan-y",
         userSelect: "none",
       }}
@@ -1920,35 +1918,33 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           createHandlers(pots, setSelectedPotIndex)
         )
       }
-      onAuxClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
       {...potSwipeEvents}
     >
-    <div
-  className={styles.carouselTrack}
-  data-capture="plant-track"
-  style={{
-    transform: `translateX(-${selectedPlantIndex * 100}%)`,
-    transformOrigin: "bottom center"  // <-- PIVOTE ABAJO
-  }}
->
-
+      <div
+        className={styles.carouselTrack}
+        data-capture="pot-track"
+        style={{
+          transform: `translateX(-${selectedPotIndex * 100}%)`,
+        }}
+      >
         {pots.map((product, idx) => {
-          const isSel = idx === selectedPotIndex;
-          const vImg = isSel
-            ? selectedPotVariant?.image || selectedPotVariant?.imageUrl || null
+          const vImg = idx === selectedPotIndex
+            ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
             : null;
           const imageUrl = vImg || product.image;
+
           return (
             <div key={product.id} className={styles.carouselItem}>
-              <img src={imageUrl} alt={product.title} className={styles.carouselImage} />
+              <img src={imageUrl} className={styles.carouselImage} />
             </div>
           );
         })}
       </div>
     </div>
 
-    {/* PLANTA (ALINEADA SOBRE LA MACETA) */}
+
+
+    {/* PLANTA – pivote abajo */}
     <div
       className={styles.carouselContainer}
       ref={plantScrollRef}
@@ -1956,7 +1952,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       style={{
         zIndex: 3,
         position: "absolute",
-        bottom: "360px",  // ← AJUSTE CLAVE: planta encima de maceta
+        bottom: "360px",
         left: "50%",
         transform: "translateX(-50%)",
         transformOrigin: "bottom center",
@@ -1972,24 +1968,19 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
           createHandlers(plants, setSelectedPlantIndex)
         )
       }
-      onAuxClick={(e) => e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}
       {...plantSwipeEvents}
     >
-     <div
-  className={styles.carouselTrack}
-  data-capture="pot-track"
-  style={{
-    transform: `translateX(-${selectedPotIndex * 100}%)`,
-    transformOrigin: "top center"   // <-- PIVOTE ARRIBA
-  }}
->
-
+      <div
+        className={styles.carouselTrack}
+        data-capture="plant-track"
+        style={{
+          transform: `translateX(-${selectedPlantIndex * 100}%)`,
+        }}
+      >
         {plants.map((product) => (
           <div key={product.id} className={styles.carouselItem}>
             <img
               src={product.image}
-              alt={product.title}
               className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
             />
           </div>
@@ -1999,6 +1990,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
 
   </div>
 </div>
+
 
 {/* Dock menú DOBO debajo de carruseles */}
 <div id="dobo-menu-dock" className={styles.menuDock} />
