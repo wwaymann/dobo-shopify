@@ -198,5 +198,32 @@
   pointer-events: none; /* deja pasar los eventos táctiles al fondo */
 }
 
+/* Contenedor neutral para la composición */
+.doboComposition {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* los carruseles siguen usando eventos propios */
+}
+
+/* Capa maceta con pivote arriba */
+.doboPotLayer {
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: top center !important;
+  pointer-events: auto;
+}
+
+/* Capa planta con pivote abajo */
+.doboPlantLayer {
+  position: absolute;
+  bottom: 55%;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: bottom center !important;
+  pointer-events: auto;
+}
 
 
