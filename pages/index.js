@@ -1953,7 +1953,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
       style={{
         zIndex: 3,
         position: "absolute",
-        bottom: "60px",  // ← AJUSTE CLAVE: planta encima de maceta
+        bottom: "360px",  // ← AJUSTE CLAVE: planta encima de maceta
         left: "50%",
         transform: "translateX(-50%)",
         height: "530px",
