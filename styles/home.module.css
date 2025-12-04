@@ -139,7 +139,7 @@
 /* Overlay fijo estilo Google, no escala con zoom */
 .dots{
   position:absolute; left:50%; transform:translateX(-50%);
-  display:flex; gap:5px; z-index:5; pointer-events:auto; user-select:none;
+  display:flex; gap:5px; z-index:10; pointer-events:auto; user-select:none;
 }
 .dotsTop{ top:6px; bottom: auto; }
 .dotsBottom{ bottom:6px; top: auto; }
