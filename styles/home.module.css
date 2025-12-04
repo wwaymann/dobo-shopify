@@ -113,19 +113,16 @@
 }
 
 .plantImage {
-  /* Sin desplazamientos verticales forzados */
-  transform-origin: 50% 100%; /* Ancla en la base */
+  transform: translateY(40px);
   z-index: 10;
   position: relative;
 }
 
 .plantImageOverlay {
-  /* Quita desplazamiento para no romper el pivote */
-  transform: none;
+  transform: translateY(1px); /* Ajusta según la altura deseada de la planta sobre la maceta */
   z-index: 2;
   position: relative;
 }
-
 
 .carouselTrack
 { display:flex; 
@@ -146,6 +143,16 @@
 }
 .dotsTop{ top:6px; }
 .dotsBottom{ bottom:6px; }
+
+/* Estilos específicos para macetas (arriba) */
+.dotsPots {
+  top: 6px !important;
+}
+
+/* Estilos específicos para plantas (abajo) */
+.dotsPlants {
+  bottom: 6px !important;
+}
 
 .dot{
   width:6px; height:6px; border-radius:50%;
@@ -192,50 +199,3 @@
 @media (min-width: 577px) and (max-width: 768px){
   .sceneScalerInner{ transform: scale(0.92); transform-origin: top center; }
 }
-/* === Permitir eventos táctiles a través del canvas === */
-.fabric-container canvas.upper-canvas {
-  touch-action: none;   /* evita zoom nativo del navegador */
-  pointer-events: none; /* deja pasar los eventos táctiles al fondo */
-}
-
-/* Contenedor neutral para la composición */
-.doboComposition {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  pointer-events: none; /* los carruseles siguen usando eventos propios */
-}
-
-/* Capa maceta con pivote arriba */
-.doboPotLayer {
-  position: absolute;
-  top: 55%;
-  left: 50%;
-  transform: translateX(-50%);
-  transform-origin: top center !important;
-  pointer-events: auto;
-}
-
-/* Capa planta con pivote abajo */
-.doboPlantLayer {
-  position: absolute;
-  bottom: 55%;
-  left: 50%;
-  transform: translateX(-50%);
-  transform-origin: bottom center !important;
-  pointer-events: auto;
-}
-/* DESACTIVAR centrado forzado */
-.carouselContainer,
-.carouselTrack,
-.carouselItem {
-  align-items: unset !important;
-  justify-content: unset !important;
-}
-
-/* PERMITIR QUE EL PIVOTE FUNCIONE */
-.carouselImage {
-  transform-origin: inherit !important;
-}
-
-
