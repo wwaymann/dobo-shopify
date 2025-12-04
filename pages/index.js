@@ -1868,7 +1868,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none", position: "relative" }}
+                style={{ zIndex: 1, position: "absolute", bottom: "0", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
