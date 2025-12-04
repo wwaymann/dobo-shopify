@@ -1860,18 +1860,18 @@ console.log(">> INDEX.JS REAL EJECUTÁNDOSE <<");
   <div
     ref={stageRef}
     data-capture-stage="1"
-    style={{
-      height: "100%",
-      width: "100%",
-      "--zoom": 0.75,
-      transform: "scale(var(--zoom))",
-      transformOrigin: "50% 70%",
-      position: "relative",
-      willChange: "transform",
-      backfaceVisibility: "hidden",
-      touchAction: "pan-y",
-      userSelect: "none",
-    }}
+   style={{
+  height: "100%",
+  "--zoom": 0.75,
+  transform: "scale(var(--zoom))",
+  // Pivote mucho más abajo, casi en la base de la maceta
+  transformOrigin: "50% 90%",
+  willChange: "transform",
+  backfaceVisibility: "hidden",
+  touchAction: "pan-y",
+  userSelect: "none",
+}}
+
   >
 
     {/* ALINEADOR INTERNO */}
