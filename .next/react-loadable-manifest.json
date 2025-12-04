@@ -1,0 +1,21 @@
+{
+  "pages/index.js -> ../components/CustomizationOverlay": {
+    "id": 737,
+    "files": [
+      "static/chunks/f8198c27.e49afb2ec17c3b83.js",
+      "static/chunks/737.b2e478b8d91e52ab.js"
+    ]
+  },
+  "pages/index.js -> html2canvas": {
+    "id": 3028,
+    "files": [
+      "static/chunks/1d2671aa.c456cea009a6d795.js"
+    ]
+  },
+  "pages/pruebas/ia-dobo.js -> fabric": {
+    "id": 6162,
+    "files": [
+      "static/chunks/f8198c27.e49afb2ec17c3b83.js"
+    ]
+  }
+}

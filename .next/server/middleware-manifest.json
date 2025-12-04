@@ -1,0 +1,30 @@
+{
+  "version": 3,
+  "middleware": {},
+  "functions": {
+    "/api/cart-create": {
+      "files": [
+        "server/edge-runtime-webpack.js",
+        "server/pages/api/cart-create.js"
+      ],
+      "name": "pages/api/cart-create",
+      "page": "/api/cart-create",
+      "matchers": [
+        {
+          "regexp": "^/api/cart\\-create$",
+          "originalSource": "/api/cart-create"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "3YEllW0tQY04HrdJu8nTO",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "s9F5pYKvKT9LrAZuhUJUfphRDTA/j0s58XtuxQM4BNo=",
+        "__NEXT_PREVIEW_MODE_ID": "1a03247026a970aadfd1f5504006dcde",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "b47c6af62fe6ac456b56c491c251bf21529d940a9457f647995484725eb0753c",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "54f8e4cd671e07021d2b0f4edcdd463c2875407662ef723c51c286e698da245b"
+      }
+    }
+  },
+  "sortedMiddleware": []
+}

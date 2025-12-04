@@ -1,29 +1,26 @@
 {
   "name": "dobo-ui",
   "version": "1.0.0",
-  "engines": { "node": "20.x" },
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
-    "@sendgrid/mail": "^8.1.5",
+    "@react-three/drei": "^9.100.0",
+    "@react-three/fiber": "^8.15.0",
     "bootstrap": "^5.3.7",
     "fabric": "^6.7.1",
-    "openai": "^4.31.0",
     "html2canvas": "^1.4.1",
     "next": "latest",
     "nodemailer": "^7.0.5",
+    "openai": "^4.31.0",
     "pdfkit": "^0.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "three": "^0.160.0",
-    "@react-three/fiber": "^8.15.0",
-    "@react-three/drei": "^9.100.0",
-    "@fortawesome/fontawesome-svg-core": "^6.6.0",
-    "@fortawesome/free-solid-svg-icons": "^6.6.0",
-    "@fortawesome/react-fontawesome": "^0.2.0"
-  
+    "three": "^0.160.0"
   }
 }

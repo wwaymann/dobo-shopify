@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/cart-create": {},
+    "/api/debug/publish-dummy": {},
+    "/api/debug/variants": {},
+    "/api/debug/admin-ping": {},
+    "/api/publish-by-variant": {}
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/product/[handle]",
+      "regex": "^/product/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPhandle": "nxtPhandle"
+      },
+      "namedRegex": "^/product/(?<nxtPhandle>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/app/embed",
+      "regex": "^/app/embed(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/app/embed(?:/)?$"
+    },
+    {
+      "page": "/plants",
+      "regex": "^/plants(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/plants(?:/)?$"
+    },
+    {
+      "page": "/pruebas/ia",
+      "regex": "^/pruebas/ia(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/pruebas/ia(?:/)?$"
+    },
+    {
+      "page": "/pruebas/ia-dobo",
+      "regex": "^/pruebas/ia\\-dobo(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/pruebas/ia\\-dobo(?:/)?$"
+    },
+    {
+      "page": "/pruebas/texto-maceta",
+      "regex": "^/pruebas/texto\\-maceta(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/pruebas/texto\\-maceta(?:/)?$"
+    },
+    {
+      "page": "/ui-propuesta",
+      "regex": "^/ui\\-propuesta(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/ui\\-propuesta(?:/)?$"
+    }
+  ],
+  "dataRoutes": [
+    {
+      "page": "/plants",
+      "dataRouteRegex": "^/_next/data/3YEllW0tQY04HrdJu8nTO/plants\\.json$"
+    },
+    {
+      "page": "/product/[handle]",
+      "routeKeys": {
+        "nxtPhandle": "nxtPhandle"
+      },
+      "dataRouteRegex": "^/_next/data/3YEllW0tQY04HrdJu8nTO/product/([^/]+?)\\.json$",
+      "namedDataRouteRegex": "^/_next/data/3YEllW0tQY04HrdJu8nTO/product/(?<nxtPhandle>[^/]+?)\\.json$"
+    }
+  ],
+  "rsc": {
+    "header": "RSC",
+    "varyHeader": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch",
+    "prefetchHeader": "Next-Router-Prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "Next-Router-Segment-Prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}
