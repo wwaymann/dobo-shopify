@@ -581,6 +581,29 @@ export default function CustomizationOverlay({
     });
 
     setReady(true);
+    
+// === DOBO: exponer API global para correo y checkout ===
+if (typeof window !== "undefined") {
+ const api = {
+    // existentes
+    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+
+    toSVG: () => c.toSVG({ suppressPreamble: true }),
+    getCanvas: () => c,
+    exportDesignSnapshot: () => {
+      try { return c.toJSON(); } catch { return null; }
+    },
+    importDesignSnapshot: (snap) => new Promise(res => {
+      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+    }),
+    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+  };
+  window.doboDesignAPI = api;
+  try {
+    window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
+    console.log("[DOBO] API global inicializada ✅");
+  } catch {}
+}
 
     return () => {
       c.off("mouse:dblclick");
