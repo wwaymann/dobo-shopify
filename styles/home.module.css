@@ -141,19 +141,19 @@
   position:absolute; left:50%; transform:translateX(-50%);
   display:flex; gap:5px; z-index:5; pointer-events:auto; user-select:none;
 }
-.dotsTop{ top:6px; }
-.dotsBottom{ bottom:6px; }
+.dotsTop{ top:6px; bottom: auto; }
+.dotsBottom{ bottom:6px; top: auto; }
 
 /* Estilos específicos para macetas (arriba) */
 .dotsPots {
-  top: 6px;
-  bottom: auto;
+  top: 6px !important;
+  bottom: auto !important;
 }
 
 /* Estilos específicos para plantas (abajo) */
 .dotsPlants {
-  bottom: 6px;
-  top: auto;
+  bottom: 6px !important;
+  top: auto !important;
 }
 
 .dot{
