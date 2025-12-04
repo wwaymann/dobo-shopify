@@ -1818,21 +1818,20 @@ console.log(">> INDEX.JS REAL EJECUTÁNDOSE <<");
   />
 
   {/* Flechas PLANTA */}
-  <button className={`${styles.chev} ${styles.chevTopLeft}`} onClick={() =>
-      setSelectedPlantIndex((p) => (p > 0 ? p - 1 : plants.length - 1))
-    }>
+  <button className={`${styles.chev} ${styles.chevTopLeft}`}
+    onClick={() => setSelectedPlantIndex((p) => (p > 0 ? p - 1 : plants.length - 1))}>
     <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path d="M15 18l-6-6 6-6"/>
+      <path d="M15 18l-6-6 6-6" />
     </svg>
   </button>
 
-  <button className={`${styles.chev} ${styles.chevTopRight}`} onClick={() =>
-      setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))
-    }>
+  <button className={`${styles.chev} ${styles.chevTopRight}`}
+    onClick={() => setSelectedPlantIndex((p) => (p < plants.length - 1 ? p + 1 : 0))}>
     <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path d="M9 6l6 6-6 6"/>
+      <path d="M9 6l6 6-6 6" />
     </svg>
   </button>
+
 
   {/* Dots MACETAS */}
   <IndicatorDots
@@ -1843,23 +1842,21 @@ console.log(">> INDEX.JS REAL EJECUTÁNDOSE <<");
   />
 
   {/* Flechas MACETA */}
-  <button className={`${styles.chev} ${styles.chevBottomLeft}`} onClick={() =>
-      setSelectedPotIndex((p) => (p > 0 ? p - 1 : pots.length - 1))
-    }>
+  <button className={`${styles.chev} ${styles.chevBottomLeft}`}
+    onClick={() => setSelectedPotIndex((p) => (p > 0 ? p - 1 : pots.length - 1))}>
     <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path d="M15 18l-6-6 6-6"/>
+      <path d="M15 18l-6-6 6-6" />
     </svg>
   </button>
 
-  <button className={`${styles.chev} ${styles.chevBottomRight}`} onClick={() =>
-      setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))
-    }>
+  <button className={`${styles.chev} ${styles.chevBottomRight}`}
+    onClick={() => setSelectedPotIndex((p) => (p < pots.length - 1 ? p + 1 : 0))}>
     <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path d="M9 6l6 6-6 6"/>
+      <path d="M9 6l6 6-6 6" />
     </svg>
   </button>
 
-  {/* NODO ESCALADO CONTROLADO */}
+  {/* NODO ESCALADO */}
   <div
     ref={stageRef}
     data-capture-stage="1"
@@ -1877,88 +1874,107 @@ console.log(">> INDEX.JS REAL EJECUTÁNDOSE <<");
     }}
   >
 
-    {/* MACETA – pivot arriba */}
+    {/* ALINEADOR INTERNO */}
     <div
       style={{
         position: "absolute",
-        bottom: "0px",
         left: "50%",
-        transform: "translateX(-50%)",
-        transformOrigin: "top center",
-        zIndex: 2,
-        pointerEvents: "auto"
+        top: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "100%",
+        height: "100%",
+        pointerEvents: "none",
       }}
     >
+
+      {/* CAPA MACETA — pivote arriba */}
       <div
-        className={styles.carouselContainer}
-        ref={potScrollRef}
-        onPointerDownCapture={(e)=>handlePointerDownCap(e,potDownRef)}
-        onPointerUpCapture={(e)=>handlePointerUpCap(e,potDownRef,createHandlers(pots,setSelectedPotIndex))}
-        {...potSwipeEvents}
+        style={{
+          position: "absolute",
+          bottom: "0%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          transformOrigin: "top center",
+          zIndex: 2,
+          pointerEvents: "auto",
+        }}
       >
         <div
-          className={styles.carouselTrack}
-          style={{
-            transform: `translateX(-${selectedPotIndex * 100}%)`,
-            transformOrigin: "top center"
-          }}
+          className={styles.carouselContainer}
+          ref={potScrollRef}
+          onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
+          onPointerUpCapture={(e) =>
+            handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
+          {...potSwipeEvents}
         >
-          {pots.map((product, idx) => {
-            const imgSel = idx === selectedPotIndex
-              ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
-              : null;
-            const src = imgSel || product.image;
+          <div
+            className={styles.carouselTrack}
+            style={{
+              transform: `translateX(-${selectedPotIndex * 100}%)`,
+              transformOrigin: "top center",
+            }}
+          >
+            {pots.map((product, idx) => {
+              const imgSel =
+                idx === selectedPotIndex
+                  ? selectedPotVariant?.image || selectedPotVariant?.imageUrl
+                  : null;
+              const src = imgSel || product.image;
 
-            return (
+              return (
+                <div key={product.id} className={styles.carouselItem}>
+                  <img src={src} className={styles.carouselImage} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* CAPA PLANTA — pivote abajo */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: "60%",     // ← alineación REAL con la boca de la maceta
+          left: "50%",
+          transform: "translateX(-50%)",
+          transformOrigin: "bottom center",
+          zIndex: 3,
+          pointerEvents: "auto",
+        }}
+      >
+        <div
+          className={styles.carouselContainer}
+          ref={plantScrollRef}
+          onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
+          onPointerUpCapture={(e) =>
+            handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
+          {...plantSwipeEvents}
+        >
+          <div
+            className={styles.carouselTrack}
+            style={{
+              transform: `translateX(-${selectedPlantIndex * 100}%)`,
+              transformOrigin: "bottom center",
+            }}
+          >
+            {plants.map((product) => (
               <div key={product.id} className={styles.carouselItem}>
-                <img src={src} className={styles.carouselImage}/>
+                <img
+                  src={product.image}
+                  className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
+                />
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
-    </div>
 
-    {/* PLANTA – pivot abajo */}
-    <div
-      style={{
-        position: "absolute",
-        bottom: "350px",   // AJUSTA FINO AQUÍ
-        left: "50%",
-        transform: "translateX(-50%)",
-        transformOrigin: "bottom center",
-        zIndex: 3,
-        pointerEvents: "auto",
-      }}
-    >
-      <div
-        className={styles.carouselContainer}
-        ref={plantScrollRef}
-        onPointerDownCapture={(e)=>handlePointerDownCap(e,plantDownRef)}
-        onPointerUpCapture={(e)=>handlePointerUpCap(e,plantDownRef,createHandlers(plants,setSelectedPlantIndex))}
-        {...plantSwipeEvents}
-      >
-        <div
-          className={styles.carouselTrack}
-          style={{
-            transform: `translateX(-${selectedPlantIndex * 100}%)`,
-            transformOrigin: "bottom center"
-          }}
-        >
-          {plants.map((product) => (
-            <div key={product.id} className={styles.carouselItem}>
-              <img
-                src={product.image}
-                className={`${styles.carouselImage} ${styles.plantImageOverlay}`}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
 
   </div>
 </div>
+
 
 
 {/* Dock menú DOBO debajo de carruseles */}
