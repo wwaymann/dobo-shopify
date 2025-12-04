@@ -146,12 +146,14 @@
 
 /* Estilos específicos para macetas (arriba) */
 .dotsPots {
-  top: 6px !important;
+  top: 6px;
+  bottom: auto;
 }
 
 /* Estilos específicos para plantas (abajo) */
 .dotsPlants {
-  bottom: 6px !important;
+  bottom: 6px;
+  top: auto;
 }
 
 .dot{
