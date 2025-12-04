@@ -498,10 +498,17 @@ function IframePreview(props) {
 /* ---------- dots ---------- */
 function IndicatorDots({ count, current, onSelect, position = "bottom", type = "default" }) {
   if (!count || count < 2) return null;
-  const posClass = position === "top" ? styles.dotsTop : styles.dotsBottom;
-  const typeClass = type === "pots" ? styles.dotsPots : (type === "plants" ? styles.dotsPlants : "");
+  // Si tenemos un tipo específico, usamos solo ese; si no, usamos la posición
+  let dotClass = "";
+  if (type === "pots") {
+    dotClass = styles.dotsPots;
+  } else if (type === "plants") {
+    dotClass = styles.dotsPlants;
+  } else {
+    dotClass = position === "top" ? styles.dotsTop : styles.dotsBottom;
+  }
   return (
-    <div className={`${styles.dots} ${posClass} ${typeClass}`}>
+    <div className={`${styles.dots} ${dotClass}`}>
       {Array.from({ length: count }).map((_, i) => (
         <button
           key={i}
@@ -1809,13 +1816,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             }}
           >
             {/* Dots y flechas PLANTAS */}
-            <IndicatorDots
-              count={plants.length}
-              current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-              position="bottom"
-              type="plants"
-            />
             <button
               className={`${styles.chev} ${styles.chevTopLeft}`}
               aria-label="Anterior"
@@ -1832,13 +1832,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             </button>
 
             {/* Dots y flechas MACETAS */}
-            <IndicatorDots
-              count={pots.length}
-              current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-              position="top"
-              type="pots"
-            />
             <button
               className={`${styles.chev} ${styles.chevBottomLeft}`}
               aria-label="Anterior"
@@ -1875,13 +1868,20 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none", position: "relative" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...potSwipeEvents}
               >
+                <IndicatorDots
+                  count={pots.length}
+                  current={selectedPotIndex}
+                  onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+                  position="top"
+                  type="pots"
+                />
                 <div className={styles.carouselTrack} data-capture="pot-track" style={{ transform: `translateX(-${selectedPotIndex * 100}%)` }}>
                   {pots.map((product, idx) => {
                     const isSel = idx === selectedPotIndex;
@@ -1901,13 +1901,20 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={plantScrollRef}
                 data-capture="plant-container"
-                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 2, position: "absolute", bottom: "300px", height: "530px", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none", position: "relative" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, plantDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, plantDownRef, createHandlers(plants, setSelectedPlantIndex))}
                 onAuxClick={(e) => e.preventDefault()}
                 onContextMenu={(e) => e.preventDefault()}
                 {...plantSwipeEvents}
               >
+                <IndicatorDots
+                  count={plants.length}
+                  current={selectedPlantIndex}
+                  onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+                  position="bottom"
+                  type="plants"
+                />
                 <div className={styles.carouselTrack} data-capture="plant-track" style={{ transform: `translateX(-${selectedPlantIndex * 100}%)` }}>
                   {plants.map((product) => (
                     <div key={product.id} className={styles.carouselItem}>
