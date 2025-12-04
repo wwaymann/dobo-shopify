@@ -1,11 +1,9 @@
-import "../styles/home.module.css"; // tus estilos globales si aplica
+import "../styles/home.module.css";
 import GlobalErrorBoundary from "../components/GlobalErrorBoundary";
-import '../styles/customizer.css';  // <-- agrega esta línea aquí
+import "../styles/customizer.css";
 
 function App({ Component, pageProps }) {
-  // Listeners globales (solo en cliente)
   if (typeof window !== "undefined") {
-    // Evita añadirlos múltiples veces
     if (!window.__DOBO_ERR_LISTENERS__) {
       window.__DOBO_ERR_LISTENERS__ = true;
 
@@ -13,9 +11,9 @@ function App({ Component, pageProps }) {
         console.error("[DOBO] window.onerror:", e?.error || e?.message || e);
       });
 
-      window.addEventListener("unhandledrejection", (e) => {
-        console.error("[DOBO] unhandledrejection:", e?.reason || e);
-      });
+      window.addEventListener("unhandledrejection", (e) =>
+        console.error("[DOBO] unhandledrejection:", e?.reason || e)
+      );
     }
   }
 
@@ -27,4 +25,3 @@ function App({ Component, pageProps }) {
 }
 
 export default App;
-
