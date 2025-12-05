@@ -35,10 +35,3 @@ body {
   .container{ padding-left:0 !important; padding-right:0 !important; }
   .row{ --bs-gutter-x: 0 !important; }
 }
-/* === Permitir eventos táctiles a través del canvas === */
-canvas.upper-canvas {
-  touch-action: none;   /* evita el zoom nativo del navegador */
-  pointer-events: none; /* deja pasar los toques al fondo y carruseles */
-}
-
-

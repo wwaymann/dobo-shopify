@@ -496,10 +496,19 @@ function IframePreview(props) {
 }
 
 /* ---------- dots ---------- */
-function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
+function IndicatorDots({ count, current, onSelect, position = "bottom", type = "default" }) {
   if (!count || count < 2) return null;
+  // Si tenemos un tipo específico, usamos solo ese; si no, usamos la posición
+  let dotClass = "";
+  if (type === "pots") {
+    dotClass = styles.dotsPots;
+  } else if (type === "plants") {
+    dotClass = styles.dotsPlants;
+  } else {
+    dotClass = position === "top" ? styles.dotsTop : styles.dotsBottom;
+  }
   return (
-    <div className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}>
+    <div className={`${styles.dots} ${dotClass}`}>
       {Array.from({ length: count }).map((_, i) => (
         <button
           key={i}
@@ -1807,12 +1816,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             }}
           >
             {/* Dots y flechas PLANTAS */}
-            <IndicatorDots
-              count={plants.length}
-              current={selectedPlantIndex}
-              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-              position="top"
-            />
             <button
               className={`${styles.chev} ${styles.chevTopLeft}`}
               aria-label="Anterior"
@@ -1829,12 +1832,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             </button>
 
             {/* Dots y flechas MACETAS */}
-            <IndicatorDots
-              count={pots.length}
-              current={selectedPotIndex}
-              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-              position="bottom"
-            />
             <button
               className={`${styles.chev} ${styles.chevBottomLeft}`}
               aria-label="Anterior"
@@ -1871,7 +1868,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 1, position: "absolute", bottom: "0", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
@@ -1890,6 +1887,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                     );
                   })}
                 </div>
+                <IndicatorDots
+                  count={pots.length}
+                  current={selectedPotIndex}
+                  onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+                  position="top"
+                  type="pots"
+                />
               </div>
 
               {/* Plantas */}
@@ -1911,6 +1915,13 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                     </div>
                   ))}
                 </div>
+                <IndicatorDots
+                  count={plants.length}
+                  current={selectedPlantIndex}
+                  onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+                  position="bottom"
+                  type="plants"
+                />
               </div>
             </div>
           </div>
