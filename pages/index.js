@@ -30,6 +30,25 @@ const gidToNum = (id) => {
   return s.includes("gid://") ? s.split("/").pop() : s;
 };
 
+async function compressDataUrl(dataUrl, maxW = 900, quality = 0.72) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
+
 // Sube dataURL/blob/http a https (Cloudinary) mediante tu API local
 async function ensureHttpsUrl(u, namePrefix = "img") {
   try {
@@ -37,10 +56,15 @@ async function ensureHttpsUrl(u, namePrefix = "img") {
     if (!s) return "";
     if (/^https:\/\//i.test(s)) return s;
     if (/^data:|^blob:|^http:\/\//i.test(s)) {
+      const compressed = await compressDataUrl(s, 900, 0.72);
       const r = await fetch("/api/upload-design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrl: s, filename: `${namePrefix}-${Date.now()}.png` })
+       body: JSON.stringify({
+  dataUrl: compressed,
+  filename: `${namePrefix}-${Date.now()}.jpg`
+})
+
       });
       const j = await r.json().catch(() => ({}));
       return j?.url || "";
@@ -496,19 +520,10 @@ function IframePreview(props) {
 }
 
 /* ---------- dots ---------- */
-function IndicatorDots({ count, current, onSelect, position = "bottom", type = "default" }) {
+function IndicatorDots({ count, current, onSelect, position = "bottom" }) {
   if (!count || count < 2) return null;
-  // Si tenemos un tipo específico, usamos solo ese; si no, usamos la posición
-  let dotClass = "";
-  if (type === "pots") {
-    dotClass = styles.dotsPots;
-  } else if (type === "plants") {
-    dotClass = styles.dotsPlants;
-  } else {
-    dotClass = position === "top" ? styles.dotsTop : styles.dotsBottom;
-  }
   return (
-    <div className={`${styles.dots} ${dotClass}`}>
+    <div className={`${styles.dots} ${position === "top" ? styles.dotsTop : styles.dotsBottom}`}>
       {Array.from({ length: count }).map((_, i) => (
         <button
           key={i}
@@ -1037,14 +1052,24 @@ useEffect(() => {
       });
     };
     const canvas = await html2canvas(el, { backgroundColor: "#eeeaeaff", scale: 3, useCORS: true, onclone });
-    return canvas.toDataURL("image/png");
+   let png = canvas.toDataURL("image/png");
+png = await compressDataUrl(png, 900, 0.72);
+return png;
+
   }
   async function prepareDesignAttributes() {
     let previewUrl = "";
     try {
-      const dataUrl = await captureDesignPreview();
-      if (dataUrl) {
-        const resp = await fetch("/api/upload-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) });
+    const dataUrl = await captureDesignPreview();
+if (dataUrl) {
+  const compressed = await compressDataUrl(dataUrl, 900, 0.72);
+
+  const resp = await fetch("/api/upload-design", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataUrl: compressed })
+  });
+
         const json = await resp.json();
         if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
         previewUrl = json.url || "";
@@ -1816,6 +1841,12 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             }}
           >
             {/* Dots y flechas PLANTAS */}
+            <IndicatorDots
+              count={plants.length}
+              current={selectedPlantIndex}
+              onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
+              position="top"
+            />
             <button
               className={`${styles.chev} ${styles.chevTopLeft}`}
               aria-label="Anterior"
@@ -1832,6 +1863,12 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             </button>
 
             {/* Dots y flechas MACETAS */}
+            <IndicatorDots
+              count={pots.length}
+              current={selectedPotIndex}
+              onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
+              position="bottom"
+            />
             <button
               className={`${styles.chev} ${styles.chevBottomLeft}`}
               aria-label="Anterior"
@@ -1868,7 +1905,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                 className={styles.carouselContainer}
                 ref={potScrollRef}
                 data-capture="pot-container"
-                style={{ zIndex: 1, position: "absolute", bottom: "0", left: "50%", transform: "translateX(-50%)", touchAction: "pan-y", userSelect: "none" }}
+                style={{ zIndex: 1, touchAction: "pan-y", userSelect: "none" }}
                 onPointerDownCapture={(e) => handlePointerDownCap(e, potDownRef)}
                 onPointerUpCapture={(e) => handlePointerUpCap(e, potDownRef, createHandlers(pots, setSelectedPotIndex))}
                 onAuxClick={(e) => e.preventDefault()}
@@ -1887,13 +1924,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                     );
                   })}
                 </div>
-                <IndicatorDots
-                  count={pots.length}
-                  current={selectedPotIndex}
-                  onSelect={(i) => setSelectedPotIndex(Math.max(0, Math.min(i, pots.length - 1)))}
-                  position="top"
-                  type="pots"
-                />
               </div>
 
               {/* Plantas */}
@@ -1915,13 +1945,6 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
                     </div>
                   ))}
                 </div>
-                <IndicatorDots
-                  count={plants.length}
-                  current={selectedPlantIndex}
-                  onSelect={(i) => setSelectedPlantIndex(Math.max(0, Math.min(i, plants.length - 1)))}
-                  position="bottom"
-                  type="plants"
-                />
               </div>
             </div>
           </div>

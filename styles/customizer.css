@@ -64,3 +64,88 @@ button.buy-button {
   border-radius: 12px;
   cursor: pointer;
 }
+
+/* Carrusel de PLANTAS: base alineada, mantiene scroll */
+.plant-carousel {
+  position: absolute;
+  z-index: 3;
+  bottom: 25vh; /* usa vh para mantener proporción */
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.plant-carousel .carouselTrack {
+  display: flex;
+  transition: transform 0.4s ease;
+  will-change: transform;
+}
+
+.plant-carousel .carouselItem {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.plant-carousel img {
+  transform-origin: center bottom;
+  transform: scale(1);
+  height: auto;
+  max-height: 40vh;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+/* Carrusel de MACETAS: boca alineada, mantiene scroll */
+.pot-carousel {
+  position: absolute;
+  z-index: 1;
+  bottom: 20vh;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.pot-carousel .carouselTrack {
+  display: flex;
+  transition: transform 0.4s ease;
+  will-change: transform;
+}
+
+.pot-carousel .carouselItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.pot-carousel img {
+  transform-origin: center top;
+  transform: scale(1);
+  height: auto;
+  max-height: 40vh;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+/* Menú DOBO siempre visible */
+#dobo-menu-dock,
+.menuDock {
+  position: relative !important;
+  z-index: 20 !important;
+}
+
+/* Centra el canvas respecto al punto visual común (base de la planta/maceta) */
+.customization-overlay {
+  position: absolute;
+  top: 60%; /* baja un poco el centro para alinearse con el pivote visual */
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transform-origin: center bottom;
+  pointer-events: auto;
+  z-index: 20;
+}
+
+
+
