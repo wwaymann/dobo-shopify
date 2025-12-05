@@ -113,16 +113,19 @@
 }
 
 .plantImage {
-  transform: translateY(40px);
+  /* Sin desplazamientos verticales forzados */
+  transform-origin: 50% 100%; /* Ancla en la base */
   z-index: 10;
   position: relative;
 }
 
 .plantImageOverlay {
-  transform: translateY(1px); /* Ajusta según la altura deseada de la planta sobre la maceta */
+  /* Quita desplazamiento para no romper el pivote */
+  transform: none;
   z-index: 2;
   position: relative;
 }
+
 
 .carouselTrack
 { display:flex; 
@@ -139,22 +142,10 @@
 /* Overlay fijo estilo Google, no escala con zoom */
 .dots{
   position:absolute; left:50%; transform:translateX(-50%);
-  display:flex; gap:5px; z-index:10; pointer-events:auto; user-select:none;
+  display:flex; gap:5px; z-index:5; pointer-events:auto; user-select:none;
 }
-.dotsTop{ top:6px; bottom: auto; }
-.dotsBottom{ bottom:6px; top: auto; }
-
-/* Estilos específicos para macetas (arriba) */
-.dotsPots {
-  top: 6px !important;
-  bottom: auto !important;
-}
-
-/* Estilos específicos para plantas (abajo) */
-.dotsPlants {
-  bottom: 6px !important;
-  top: auto !important;
-}
+.dotsTop{ top:6px; }
+.dotsBottom{ bottom:6px; }
 
 .dot{
   width:6px; height:6px; border-radius:50%;
@@ -201,3 +192,11 @@
 @media (min-width: 577px) and (max-width: 768px){
   .sceneScalerInner{ transform: scale(0.92); transform-origin: top center; }
 }
+/* === Permitir eventos táctiles a través del canvas === */
+.fabric-container canvas.upper-canvas {
+  touch-action: none;   /* evita zoom nativo del navegador */
+  pointer-events: none; /* deja pasar los eventos táctiles al fondo */
+}
+
+
+
