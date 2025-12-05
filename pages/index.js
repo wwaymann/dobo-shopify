@@ -2118,10 +2118,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
         onClose={() => setAccPreview((p) => ({ ...p, visible: false }))}
       />
 
-      <style jsx global>{`
-        .pot-carousel--locked { pointer-events: none; user-select: none; -webkit-user-drag: none; touch-action: none; overflow: hidden !important; scrollbar-width: none; }
-        .pot-carousel--locked::-webkit-scrollbar { display: none; }
-      `}</style>
+    
     </div>
   );
 
