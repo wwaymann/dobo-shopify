@@ -613,7 +613,7 @@ function Home() {
   const [editing, setEditing] = useState(false);
   const [activeSize, setActiveSize] = useState("Grande"); // único selector de tamaño
 
-  const zoomRef = useRef(2.0);
+  const zoomRef = useRef(0.7);
   const sceneWrapRef = useRef(null);
   const stageRef = useRef(null);
   const plantScrollRef = useRef(null);
@@ -708,7 +708,7 @@ useEffect(() => {
   const stage = stageRef.current;
   if (!stage) return;
   // expone el zoom inicial al CSS si usas --zoom
-  stage.style.setProperty("--zoom", String(zoomRef.current));
+//  stage.style.setProperty("--zoom", String(zoomRef.current));
 }, []);
 
 // Centrar horizontalmente el conjunto en móvil sin remaquetar
@@ -1891,7 +1891,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               className="d-flex justify-content-center align-items-end"
               style={{
                 height: "140%",
-                "--zoom": 2.0,
+                "--zoom": 0.75,
                 transform: "scale(var(--zoom))",
                 transformOrigin: "50% 70%",
                 willChange: "transform",
