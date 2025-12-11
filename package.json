@@ -13,7 +13,9 @@
     "fabric": "^6.7.1",
     "openai": "^4.31.0",
     "html2canvas": "^1.4.1",
-    "next": "latest",
+    "next": {
+  "version": "15.4.6",
+
     "nodemailer": "^7.0.5",
     "pdfkit": "^0.17.1",
     "react": "^18.3.1",
