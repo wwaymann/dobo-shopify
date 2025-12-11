@@ -1891,7 +1891,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               className="d-flex justify-content-center align-items-end"
               style={{
                 height: "140%",
-                "--zoom": 0.75,
+                "--zoom": 0.85,
                 transform: "scale(var(--zoom))",
                 transformOrigin: "50% 70%",
                 willChange: "transform",
