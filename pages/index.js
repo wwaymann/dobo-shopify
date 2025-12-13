@@ -1890,7 +1890,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
               data-capture-stage="1"
               className="d-flex justify-content-center align-items-end"
               style={{
-                height: "140%",
+                height: "340%",
                 "--zoom": 0.75,
                 transform: "scale(var(--zoom))",
                 transformOrigin: "50% 70%",
