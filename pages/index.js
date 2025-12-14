@@ -1823,7 +1823,7 @@ designMetaRef.current = payload?.meta || payload?.doboMeta || snapshot?.meta || 
             ref={sceneWrapRef}
             style={{
               width: "500px",
-              height: "550px",
+              height: "600px",
               width: "100%", maxWidth: "500px",
               aspectRatio: "500 / 650",
               backgroundImage: "url('/images/fondo-dobo.jpg')", // ← tu ruta
