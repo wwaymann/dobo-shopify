@@ -133,47 +133,53 @@ function maskCanvasByPredicate(canvas, predicate) {
   };
 }
 
-// --- SOLO IMAGEN / SOLO TEXTO (con invalidación de cache y grupos) ---
-async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
+// --- SOLO TEXTO O SOLO IMAGEN (versión simplificada SIN capas repetidas) ---
+async function exportOnlyLocal(kind = "text", { multiplier = 2 } = {}) {
   try {
     const c = typeof window !== "undefined" ? window.doboDesignAPI?.getCanvas?.() : null;
     if (!c?.getObjects) return "";
 
-    const wantImage = names.map(String).some(n => /image|imagen|plant|planta/i.test(n));
-    const wantText  = names.map(String).some(n => /text|texto/i.test(n));
-    const kind = wantImage ? "image" : wantText ? "text" : "";
+    const isText = (o) =>
+      o?.type === "textbox" ||
+      o?.type === "i-text" ||
+      o?.type === "text" ||
+      typeof o?.text === "string";
 
-    const isTxt = (o) => o?.type === "i-text" || o?.type === "textbox" || o?.type === "text" || typeof o?.text === "string";
-    const isImg = (o) => o?.type === "image" || (!!o?._element && o._element.tagName === "IMG");
+    const isImage = (o) =>
+      o?.type === "image" ||
+      (!!o?._element && o._element.tagName === "IMG");
 
+    // Ocultamos solo lo que NO corresponda
     const hidden = [];
-    const hide = (o) => { if (!o) return; hidden.push(o); o.__wasVisible = o.visible; o.visible = false; markDirty(o); };
+    const hide = (o) => {
+      hidden.push(o);
+      o.__vis = o.visible;
+      o.visible = false;
+    };
 
-    // oculta lo que NO corresponda; respeta grupos/activeSelection
-    (c.getObjects() || []).forEach(o => {
-      const visit = (x) => {
-        if (!x) return;
-        if (x.type === "group" || x.type === "activeSelection") {
-          (x._objects || []).forEach(visit);
-          // si el grupo no tiene ningún hijo del tipo pedido, se oculta completo
-          const keepAny = (x._objects || []).some(ch => (kind === "image" ? isImg(ch) : isTxt(ch)));
-          if (!keepAny) hide(x);
-          return;
-        }
-        const keep = (kind === "image" && isImg(x)) || (kind === "text" && isTxt(x));
-        if (!keep) hide(x);
-      };
-      visit(o);
+    (c.getObjects() || []).forEach((o) => {
+      const keep =
+        kind === "text" ? isText(o) :
+        kind === "image" ? isImage(o) :
+        false;
+
+      if (!keep) hide(o);
     });
 
-    // fuerza render
     c.discardActiveObject?.();
     c.renderAll?.();
 
-    const url = c.toDataURL({ format: "png", multiplier, backgroundColor: "transparent" });
+    const url = c.toDataURL({
+      format: "png",
+      multiplier,
+      backgroundColor: "transparent",
+    });
 
-    // restaurar
-    hidden.forEach(o => { o.visible = (o.__wasVisible !== false); delete o.__wasVisible; markDirty(o); });
+    // restaurar visibles
+    hidden.forEach((o) => {
+      o.visible = o.__vis !== false;
+      delete o.__vis;
+    });
     c.renderAll?.();
 
     return url;
@@ -181,6 +187,7 @@ async function exportOnlyLocal(names = [], { multiplier = 2 } = {}) {
     return "";
   }
 }
+
 
 // --- LECTURA de URL de imagen desde tus productos (fallback de datos) ---
 function readImageUrlFor(prod) {
