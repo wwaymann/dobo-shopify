@@ -1057,36 +1057,51 @@ png = await compressDataUrl(png, 900, 0.72);
 return png;
 
   }
-  async function prepareDesignAttributes() {
-    let previewUrl = "";
-    try {
+ async function prepareDesignAttributes() {
+  let previewUrl = "";
+
+  try {
     const dataUrl = await captureDesignPreview();
-if (dataUrl) {
-  const compressed = await compressDataUrl(dataUrl, 900, 0.72);
 
-  const resp = await fetch("/api/upload-design", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataUrl: compressed })
-  });
+    if (dataUrl) {
+      // Mantienes tu compresión actual
+      const compressed = await compressDataUrl(dataUrl, 900, 0.72);
 
-        const json = await resp.json();
-        if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
-        previewUrl = json.url || "";
-      }
-    } catch {}
-    const pot = pots[selectedPotIndex];
-    const plant = plants[selectedPlantIndex];
-    return [
-      { key: "_DesignPreview", value: previewUrl },
-      { key: "_DesignId", value: String(Date.now()) },
-      { key: "_DesignPlant", value: plant?.id || "" },
-      { key: "_DesignPot", value: pot?.id || "" },
-      { key: "_DesignColor", value: selectedColor || "" },
-      { key: "_DesignSize", value: activeSize || "" },
-      { key: "_LinePriority", value: "0" },
-    ];
+      const resp = await fetch("/api/upload-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataUrl: compressed,
+          filename: `design-${Date.now()}.jpg`
+        })
+      });
+
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json?.error || "Error al subir preview");
+
+      previewUrl = json.url || "";
+    }
+  } catch (e) {
+    console.error("prepareDesignAttributes error:", e);
   }
+
+  const pot = pots[selectedPotIndex];
+  const plant = plants[selectedPlantIndex];
+
+  return [
+    // 🔥 IMPORTANTE: la clave correcta, sin guión bajo
+    { key: "DesignPreview", value: previewUrl },
+
+    // Mantengo tus otras claves igual
+    { key: "DesignId", value: String(Date.now()) },
+    { key: "DesignPlant", value: plant?.id || "" },
+    { key: "DesignPot", value: pot?.id || "" },
+    { key: "DesignColor", value: selectedColor || "" },
+    { key: "DesignSize", value: activeSize || "" },
+    { key: "LinePriority", value: "0" }
+  ];
+}
+
 
 async function publishDesignForVariant(variantId) {
   try {
