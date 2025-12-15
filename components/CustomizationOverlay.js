@@ -161,51 +161,7 @@ function makeTextGroup(text, opts = {}) {
     fill: opts.fill ?? "rgba(35,35,35,1)"
   });
 
-  // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
-  const shadow = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    left: -1, top: -1,
-    selectable: false, evented: false,
-    objectCaching: false,
-    fill: "",
-    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
-  });
-  const highlight = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    left: +1, top: +1,
-    selectable: false, evented: false,
-    objectCaching: false,
-    fill: "",
-    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
-  });
-
-  const group = new fabric.Group([shadow, highlight, base], {
-    originX: "center", originY: "center",
-    subTargetCheck: false,
-    objectCaching: false,
-    selectable: true, evented: true,
-    scaleX: 1, scaleY: 1
-  });
-  group._kind = "textGroup";
-  group._textChildren = { base, shadow, highlight };
-
-  const sync = () => {
-    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-    const ox = 1 / sx, oy = 1 / sy;
-    shadow.set({ left: -ox, top: -oy });
-    highlight.set({ left: +ox, top: +oy });
-    group.setCoords();
-    group.canvas?.requestRenderAll?.();
-  };
-  group.on("scaling", sync);
-  group.on("modified", sync);
-  sync();
-
-  return group;
-}
+ 
 
 export default function CustomizationOverlay({
   stageRef,
