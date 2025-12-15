@@ -10,14 +10,58 @@ import HistoryManager from "../lib/history";
 // ======= Constantes =======
 const Z_CANVAS = 4000;
 const FONT_OPTIONS = [
+  // === SISTEMA / CLÁSICAS ===
   { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
+  { name: "Helvetica", css: 'Helvetica, Arial, sans-serif' },
+  { name: "Verdana", css: 'Verdana, Geneva, sans-serif' },
+  { name: "Tahoma", css: 'Tahoma, Verdana, sans-serif' },
+  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
   { name: "Georgia", css: 'Georgia, serif' },
   { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
   { name: "Courier New", css: '"Courier New", Courier, monospace' },
-  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
+  { name: "Lucida Console", css: '"Lucida Console", Monaco, monospace' },
+
+  // === SANS MODERNAS (GOOGLE FONTS) ===
   { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
   { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
+  { name: "Inter", css: 'Inter, Arial, sans-serif' },
+  { name: "Roboto", css: 'Roboto, Arial, sans-serif' },
+  { name: "Open Sans", css: '"Open Sans", Arial, sans-serif' },
+  { name: "Lato", css: 'Lato, Arial, sans-serif' },
+  { name: "Nunito", css: 'Nunito, Arial, sans-serif' },
+  { name: "Raleway", css: 'Raleway, Arial, sans-serif' },
+  { name: "Source Sans Pro", css: '"Source Sans Pro", Arial, sans-serif' },
+  { name: "Ubuntu", css: 'Ubuntu, Arial, sans-serif' },
+  { name: "Work Sans", css: '"Work Sans", Arial, sans-serif' },
+
+  // === SERIF MODERNAS / EDITORIALES ===
+  { name: "Playfair Display", css: '"Playfair Display", Georgia, serif' },
+  { name: "Merriweather", css: 'Merriweather, Georgia, serif' },
+  { name: "Libre Baskerville", css: '"Libre Baskerville", Georgia, serif' },
+  { name: "Cormorant", css: 'Cormorant, Georgia, serif' },
+  { name: "Crimson Text", css: '"Crimson Text", Georgia, serif' },
+
+  // === DISPLAY / CREATIVAS ===
+  { name: "Bebas Neue", css: '"Bebas Neue", Arial, sans-serif' },
+  { name: "Oswald", css: 'Oswald, Arial, sans-serif' },
+  { name: "Anton", css: 'Anton, Arial, sans-serif' },
+  { name: "Abril Fatface", css: '"Abril Fatface", serif' },
+  { name: "Pacifico", css: 'Pacifico, cursive' },
+  { name: "Lobster", css: 'Lobster, cursive' },
+  { name: "Fredoka", css: 'Fredoka, Arial, sans-serif' },
+
+  // === MONO / TÉCNICAS ===
+  { name: "Roboto Mono", css: '"Roboto Mono", monospace' },
+  { name: "Source Code Pro", css: '"Source Code Pro", monospace' },
+  { name: "JetBrains Mono", css: '"JetBrains Mono", monospace' },
+
+  // === ORGÁNICAS / ARTESANALES (BUENAS PARA MACETAS) ===
+  { name: "Quicksand", css: 'Quicksand, Arial, sans-serif' },
+  { name: "Comfortaa", css: 'Comfortaa, Arial, sans-serif' },
+  { name: "Baloo 2", css: '"Baloo 2", Arial, sans-serif' },
+  { name: "Amatic SC", css: '"Amatic SC", cursive' }
 ];
+
 
 const VECTOR_SAMPLE_DIM = 500;
 const MAX_TEXTURE_DIM = 1600;
