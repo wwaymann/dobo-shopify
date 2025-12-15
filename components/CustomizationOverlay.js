@@ -755,7 +755,7 @@ if (typeof window !== "undefined") {
       };
       try { c.remove(tb); } catch {}
 
-      const group2 = makeTextGroup(newText, {
+      const group2 = makeTextGroup(c, newText, {
         width: tb.width,
         fontFamily: tb.fontFamily, fontSize: tb.fontSize, fontWeight: tb.fontWeight,
         fontStyle: tb.fontStyle, underline: tb.underline, textAlign: tb.textAlign,
