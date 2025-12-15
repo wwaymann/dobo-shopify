@@ -162,7 +162,32 @@ function makeTextGroup(text, opts = {}) {
   });
 
   // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
+  const shadow = new fabric.Textbox(text, {
+    ...opts,
+    originX: "center", originY: "center",
+    left: -1, top: -1,
+    selectable: false, evented: false,
+    objectCaching: false,
+    fill: "",
+    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
+  });
+  const highlight = new fabric.Textbox(text, {
+    ...opts,
+    originX: "center", originY: "center",
+    left: +1, top: +1,
+    selectable: false, evented: false,
+    objectCaching: false,
+    fill: "",
+    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
+  });
 
+  const group = new fabric.Group([shadow, highlight, base], {
+    originX: "center", originY: "center",
+    subTargetCheck: false,
+    objectCaching: false,
+    selectable: true, evented: true,
+    scaleX: 1, scaleY: 1
+  });
   group._kind = "textGroup";
   group._textChildren = { base, shadow, highlight };
 
