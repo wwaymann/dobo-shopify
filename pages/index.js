@@ -1403,24 +1403,20 @@ async function buyNow() {
     // === Capturas ===
     await __delay(50);
 
-    // Overlay:All (sin base)
-    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    let overlayAll = __snap(2);
+    // === Capturas (VERSIÓN LIMPIA – SIN TOCAR TEXTO EDITABLE) ===
 
-    // Solo texto
-    __restoreAll();
-    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    __hideIf((o) => !__hasTextDeep(o));
-    let layerTxt = __snap(2);
+// 1. Overlay completo (texto + imágenes), sin bases
+__hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+const overlayAll = __snap(2);
+__restoreAll();
 
-    // Solo imagen
-    __restoreAll();
-    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    __hideIf((o) => __hasTextDeep(o));
-    let layerImg = __snap(2);
+// 2. SOLO TEXTO — sin ocultar/restaurar múltiples veces
+const layerTxt = await exportOnlyLocal("text", { multiplier: 2 });
 
-    // Intento de “re-compuesto” (por si hiciera falta)
-    __restoreAll();
+// 3. SOLO IMAGEN — sin texto
+const layerImg = await exportOnlyLocal("image", { multiplier: 2 });
+
+    
     let previewRecomposed = "";
     try { previewRecomposed = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
     catch { previewRecomposed = __snap(2); }
