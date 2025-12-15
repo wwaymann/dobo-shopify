@@ -1407,14 +1407,14 @@ async function buyNow() {
 
 // 1. Overlay completo (texto + imágenes), sin bases
 __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-const overlayAll = __snap(2);
+let  overlayAll = __snap(2);
 __restoreAll();
 
 // 2. SOLO TEXTO — sin ocultar/restaurar múltiples veces
-const layerTxt = await exportOnlyLocal("text", { multiplier: 2 });
+let  layerTxt = await exportOnlyLocal("text", { multiplier: 2 });
 
 // 3. SOLO IMAGEN — sin texto
-const layerImg = await exportOnlyLocal("image", { multiplier: 2 });
+let  layerImg = await exportOnlyLocal("image", { multiplier: 2 });
 
     
     let previewRecomposed = "";
@@ -1594,20 +1594,19 @@ async function addToCart() {
     // === Capturas ===
     await __delay(50);
 
-    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    let overlayAll = __snap(2);
+       // === Capturas (VERSIÓN LIMPIA – SIN TOCAR TEXTO EDITABLE) ===
 
-    __restoreAll();
-    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    __hideIf((o) => !__hasTextDeep(o));
-    let layerTxt = __snap(2);
+// 1. Overlay completo (texto + imágenes), sin bases
+__hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
+let  overlayAll = __snap(2);
+__restoreAll();
 
-    __restoreAll();
-    __hideIf((o) => __hasBaseDeep(o) || o === fabricCanvas.backgroundImage);
-    __hideIf((o) => __hasTextDeep(o));
-    let layerImg = __snap(2);
+// 2. SOLO TEXTO — sin ocultar/restaurar múltiples veces
+let  layerTxt = await exportOnlyLocal("text", { multiplier: 2 });
 
-    __restoreAll();
+// 3. SOLO IMAGEN — sin texto
+let  layerImg = await exportOnlyLocal("image", { multiplier: 2 });
+    
     let previewRecomposed = "";
     try { previewRecomposed = await __composeFull({ overlayAllUrl: overlayAll, potUrl, plantUrl }); }
     catch { previewRecomposed = __snap(2); }
