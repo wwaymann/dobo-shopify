@@ -150,44 +150,78 @@ function vectorizeElementToBitmap(element, opts = {}) {
   return bm;
 }
 
-// ======= Texto con pseudo-relieve plano (sólo capas visuales) y editable =======
-function makeTextGroup(text, opts = {}) {
-  // Grupo simple: base es el que define estilo/tamaño; sin relieve real.
+function getExistingTextGroup(canvas) {
+  return canvas.getObjects().find(o => o._kind === "textGroup") || null;
+}
+
+
+function makeTextGroup(canvas, text, opts = {}) {
+  // 1. Si ya existe, reutilizar
+  const existing = getExistingTextGroup(canvas);
+  if (existing) {
+    const { base, shadow, highlight } = existing._textChildren || {};
+    if (base) {
+      base.text = text;
+      base.set({ ...opts });
+    }
+    if (shadow) shadow.text = text;
+    if (highlight) highlight.text = text;
+
+    canvas.setActiveObject(existing);
+    canvas.requestRenderAll();
+    return existing;
+  }
+
+  // 2. Crear SOLO si no existe
   const base = new fabric.Textbox(text, {
     ...opts,
-    originX: "center", originY: "center",
-    selectable: true, evented: true,
+    originX: "center",
+    originY: "center",
+    selectable: true,
+    evented: true,
+    editable: true,
     objectCaching: false,
     fill: opts.fill ?? "rgba(35,35,35,1)"
   });
 
-  // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
   const shadow = new fabric.Textbox(text, {
     ...opts,
-    originX: "center", originY: "center",
-    left: -1, top: -1,
-    selectable: false, evented: false,
+    originX: "center",
+    originY: "center",
+    left: -1,
+    top: -1,
+    selectable: false,
+    evented: false,
+    editable: false,
     objectCaching: false,
     fill: "",
-    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
+    stroke: "rgba(0,0,0,0.25)",
+    strokeWidth: 0.8
   });
+
   const highlight = new fabric.Textbox(text, {
     ...opts,
-    originX: "center", originY: "center",
-    left: +1, top: +1,
-    selectable: false, evented: false,
+    originX: "center",
+    originY: "center",
+    left: 1,
+    top: 1,
+    selectable: false,
+    evented: false,
+    editable: false,
     objectCaching: false,
     fill: "",
-    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
+    stroke: "rgba(255,255,255,0.45)",
+    strokeWidth: 0.5
   });
 
   const group = new fabric.Group([shadow, highlight, base], {
-    originX: "center", originY: "center",
-    subTargetCheck: false,
-    objectCaching: false,
-    selectable: true, evented: true,
-    scaleX: 1, scaleY: 1
+    originX: "center",
+    originY: "center",
+    selectable: true,
+    evented: true,
+    objectCaching: false
   });
+
   group._kind = "textGroup";
   group._textChildren = { base, shadow, highlight };
 
@@ -198,14 +232,19 @@ function makeTextGroup(text, opts = {}) {
     shadow.set({ left: -ox, top: -oy });
     highlight.set({ left: +ox, top: +oy });
     group.setCoords();
-    group.canvas?.requestRenderAll?.();
   };
+
   group.on("scaling", sync);
   group.on("modified", sync);
   sync();
 
+  canvas.add(group);
+  canvas.setActiveObject(group);
+  canvas.requestRenderAll();
+
   return group;
 }
+
 
 export default function CustomizationOverlay({
   stageRef,
