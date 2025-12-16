@@ -1504,10 +1504,10 @@ const Menu = () => {
               WebkitTapHighlightColor: "transparent",
             }}
           >
-            <i className="fa fa-trash" aria-hidden="true"></i> Borrar
+          <i className="fa fa-trash" aria-hidden="true"></i> Borrar
           </button>
         </div>
-      )
+      )}
 
         {/* Línea 3: propiedades */}
         {editing && (
@@ -1742,30 +1742,34 @@ const Menu = () => {
     ); 
   };
 
-  return (
-    <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+ return (
+  <>
+    {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
-      {anchorRef?.current ? createPortal(
+    {anchorRef?.current ? createPortal(
+      <div style={{ 
+        position: "relative", 
+        width: "100%", 
+        display: "flex", 
+        justifyContent: "center", 
+        // IMPORTANTE: pointerEvents debe ser "auto" aquí
+        pointerEvents: "auto", 
+        marginTop: 8,
+        zIndex: Z_MENU,
+        // Aislar completamente del canvas
+        isolation: "isolate",
+      }}>
         <div style={{ 
-          position: "relative", 
-          width: "100%", 
-          display: "flex", 
-          justifyContent: "center", 
-          pointerEvents: "none", 
-          marginTop: 8,
-          zIndex: Z_MENU 
+          // CRÍTICO: Esto debe ser "auto" para que los botones funcionen
+          pointerEvents: "auto", 
+          display: "inline-flex",
+          touchAction: "manipulation",
         }}>
-          <div style={{ 
-            pointerEvents: "auto", 
-            display: "inline-flex",
-            touchAction: "manipulation"
-          }}>
-            <Menu />
-          </div>
-        </div>,
-        document.getElementById("dobo-menu-dock") || document.body
-      ) : null}
-    </>
-  );
+          <Menu />
+        </div>
+      </div>,
+      document.getElementById("dobo-menu-dock") || document.body
+    ) : null}
+  </>
+);
 }
