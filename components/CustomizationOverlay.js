@@ -1246,229 +1246,268 @@ const reflectTypo = () => {
     </div>
   );
 
-  // ====== Menú con eventos mejorados para móvil ======
-  const Menu = () => {
-    const c = fabricCanvasRef.current;
-    const a = c?.getActiveObject();
-    const isVectorSelected =
-      selType === "image" && a && a._doboKind === "vector";
-    const isRgbSelected =
-      selType === "image" && a && a._doboKind === "rgb";
+// ====== Menú con eventos completamente aislados ======
+const Menu = () => {
+  const c = fabricCanvasRef.current;
+  const a = c?.getActiveObject();
+  const isVectorSelected =
+    selType === "image" && a && a._doboKind === "vector";
+  const isRgbSelected =
+    selType === "image" && a && a._doboKind === "rgb";
 
-    // Función para manejar clicks en móvil
-    const handleMobileClick = (e, callback) => {
+  // Handler específico para móvil que previene interferencias
+  const handleTap = (callback) => {
+    return (e) => {
+      // Detener TODA la propagación en móvil
       if (isMobileRef.current) {
         e.preventDefault();
         e.stopPropagation();
-        // Pequeño delay para asegurar que el evento táctil termine
-        setTimeout(() => {
-          callback();
-        }, 50);
+        e.stopImmediatePropagation?.();
+      }
+      
+      // Pequeño delay para móvil
+      if (isMobileRef.current) {
+        setTimeout(callback, 10);
       } else {
         callback();
       }
     };
+  };
 
-    return (
-      <div
-        ref={menuRef}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          background: "rgba(253, 253, 253, 0.94)",
-          backdropFilter: "blur(4px)",
-          WebkitBackdropFilter: "blur(4px)",
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: "10px 12px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          width: "auto",
-          maxWidth: "94vw",
-          fontSize: 12,
-          userSelect: "none",
-          zIndex: Z_MENU,
-          // IMPORTANTE: Asegurar que el menú sea completamente interactivo
-          touchAction: "manipulation",
-          msTouchAction: "manipulation",
-          pointerEvents: "auto",
-        }}
-        // NO detener propagación aquí - dejar que los botones manejen sus propios eventos
-        onPointerDown={(e) => {
-          // Solo detener si no es un botón
-          if (!e.target.closest('button, input, select')) {
-            e.stopPropagation();
-          }
-        }}
-        onTouchStart={(e) => {
-          // Solo detener si no es un botón
-          if (!e.target.closest('button, input, select')) {
-            e.stopPropagation();
-          }
-        }}
-      >
-        {/* Línea 1: historial + zoom + modos */}
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
-            <button
-              type="button" 
-              className="btn btn-outline-secondary"
-              onClick={(e) => handleMobileClick(e, () => { 
-                const s = historyRef.current?.undo(); 
-                if (s) applySnapshot(s); 
-                refreshCaps(); 
-              })}
-              disabled={!histCaps.canUndo} 
-              title="Atrás (Ctrl+Z)" 
-              aria-label="Atrás"
-              style={{ touchAction: "manipulation" }}
-            >
-              <i className="fa fa-undo" aria-hidden="true"></i>
-            </button>
-            <button
-              type="button" 
-              className="btn btn-outline-secondary"
-              onClick={(e) => handleMobileClick(e, () => { 
-                const s = historyRef.current?.redo(); 
-                if (s) applySnapshot(s); 
-                refreshCaps(); 
-              })}
-              disabled={!histCaps.canRedo} 
-              title="Adelante (Ctrl+Shift+Z)" 
-              aria-label="Adelante"
-              style={{ touchAction: "manipulation" }}
-            >
-              <i className="fa fa-repeat" aria-hidden="true"></i>
-            </button>
-          </div>
-
-          {typeof setZoom === "function" && (
-            <div className="input-group input-group-sm" style={{ width: 180 }}>
-              <span className="input-group-text">Zoom</span>
-              <button
-                type="button" 
-                className="btn btn-outline-secondary"
-                onClick={(e) => handleMobileClick(e, () => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2))))}
-                style={{ touchAction: "manipulation" }}
-              >−</button>
-              <input 
-                type="text" 
-                readOnly 
-                className="form-control form-control-sm text-center"
-                value={`${Math.round((zoom || 1) * 100)}%`} 
-                style={{ touchAction: "manipulation" }}
-              />
-              <button
-                type="button" 
-                className="btn btn-outline-secondary"
-                onClick={(e) => handleMobileClick(e, () => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2))))}
-                style={{ touchAction: "manipulation" }}
-              >+</button>
-            </div>
-          )}
-
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        background: "rgba(253, 253, 253, 0.98)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+        border: "1px solid #ddd",
+        borderRadius: 12,
+        padding: "10px 12px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+        width: "auto",
+        maxWidth: "94vw",
+        fontSize: 12,
+        userSelect: "none",
+        zIndex: Z_MENU,
+        // CRÍTICO: Configuración para móvil
+        touchAction: "manipulation",
+        msTouchAction: "manipulation",
+        WebkitUserSelect: "none",
+        MozUserSelect: "none",
+        pointerEvents: "auto",
+        // Aislar completamente del canvas
+        position: "relative",
+        isolation: "isolate",
+      }}
+      // NO usar onPointerDown/onTouchStart en el contenedor principal
+      // Solo en botones individuales
+    >
+      {/* Línea 1: historial + zoom + modos */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
           <button
-            type="button"
-            className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-            onClick={(e) => handleMobileClick(e, () => setEditing(false))}
+            type="button" 
+            className="btn btn-outline-secondary"
+            onClick={handleTap(() => { 
+              const s = historyRef.current?.undo(); 
+              if (s) applySnapshot(s); 
+              refreshCaps(); 
+            })}
+            onMouseDown={(e) => e.preventDefault()} // Prevenir focus
+            disabled={!histCaps.canUndo} 
+            title="Atrás (Ctrl+Z)" 
+            aria-label="Atrás"
             style={{ 
-              minWidth: "16ch",
-              touchAction: "manipulation"
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
             }}
           >
-            Seleccionar Maceta
+            <i className="fa fa-undo" aria-hidden="true"></i>
           </button>
-
           <button
-            type="button"
-            className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-            onClick={(e) => handleMobileClick(e, () => setEditing(true))}
+            type="button" 
+            className="btn btn-outline-secondary"
+            onClick={handleTap(() => { 
+              const s = historyRef.current?.redo(); 
+              if (s) applySnapshot(s); 
+              refreshCaps(); 
+            })}
+            onMouseDown={(e) => e.preventDefault()}
+            disabled={!histCaps.canRedo} 
+            title="Adelante (Ctrl+Shift+Z)" 
+            aria-label="Adelante"
             style={{ 
-              minWidth: "12ch",
-              touchAction: "manipulation"
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
             }}
           >
-            Diseñar
+            <i className="fa fa-repeat" aria-hidden="true"></i>
           </button>
         </div>
 
-        {/* Línea 2: acciones básicas */}
-        {editing && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+        {typeof setZoom === "function" && (
+          <div className="input-group input-group-sm" style={{ width: 180 }}>
+            <span className="input-group-text">Zoom</span>
             <button
               type="button" 
-              className="btn btn-sm btn-outline-secondary"
-              onClick={(e) => handleMobileClick(e, addText)} 
-              disabled={!ready}
-              title="Agregar texto"
-              style={{ touchAction: "manipulation" }}
-            >
-              <i className="fa fa-font" aria-hidden="true"></i> Texto
-            </button>
-
-            <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
-              {/* Subir Vector */}
-              <button
-                type="button" 
-                className="btn btn-outline-secondary"
-                onClick={(e) => handleMobileClick(e, () => { 
-                  setUploadMode("vector"); 
-                  requestAnimationFrame(() => {
-                    addInputVectorRef.current?.click();
-                  }); 
-                })}
-                disabled={!ready}
-                title="Subir vector (usa Detalles y Color)"
-                style={{ touchAction: "manipulation" }}
-              >
-                <i className="fa fa-magic" aria-hidden="true"></i> Vector
-              </button>
-              {/* Subir RGB */}
-              <button
-                type="button" 
-                className="btn btn-outline-secondary"
-                onClick={(e) => handleMobileClick(e, () => { 
-                  setUploadMode("rgb"); 
-                  requestAnimationFrame(() => {
-                    addInputRgbRef.current?.click();
-                  }); 
-                })}
-                disabled={!ready}
-                title="Subir imagen RGB (color original)"
-                style={{ touchAction: "manipulation" }}
-              >
-                <i className="fa fa-image" aria-hidden="true"></i> Imagen
-              </button>
-              {/* Cámara */}
-              <button
-                type="button" 
-                className="btn btn-outline-secondary"
-                onClick={(e) => handleMobileClick(e, () => { 
-                  setUploadMode("rgb"); 
-                  requestAnimationFrame(() => {
-                    cameraInputRef.current?.click();
-                  }); 
-                })}
-                disabled={!ready}
-                title="Tomar foto con cámara"
-                style={{ touchAction: "manipulation" }}
-              >
-                <i className="fa fa-camera" aria-hidden="true"></i> Cámara
-              </button>
-            </div>
-
+              className="btn btn-outline-secondary"
+              onClick={handleTap(() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2))))}
+              onMouseDown={(e) => e.preventDefault()}
+              style={{ 
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >−</button>
+            <input 
+              type="text" 
+              readOnly 
+              className="form-control form-control-sm text-center"
+              value={`${Math.round((zoom || 1) * 100)}%`} 
+              style={{ touchAction: "none" }}
+            />
             <button
               type="button" 
-              className="btn btn-sm btn-outline-danger"
-              onClick={(e) => handleMobileClick(e, onDelete)}
-              disabled={!ready || selType === "none"}
-              title="Eliminar seleccionado"
-              style={{ touchAction: "manipulation" }}
-            >
-              <i className="fa fa-trash" aria-hidden="true"></i> Borrar
-            </button>
+              className="btn btn-outline-secondary"
+              onClick={handleTap(() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2))))}
+              onMouseDown={(e) => e.preventDefault()}
+              style={{ 
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >+</button>
           </div>
         )}
+
+        <button
+          type="button"
+          className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+          onClick={handleTap(() => setEditing(false))}
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ 
+            minWidth: "16ch",
+            touchAction: "manipulation",
+            WebkitTapHighlightColor: "transparent",
+          }}
+        >
+          Seleccionar Maceta
+        </button>
+
+        <button
+          type="button"
+          className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+          onClick={handleTap(() => setEditing(true))}
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ 
+            minWidth: "12ch",
+            touchAction: "manipulation",
+            WebkitTapHighlightColor: "transparent",
+          }}
+        >
+          Diseñar
+        </button>
+      </div>
+
+      {/* Línea 2: acciones básicas - CONTINÚA IGUAL PERO CON handleTap */}
+      {editing && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+          <button
+            type="button" 
+            className="btn btn-sm btn-outline-secondary"
+            onClick={handleTap(addText)} 
+            onMouseDown={(e) => e.preventDefault()}
+            disabled={!ready}
+            title="Agregar texto"
+            style={{ 
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            <i className="fa fa-font" aria-hidden="true"></i> Texto
+          </button>
+
+          <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
+            {/* Subir Vector */}
+            <button
+              type="button" 
+              className="btn btn-outline-secondary"
+              onClick={handleTap(() => { 
+                setUploadMode("vector"); 
+                setTimeout(() => {
+                  addInputVectorRef.current?.click();
+                }, 50);
+              })}
+              onMouseDown={(e) => e.preventDefault()}
+              disabled={!ready}
+              title="Subir vector (usa Detalles y Color)"
+              style={{ 
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <i className="fa fa-magic" aria-hidden="true"></i> Vector
+            </button>
+            {/* Subir RGB */}
+            <button
+              type="button" 
+              className="btn btn-outline-secondary"
+              onClick={handleTap(() => { 
+                setUploadMode("rgb"); 
+                setTimeout(() => {
+                  addInputRgbRef.current?.click();
+                }, 50);
+              })}
+              onMouseDown={(e) => e.preventDefault()}
+              disabled={!ready}
+              title="Subir imagen RGB (color original)"
+              style={{ 
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <i className="fa fa-image" aria-hidden="true"></i> Imagen
+            </button>
+            {/* Cámara */}
+            <button
+              type="button" 
+              className="btn btn-outline-secondary"
+              onClick={handleTap(() => { 
+                setUploadMode("rgb"); 
+                setTimeout(() => {
+                  cameraInputRef.current?.click();
+                }, 50);
+              })}
+              onMouseDown={(e) => e.preventDefault()}
+              disabled={!ready}
+              title="Tomar foto con cámara"
+              style={{ 
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <i className="fa fa-camera" aria-hidden="true"></i> Cámara
+            </button>
+          </div>
+
+          <button
+            type="button" 
+            className="btn btn-sm btn-outline-danger"
+            onClick={handleTap(onDelete)}
+            onMouseDown={(e) => e.preventDefault()}
+            disabled={!ready || selType === "none"}
+            title="Eliminar seleccionado"
+            style={{ 
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            <i className="fa fa-trash" aria-hidden="true"></i> Borrar
+          </button>
+        </div>
+      )
 
         {/* Línea 3: propiedades */}
         {editing && (
