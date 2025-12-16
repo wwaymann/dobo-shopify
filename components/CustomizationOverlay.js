@@ -255,10 +255,9 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
   
-  // 🔧 REF para control de zoom táctil
+  // 🔧 REF para control de zoom táctil (simplificado)
   const isPinchingRef = useRef(false);
-  const lastPinchDistanceRef = useRef(0);
-  const lastTouchCenterRef = useRef({ x: 0, y: 0 });
+  const lastDistanceRef = useRef(0);
 
   // ====== helpers de historial
   const getSnapshot = () => {
@@ -345,120 +344,6 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== 🔧 FUNCIONES DE ZOOM Y PAN TÁCTIL ======
-  const calculateDistance = (touch1, touch2) => {
-    const dx = touch2.clientX - touch1.clientX;
-    const dy = touch2.clientY - touch1.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const calculateCenter = (touch1, touch2) => {
-    return {
-      x: (touch1.clientX + touch2.clientX) / 2,
-      y: (touch1.clientY + touch2.clientY) / 2
-    };
-  };
-
-  const handleTouchStart = (e) => {
-    if (!editing || textEditing) return;
-    
-    const touches = e.touches;
-    if (touches.length === 2) {
-      // Inicio de pinch para zoom
-      isPinchingRef.current = true;
-      lastPinchDistanceRef.current = calculateDistance(touches[0], touches[1]);
-      lastTouchCenterRef.current = calculateCenter(touches[0], touches[1]);
-      e.preventDefault();
-      e.stopPropagation();
-    } else if (touches.length === 1) {
-      // Inicio de pan con un dedo (si no hay objeto seleccionado)
-      const c = fabricCanvasRef.current;
-      if (c && !c.getActiveObject()) {
-        const touch = touches[0];
-        c.lastTouchX = touch.clientX;
-        c.lastTouchY = touch.clientY;
-        c.isPanning = true;
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    if (!editing || textEditing) return;
-    
-    const touches = e.touches;
-    
-    if (isPinchingRef.current && touches.length === 2) {
-      // Zoom con pinch
-      e.preventDefault();
-      e.stopPropagation();
-      
-      const currentDistance = calculateDistance(touches[0], touches[1]);
-      const currentCenter = calculateCenter(touches[0], touches[1]);
-      
-      if (lastPinchDistanceRef.current > 0) {
-        const scaleChange = currentDistance / lastPinchDistanceRef.current;
-        const currentZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
-        const newZoom = clamp(currentZoom * scaleChange, 0.6, 2.5);
-        
-        stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-        if (typeof setZoom === "function") setZoom(newZoom);
-        
-        // Ajustar posición del viewport
-        const c = fabricCanvasRef.current;
-        if (c) {
-          const deltaX = currentCenter.x - lastTouchCenterRef.current.x;
-          const deltaY = currentCenter.y - lastTouchCenterRef.current.y;
-          const vpt = c.viewportTransform;
-          vpt[4] += deltaX;
-          vpt[5] += deltaY;
-          c.requestRenderAll();
-        }
-      }
-      
-      lastPinchDistanceRef.current = currentDistance;
-      lastTouchCenterRef.current = currentCenter;
-    } else if (touches.length === 1) {
-      // Pan con un dedo
-      const c = fabricCanvasRef.current;
-      if (c && c.isPanning && !c.getActiveObject()) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const touch = touches[0];
-        const deltaX = touch.clientX - (c.lastTouchX || 0);
-        const deltaY = touch.clientY - (c.lastTouchY || 0);
-        
-        const vpt = c.viewportTransform;
-        vpt[4] += deltaX;
-        vpt[5] += deltaY;
-        c.requestRenderAll();
-        
-        c.lastTouchX = touch.clientX;
-        c.lastTouchY = touch.clientY;
-      }
-    }
-  };
-
-  const handleTouchEnd = (e) => {
-    if (!editing) return;
-    
-    const c = fabricCanvasRef.current;
-    if (isPinchingRef.current) {
-      isPinchingRef.current = false;
-      lastPinchDistanceRef.current = 0;
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    
-    if (c) {
-      c.isPanning = false;
-      c.lastTouchX = null;
-      c.lastTouchY = null;
-    }
-  };
-
   // ====== init Fabric
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -470,19 +355,69 @@ export default function CustomizationOverlay({
       selection: true,
       perPixelTargetFind: true,
       targetFindTolerance: 8,
-      // 🔧 Configuración para móviles
+      // 🔧 Configuración clave para móviles
       allowTouchScrolling: false,
       stopContextMenu: true
     });
     fabricCanvasRef.current = c;
 
-    // 🔧 Configurar eventos táctiles en el canvas
+    // 🔧 CONFIGURACIÓN SIMPLE DE ZOOM/PAN TÁCTIL
     const upperCanvas = c.upperCanvasEl;
     if (upperCanvas) {
-      upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-      upperCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-      upperCanvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-      upperCanvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+      // Prevenir el comportamiento por defecto del navegador
+      upperCanvas.style.touchAction = 'none';
+      
+      // Manejador de eventos táctiles
+      const handleTouch = (e) => {
+        if (!editing || textEditing) return;
+        
+        if (e.touches.length === 2) {
+          // ZOOM CON 2 DEDOS
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const touch1 = e.touches[0];
+          const touch2 = e.touches[1];
+          
+          // Calcular distancia entre dedos
+          const dx = touch1.clientX - touch2.clientX;
+          const dy = touch1.clientY - touch2.clientY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (isPinchingRef.current && lastDistanceRef.current > 0) {
+            const scaleChange = distance / lastDistanceRef.current;
+            const currentZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
+            const newZoom = clamp(currentZoom * scaleChange, 0.6, 2.5);
+            
+            stageRef?.current?.style.setProperty("--zoom", String(newZoom));
+            if (typeof setZoom === "function") setZoom(newZoom);
+          }
+          
+          lastDistanceRef.current = distance;
+          isPinchingRef.current = true;
+        } else if (e.touches.length === 1 && !isPinchingRef.current) {
+          // PAN CON 1 DEDO (solo si no estamos haciendo zoom)
+          const activeObj = c.getActiveObject();
+          if (!activeObj) {
+            // Permitir pan solo si no hay objeto seleccionado
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
+      };
+      
+      const handleTouchEnd = () => {
+        isPinchingRef.current = false;
+        lastDistanceRef.current = 0;
+      };
+      
+      upperCanvas.addEventListener('touchstart', handleTouch, { passive: false });
+      upperCanvas.addEventListener('touchmove', handleTouch, { passive: false });
+      upperCanvas.addEventListener('touchend', handleTouchEnd);
+      upperCanvas.addEventListener('touchcancel', handleTouchEnd);
+      
+      // Guardar referencia para limpieza
+      c._touchHandlers = { handleTouch, handleTouchEnd };
     }
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
@@ -493,7 +428,6 @@ export default function CustomizationOverlay({
       // 0) Foco y tolerancias táctiles
       if (c.upperCanvasEl) {
         c.upperCanvasEl.setAttribute("tabindex", "0");
-        c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
         c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
       }
       c.perPixelTargetFind = false;
@@ -738,9 +672,10 @@ export default function CustomizationOverlay({
     return () => {
       // 🔧 Limpiar eventos táctiles
       const upperCanvas = c.upperCanvasEl;
-      if (upperCanvas) {
-        upperCanvas.removeEventListener('touchstart', handleTouchStart);
-        upperCanvas.removeEventListener('touchmove', handleTouchMove);
+      if (upperCanvas && c._touchHandlers) {
+        const { handleTouch, handleTouchEnd } = c._touchHandlers;
+        upperCanvas.removeEventListener('touchstart', handleTouch);
+        upperCanvas.removeEventListener('touchmove', handleTouch);
         upperCanvas.removeEventListener('touchend', handleTouchEnd);
         upperCanvas.removeEventListener('touchcancel', handleTouchEnd);
       }
@@ -762,7 +697,7 @@ export default function CustomizationOverlay({
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible]);
+  }, [visible, editing, textEditing, stageRef, setZoom]);
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
@@ -1180,20 +1115,7 @@ export default function CustomizationOverlay({
         overflow: "hidden",
         pointerEvents: editing ? "auto" : "none",
         touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain",
-        // 🔧 Mejor control táctil
-        WebkitOverflowScrolling: "touch",
-        WebkitTapHighlightColor: "transparent"
-      }}
-      onTouchStart={(e) => { 
-        if (editing) {
-          e.stopPropagation();
-        }
-      }}
-      onTouchMove={(e) => { 
-        if (editing) {
-          e.stopPropagation();
-        }
+        overscrollBehavior: "contain"
       }}
       onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
     >
@@ -1207,11 +1129,7 @@ export default function CustomizationOverlay({
           height: "100%",
           display: "block",
           background: "transparent",
-          touchAction: editing ? "none" : "auto",
-          // 🔧 Mejor rendimiento táctil
-          WebkitTouchCallout: "none",
-          WebkitUserSelect: "none",
-          userSelect: "none"
+          touchAction: editing ? "none" : "auto"
         }}
       />
     </div>
