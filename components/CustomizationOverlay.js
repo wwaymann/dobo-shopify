@@ -1,771 +1,3 @@
-// components/CustomizationOverlay.js
-// DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con "Detalles"
-// Español neutro. No cambia lo que ya funciona, solo corrige y extiende según solicitud.
-
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import * as fabric from "fabric";
-import { createPortal } from "react-dom";
-import HistoryManager from "../lib/history";
-
-// ======= Constantes =======
-const Z_CANVAS = 4000;
-const FONT_OPTIONS = [
-  { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
-  { name: "Georgia", css: 'Georgia, serif' },
-  { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
-  { name: "Courier New", css: '"Courier New", Courier, monospace' },
-  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
-  { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
-  { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
-];
-
-const VECTOR_SAMPLE_DIM = 500;
-const MAX_TEXTURE_DIM = 1600;
-
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-function hexToRgb(hex) {
-  const m = String(hex || "").replace("#", "").match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (!m) return [51, 51, 51];
-  let s = m[1];
-  if (s.length === 3) s = s.split("").map(ch => ch + ch).join("");
-  const n = parseInt(s, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-// ======= Otsu =======
-function otsuThreshold(gray, total) {
-  if (!gray || !total || total <= 0) return 127;
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < total; i++) hist[gray[i]]++;
-
-  let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
-
-  let sumB = 0, wB = 0;
-  let varMax = -1;
-  let threshold = 127;
-
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = total - wB;
-    if (wF === 0) break;
-
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const diff = mB - mF;
-    const between = wB * wF * diff * diff;
-
-    if (Number.isFinite(between) && between > varMax) {
-      varMax = between;
-      threshold = t;
-    }
-  }
-  return threshold;
-}
-
-function downscale(imgEl) {
-  const w = imgEl.naturalWidth || imgEl.width;
-  const h = imgEl.naturalHeight || imgEl.height;
-  const r = Math.min(MAX_TEXTURE_DIM / w, MAX_TEXTURE_DIM / h, 1);
-  if (!w || !h || r === 1) return imgEl;
-  const cw = Math.round(w * r), ch = Math.round(h * r);
-  const cv = document.createElement("canvas");
-  cv.width = cw; cv.height = ch;
-  const ctx = cv.getContext("2d");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(imgEl, 0, 0, cw, ch);
-  return cv;
-}
-
-// ======= Vectorización (igual sistema usado antes: binarización con "Detalles/vecBias" y color) =======
-function vectorizeElementToBitmap(element, opts = {}) {
-  const {
-    maxDim = VECTOR_SAMPLE_DIM,
-    makeDark = true,
-    drawColor = [51, 51, 51],
-    thrBias = 0
-  } = opts;
-
-  const iw = element?.width, ih = element?.height;
-  if (!iw || !ih) return null;
-
-  const scale = (iw > ih) ? maxDim / iw : maxDim / ih;
-  const w = Math.max(1, Math.round(iw * scale));
-  const h = Math.max(1, Math.round(ih * scale));
-
-  const cv = document.createElement("canvas");
-  cv.width = w; cv.height = h;
-  const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(element, 0, 0, w, h);
-
-  let img;
-  try {
-    img = ctx.getImageData(0, 0, w, h);
-  } catch {
-    return null;
-  }
-
-  const data = img?.data;
-  const total = w * h;
-  if (!data || data.length < total * 4) return null;
-
-  const gray = new Uint8Array(total);
-  for (let i = 0, j = 0; j < total; i += 4, j++) {
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    gray[j] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-  }
-  const thr0 = otsuThreshold(gray, total);
-  const thr = clamp(thr0 + thrBias, 0, 255);
-
-  for (let j = 0, i = 0; j < total; j++, i += 4) {
-    const keep = makeDark ? (gray[j] <= thr) : (gray[j] > thr);
-    if (keep) {
-      data[i] = drawColor[0];
-      data[i + 1] = drawColor[1];
-      data[i + 2] = drawColor[2];
-      data[i + 3] = 255;
-    } else {
-      data[i + 3] = 0;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-
-  const bm = new fabric.Image(cv, {
-    left: 0, top: 0,
-    originX: "left", originY: "top",
-    objectCaching: false,
-    noScaleCache: true,
-    selectable: true,
-    evented: true
-  });
-  bm._vecSourceEl = element; // importante para recolorear y re-vectorizar
-  bm._vecMeta = { w, h };
-  bm._doboKind = "vector"; // etiqueta para el menú
-  return bm;
-}
-
-// ======= Texto con pseudo-relieve plano (sólo capas visuales) y editable =======
-function makeTextGroup(text, opts = {}) {
-  // Grupo simple: base es el que define estilo/tamaño; sin relieve real.
-  const base = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    selectable: true, evented: true,
-    objectCaching: false,
-    fill: opts.fill ?? "rgba(35,35,35,1)"
-  });
-
-  // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
-  const shadow = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    left: -1, top: -1,
-    selectable: false, evented: false,
-    objectCaching: false,
-    fill: "",
-    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
-  });
-  const highlight = new fabric.Textbox(text, {
-    ...opts,
-    originX: "center", originY: "center",
-    left: +1, top: +1,
-    selectable: false, evented: false,
-    objectCaching: false,
-    fill: "",
-    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
-  });
-
-  const group = new fabric.Group([shadow, highlight, base], {
-    originX: "center", originY: "center",
-    subTargetCheck: false,
-    objectCaching: false,
-    selectable: true, evented: true,
-    scaleX: 1, scaleY: 1
-  });
-  group._kind = "textGroup";
-  group._textChildren = { base, shadow, highlight };
-
-  const sync = () => {
-    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
-    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
-    const ox = 1 / sx, oy = 1 / sy;
-    shadow.set({ left: -ox, top: -oy });
-    highlight.set({ left: +ox, top: +oy });
-    group.setCoords();
-    group.canvas?.requestRenderAll?.();
-  };
-  group.on("scaling", sync);
-  group.on("modified", sync);
-  sync();
-
-  return group;
-}
-
-export default function CustomizationOverlay({
-  stageRef,
-  anchorRef,
-  visible = true,
-  zoom = 0.6,
-  setZoom
-}) {
-  // ---- Refs y estado ----
-  const canvasRef = useRef(null);
-  const fabricCanvasRef = useRef(null);
-  const overlayRef = useRef(null);
-  const addInputVectorRef = useRef(null);
-  const addInputRgbRef = useRef(null);
-  const cameraInputRef = useRef(null);
-  const menuRef = useRef(null);
-
-  const [uploadMode, setUploadMode] = useState(null); // "vector" | "rgb"
-  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
-  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
-  const [editing, setEditing] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
-
-  // Historial
-  const historyRef = useRef(null);
-  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
-
-  // Tipografía
-  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
-  const [fontSize, setFontSize] = useState(60);
-  const [isBold, setIsBold] = useState(false);
-  const [isItalic, setIsItalic] = useState(false);
-  const [isUnderline, setIsUnderline] = useState(false);
-  const [textAlign, setTextAlign] = useState("center");
-  const [textEditing, setTextEditing] = useState(false);
-
-  // UI
-  const [showAlignMenu, setShowAlignMenu] = useState(false);
-
-  // Color (texto y vector)
-  const [shapeColor, setShapeColor] = useState("#333333");
-
-  // Vector
-  const [vecBias, setVecBias] = useState(0); // -60..+60
-
-  const suppressSelectionRef = useRef(false);
-  const designBoundsRef = useRef(null);
-  
-  // 🔧 REF para control de zoom táctil (simplificado)
-  const isPinchingRef = useRef(false);
-  const lastDistanceRef = useRef(0);
-
-  // ====== helpers de historial
-  const getSnapshot = () => {
-    const c = fabricCanvasRef.current;
-    if (!c) return null;
-    return c.toJSON(["_kind", "_textChildren", "_vecSourceEl", "_vecMeta", "_doboKind"]);
-  };
-
-  const applySnapshot = (snap) => {
-    const c = fabricCanvasRef.current;
-    if (!c || !snap) return;
-    c._skipHistory = true;
-    c.loadFromJSON(snap, () => {
-      c._skipHistory = false;
-      c.requestRenderAll();
-    });
-  };
-
-  const refreshCaps = () => setHistCaps({
-    canUndo: !!historyRef.current?.canUndo(),
-    canRedo: !!historyRef.current?.canRedo()
-  });
-
-  const recordChange = (() => {
-    let t = null;
-    return () => {
-      if (fabricCanvasRef.current?._skipHistory) return;
-      clearTimeout(t);
-      t = setTimeout(() => {
-        const s = getSnapshot();
-        if (s && historyRef.current) historyRef.current.push(s);
-        refreshCaps();
-      }, 140);
-    };
-  })();
-
-  // ====== layout a partir de anchor y stage
-  useLayoutEffect(() => {
-    const el = anchorRef?.current;
-    if (!el) return;
-    const prev = el.style.position;
-    if (getComputedStyle(el).position === "static") el.style.position = "relative";
-    return () => { try { el.style.position = prev; } catch {} };
-  }, [anchorRef]);
-
-  useLayoutEffect(() => {
-    const stage = stageRef?.current;
-    const anchor = anchorRef?.current;
-    if (!stage || !anchor) return;
-
-    const measure = () => {
-      const w = Math.max(1, anchor.clientWidth);
-      const h = Math.max(1, anchor.clientHeight);
-      let left = 0, top = 0;
-      let el = anchor;
-      while (el && el !== stage) {
-        left += el.offsetLeft || 0;
-        top += el.offsetTop || 0;
-        el = el.offsetParent;
-      }
-      setBaseSize({ w, h });
-      setOverlayBox({ left, top, w, h });
-
-      const c = fabricCanvasRef.current;
-      if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
-    };
-
-    measure();
-    const roA = new ResizeObserver(measure);
-    const roS = new ResizeObserver(measure);
-    try { roA.observe(anchor); } catch {}
-    try { roS.observe(stage); } catch {}
-    window.addEventListener("resize", measure, { passive: true });
-
-    return () => {
-      try { roA.disconnect(); } catch {}
-      try { roS.disconnect(); } catch {}
-      window.removeEventListener("resize", measure);
-    };
-  }, [stageRef, anchorRef]);
-
-  useEffect(() => {
-    const v = typeof zoom === "number" ? zoom : 0.6;
-    stageRef?.current?.style.setProperty("--zoom", String(v));
-  }, [zoom, stageRef]);
-
-  // ====== init Fabric
-  useEffect(() => {
-    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
-
-    const c = new fabric.Canvas(canvasRef.current, {
-      width: 1,
-      height: 1,
-      preserveObjectStacking: true,
-      selection: true,
-      perPixelTargetFind: true,
-      targetFindTolerance: 8,
-      // 🔧 Configuración clave para móviles
-      allowTouchScrolling: false,
-      stopContextMenu: true
-    });
-    fabricCanvasRef.current = c;
-
-    // 🔧 CONFIGURACIÓN SIMPLE DE ZOOM/PAN TÁCTIL
-    const upperCanvas = c.upperCanvasEl;
-    if (upperCanvas) {
-      // Prevenir el comportamiento por defecto del navegador
-      upperCanvas.style.touchAction = 'none';
-      
-      // Manejador de eventos táctiles
-      const handleTouch = (e) => {
-        if (!editing || textEditing) return;
-        
-        if (e.touches.length === 2) {
-          // ZOOM CON 2 DEDOS
-          e.preventDefault();
-          e.stopPropagation();
-          
-          const touch1 = e.touches[0];
-          const touch2 = e.touches[1];
-          
-          // Calcular distancia entre dedos
-          const dx = touch1.clientX - touch2.clientX;
-          const dy = touch1.clientY - touch2.clientY;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (isPinchingRef.current && lastDistanceRef.current > 0) {
-            const scaleChange = distance / lastDistanceRef.current;
-            const currentZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
-            const newZoom = clamp(currentZoom * scaleChange, 0.6, 2.5);
-            
-            stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-            if (typeof setZoom === "function") setZoom(newZoom);
-          }
-          
-          lastDistanceRef.current = distance;
-          isPinchingRef.current = true;
-        } else if (e.touches.length === 1 && !isPinchingRef.current) {
-          // PAN CON 1 DEDO (solo si no estamos haciendo zoom)
-          const activeObj = c.getActiveObject();
-          if (!activeObj) {
-            // Permitir pan solo si no hay objeto seleccionado
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        }
-      };
-      
-      const handleTouchEnd = () => {
-        isPinchingRef.current = false;
-        lastDistanceRef.current = 0;
-      };
-      
-      upperCanvas.addEventListener('touchstart', handleTouch, { passive: false });
-      upperCanvas.addEventListener('touchmove', handleTouch, { passive: false });
-      upperCanvas.addEventListener('touchend', handleTouchEnd);
-      upperCanvas.addEventListener('touchcancel', handleTouchEnd);
-      
-      // Guardar referencia para limpieza
-      c._touchHandlers = { handleTouch, handleTouchEnd };
-    }
-
-    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-    (() => {
-      const c = fabricCanvasRef.current;
-      if (!c) return;
-
-      // 0) Foco y tolerancias táctiles
-      if (c.upperCanvasEl) {
-        c.upperCanvasEl.setAttribute("tabindex", "0");
-        c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-      }
-      c.perPixelTargetFind = false;
-      c.targetFindTolerance = 12;
-      if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
-
-      // 1) Utilidades
-      const isTextTarget = (t) =>
-        !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
-
-      const enterEdit = (t) => {
-        if (!isTextTarget(t)) return;
-        requestAnimationFrame(() => {
-          if (t.type === "textbox" || t.type === "i-text") {
-            t.selectable = true; t.editable = true; t.evented = true;
-            c.setActiveObject(t);
-            t.enterEditing?.();
-            t.hiddenTextarea?.focus?.();
-          } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-            startInlineTextEdit(t);
-            c.setActiveObject(t);
-          }
-          c.requestRenderAll();
-        });
-      };
-
-      // 2) Tap vs Drag + candado anti-doble-disparo
-      let downInfo = null;
-      let moved = false;
-      let editLockUntil = 0; // ms timestamp: previene doble disparo
-
-      const TAP_MAX_MS = 220;
-      const TAP_MAX_MOVE = 6; // px
-      const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
-
-      c.on("mouse:down", (opt) => {
-        const now = performance.now();
-        moved = false;
-        downInfo = {
-          x: opt.pointer?.x ?? 0,
-          y: opt.pointer?.y ?? 0,
-          t: now,
-          target: opt.target || null
-        };
-      });
-
-      c.on("mouse:move", (opt) => {
-        if (!downInfo) return;
-        const p = opt.pointer || { x: 0, y: 0 };
-        if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-          moved = true;
-        }
-      });
-
-      c.on("mouse:up", (opt) => {
-        const now = performance.now();
-        if (!downInfo) return;
-
-        const t = downInfo.target;
-        const duration = now - downInfo.t;
-
-        // Candado activo → nada
-        if (now < editLockUntil) { downInfo = null; return; }
-
-        // TAP corto sobre texto => editar
-        if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
-          opt.e?.preventDefault?.();
-          opt.e?.stopPropagation?.();
-          enterEdit(t);
-          editLockUntil = now + 300; // evita doble disparo inmediato
-        }
-
-        downInfo = null;
-      });
-
-      // Doble clic / doble tap → editar (respetando candado)
-      c.on("mouse:dblclick", (opt) => {
-        const now = performance.now();
-        const t = opt.target;
-        if (!isTextTarget(t)) return;
-        if (now < editLockUntil) return;
-
-        opt.e?.preventDefault?.();
-        opt.e?.stopPropagation?.();
-        enterEdit(t);
-        editLockUntil = now + 300;
-      });
-
-      // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
-      c.on("text:editing:exited", (opt) => {
-        const t = opt?.target;
-        if (!t) return;
-
-        // Asegura movimiento/selección otra vez
-        t.editable = true;
-        t.selectable = true;
-        t.evented = true;
-        t.hasControls = true;
-        t.lockMovementX = false;
-        t.lockMovementY = false;
-
-        c.setActiveObject(t);
-        c.requestRenderAll();
-      });
-    })();
-
-    // Delimitar bounds (margen 10 px)
-    const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
-    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
-
-    // Enforcers de límites
-    const clampObjectToBounds = (obj) => {
-      const b = designBoundsRef.current; if (!b || !obj) return;
-      obj.setCoords();
-      const r = obj.getBoundingRect(true);
-      let dx = 0, dy = 0;
-      if (r.left < b.x) dx = b.x - r.left;
-      if (r.top < b.y) dy = b.y - r.top;
-      if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
-      if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
-      if (dx || dy) {
-        obj.left = (obj.left ?? 0) + dx;
-        obj.top = (obj.top ?? 0) + dy;
-        obj.setCoords();
-      }
-    };
-    const __bounds_onMove = e => clampObjectToBounds(e.target);
-    const __bounds_onScale = e => clampObjectToBounds(e.target);
-    const __bounds_onRotate = e => clampObjectToBounds(e.target);
-    const __bounds_onAdded = e => clampObjectToBounds(e.target);
-    c.on("object:moving", __bounds_onMove);
-    c.on("object:scaling", __bounds_onScale);
-    c.on("object:rotating", __bounds_onRotate);
-    c.on("object:added", __bounds_onAdded);
-
-    const __bounds_ro = new ResizeObserver(() => {
-      const cw = c.getWidth(), ch = c.getHeight();
-      setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
-      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
-    });
-    __bounds_ro.observe(c.upperCanvasEl);
-
-    // Historial
-    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
-    c.once("after:render", () => {
-      const s = getSnapshot(); if (s) historyRef.current.push(s);
-      refreshCaps();
-    });
-    const __hist_onAdded = () => recordChange();
-    const __hist_onModified = () => recordChange();
-    const __hist_onRemoved = () => recordChange();
-    const __hist_onPath = () => recordChange();
-    c.on("object:added", __hist_onAdded);
-    c.on("object:modified", __hist_onModified);
-    c.on("object:removed", __hist_onRemoved);
-    c.on("path:created", __hist_onPath);
-
-    // Selección: clasificar
-    const classify = (a) => {
-      if (!a) return "none";
-      if (a._kind === "textGroup") return "text";
-      if (a._doboKind === "vector") return "image";
-      if (a.type === "image") return "image";
-      if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
-      return "none";
-    };
-
-    const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
-
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      if (!a) return;
-      let first = null;
-      if (a._kind === "textGroup") first = a._textChildren?.base || null;
-      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic"));
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || "center");
-      }
-    };
-
-    const onSel = () => {
-      const cobj = c.getActiveObject();
-      if (suppressSelectionRef.current) {
-        try { if (cobj?.type === "activeSelection") cobj.discard(); } catch {}
-        try { c.discardActiveObject(); } catch {}
-        try { c.setActiveObject(null); } catch {}
-        try { c._activeObject = null; } catch {}
-        setSelType("none");
-        c.requestRenderAll();
-        return;
-      }
-      setSelType(classify(cobj));
-      reflectTypo();
-    };
-    c.on("selection:created", onSel);
-    c.on("selection:updated", onSel);
-    c.on("selection:cleared", () => setSelType("none"));
-
-    // Doble-clic para texto editable
-    c.on("mouse:dblclick", (e) => {
-      const t = e.target;
-      if (!t) return;
-      if (t._kind === "textGroup") {
-        startInlineTextEdit(t);
-      } else if (isTextObj(t) && typeof t.enterEditing === "function") {
-        t.enterEditing();
-        c.requestRenderAll();
-      }
-    });
-
-    setReady(true);
-    
-    // === DOBO: exponer API global para correo y checkout ===
-    if (typeof window !== "undefined") {
-      const api = {
-        // existentes
-        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
-
-        toSVG: () => c.toSVG({ suppressPreamble: true }),
-        getCanvas: () => c,
-        exportDesignSnapshot: () => {
-          try { return c.toJSON(); } catch { return null; }
-        },
-        importDesignSnapshot: (snap) => new Promise(res => {
-          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-        }),
-        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-      };
-      window.doboDesignAPI = api;
-      try {
-        window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
-        console.log("[DOBO] API global inicializada ✅");
-      } catch {}
-    }
-
-    return () => {
-      // 🔧 Limpiar eventos táctiles
-      const upperCanvas = c.upperCanvasEl;
-      if (upperCanvas && c._touchHandlers) {
-        const { handleTouch, handleTouchEnd } = c._touchHandlers;
-        upperCanvas.removeEventListener('touchstart', handleTouch);
-        upperCanvas.removeEventListener('touchmove', handleTouch);
-        upperCanvas.removeEventListener('touchend', handleTouchEnd);
-        upperCanvas.removeEventListener('touchcancel', handleTouchEnd);
-      }
-      
-      c.off("mouse:dblclick");
-      c.off("selection:created", onSel);
-      c.off("selection:updated", onSel);
-      c.off("selection:cleared");
-      c.off("object:added", __hist_onAdded);
-      c.off("object:modified", __hist_onModified);
-      c.off("object:removed", __hist_onRemoved);
-      c.off("path:created", __hist_onPath);
-
-      c.off("object:moving", __bounds_onMove);
-      c.off("object:scaling", __bounds_onScale);
-      c.off("object:rotating", __bounds_onRotate);
-      c.off("object:added", __bounds_onAdded);
-      try { __bounds_ro.disconnect(); } catch {}
-      try { c.dispose(); } catch {}
-      fabricCanvasRef.current = null;
-    };
-  }, [visible, editing, textEditing, stageRef, setZoom]);
-
-  // Ajuste de tamaño si cambian baseSize
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
-
-  // Interactividad segun "editing"
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-
-    const enableNode = (o, on) => {
-      if (!o) return;
-      const isGroup = o._kind === "textGroup";
-      o.selectable = on;
-      o.evented = on;
-      o.lockMovementX = !on;
-      o.lockMovementY = !on;
-      o.hasControls = on;
-      o.hasBorders = on;
-      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) o.editable = on;
-      o.hoverCursor = on ? "move" : "default";
-      if (isGroup) return;
-      const children = o._objects || (typeof o.getObjects === "function" ? o.getObjects() : null);
-      if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
-    };
-
-    const setAll = (on) => {
-      c.skipTargetFind = !on;
-      c.selection = on;
-      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      const upper = c.upperCanvasEl;
-      if (upper) {
-        upper.style.pointerEvents = on ? "auto" : "none";
-        upper.style.touchAction = on ? "none" : "auto";
-        upper.tabIndex = on ? 0 : -1;
-      }
-      c.defaultCursor = on ? "move" : "default";
-      try { c.discardActiveObject(); } catch {}
-      c.calcOffset?.();
-      c.requestRenderAll?.();
-      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
-    };
-
-    setAll(!!editing);
-  }, [editing]);
-
-  // ======= Edición inline de texto (grupo) =======
-  const startInlineTextEdit = (group) => {
-    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== "textGroup") return;
-    const base = group._textChildren?.base; if (!base) return;
-
-    const pose = {
-      left: group.left, top: group.top, originX: "center", originY: "center",
-      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
-    };
-
-    try { c.remove(group); } catch {}
-
-    const tb = new fabric.Textbox(base.text || "Texto", {
-      left: pose.left, top: pose.top, originX: "center", originY: "center",
-      width: Math.min(baseSize.w * 0.9, base.width || 240),
-      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
       fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
       editable: true, selectable: true, evented: true, objectCaching: false,
       fill: base.fill || "rgba(35,35,35,1)"
@@ -833,8 +65,6 @@ export default function CustomizationOverlay({
   };
 
   // Carga imagen (RGB / Cámara / Vector) con espera inteligente a que el canvas esté listo.
-  // Evita el error "fabric: Error loading blob:" usando FileReader (DataURL) y sincroniza el render.
-  // Carga de imágenes robusta (funciona al primer intento, incluso en montajes lentos)
   const addImageFromFile = (file, mode) => {
     if (!file) return;
 
@@ -1083,10 +313,11 @@ export default function CustomizationOverlay({
     c.requestRenderAll();
   }, [vecBias]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== Zoom de rueda básico (opcional)
+  // ====== Zoom de rueda básico (opcional) - MEJORADO PARA MÓVIL ======
   useEffect(() => {
     const host = stageRef?.current || fabricCanvasRef.current?.upperCanvasEl;
     if (!host) return;
+    
     const onWheel = (e) => {
       if (textEditing) return;
       e.preventDefault();
@@ -1095,13 +326,65 @@ export default function CustomizationOverlay({
       stageRef?.current?.style.setProperty("--zoom", String(next));
       if (typeof setZoom === "function") setZoom(next);
     };
+    
+    // Para móvil: gestos de pellizco
+    let initialDistance = 0;
+    let initialZoom = zoom || 0.6;
+    
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 2 && editing) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        initialDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        initialZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
+      }
+    };
+    
+    const handleTouchMove = (e) => {
+      if (e.touches.length === 2 && editing) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        
+        if (initialDistance > 0) {
+          const scale = currentDistance / initialDistance;
+          const newZoom = clamp(initialZoom * scale, 0.6, 2.5);
+          stageRef?.current?.style.setProperty("--zoom", String(newZoom));
+          if (typeof setZoom === "function") setZoom(newZoom);
+        }
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      initialDistance = 0;
+    };
+    
     host.addEventListener("wheel", onWheel, { passive: false });
-    return () => host.removeEventListener("wheel", onWheel);
-  }, [stageRef, setZoom, textEditing]);
+    
+    // Solo agregar gestos de pellizco si es móvil y estamos editando
+    if (isMobileRef.current) {
+      host.addEventListener("touchstart", handleTouchStart, { passive: false });
+      host.addEventListener("touchmove", handleTouchMove, { passive: false });
+      host.addEventListener("touchend", handleTouchEnd);
+      host.addEventListener("touchcancel", handleTouchEnd);
+    }
+    
+    return () => {
+      host.removeEventListener("wheel", onWheel);
+      if (isMobileRef.current) {
+        host.removeEventListener("touchstart", handleTouchStart);
+        host.removeEventListener("touchmove", handleTouchMove);
+        host.removeEventListener("touchend", handleTouchEnd);
+        host.removeEventListener("touchcancel", handleTouchEnd);
+      }
+    };
+  }, [stageRef, setZoom, textEditing, editing]);
 
   if (!visible) return null;
 
-  // ====== Overlay Canvas (posicionado dentro del anchor/stage)
+  // ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -1114,10 +397,38 @@ export default function CustomizationOverlay({
         zIndex: Z_CANVAS,
         overflow: "hidden",
         pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain"
+        // IMPORTANTE: Configuración diferente para móvil
+        touchAction: editing ? "none" : "pan-y",
+        msTouchAction: editing ? "none" : "pan-y",
+        overscrollBehavior: "contain",
+        // Prevenir rebote en iOS
+        WebkitOverflowScrolling: editing ? "auto" : "touch",
       }}
-      onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
+      onPointerDown={(e) => { 
+        if (editing) {
+          e.stopPropagation();
+          // Solo prevenir si estamos sobre un objeto seleccionado
+          const c = fabricCanvasRef.current;
+          if (c && c.getActiveObject()) {
+            e.preventDefault();
+          }
+        }
+      }}
+      onTouchStart={(e) => { 
+        if (editing) {
+          e.stopPropagation();
+          // Solo prevenir si estamos sobre un objeto seleccionado
+          const c = fabricCanvasRef.current;
+          if (c && c.getActiveObject()) {
+            e.preventDefault();
+          }
+        }
+      }}
+      onTouchMove={(e) => {
+        if (editing && fabricCanvasRef.current?.getActiveObject()) {
+          e.stopPropagation();
+        }
+      }}
     >
       <canvas
         data-dobo-design="1"
@@ -1129,7 +440,12 @@ export default function CustomizationOverlay({
           height: "100%",
           display: "block",
           background: "transparent",
-          touchAction: editing ? "none" : "auto"
+          // Configuración táctil específica
+          touchAction: editing ? "none" : "pan-y",
+          msTouchAction: editing ? "none" : "pan-y",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
         }}
       />
     </div>
@@ -1166,6 +482,9 @@ export default function CustomizationOverlay({
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Línea 1: historial + zoom + modos */}
         <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -1245,8 +564,8 @@ export default function CustomizationOverlay({
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
-  addInputVectorRef.current?.click();
-}); }}
+                  addInputVectorRef.current?.click();
+                }); }}
                 disabled={!ready}
                 title="Subir vector (usa Detalles y Color)"
               >
@@ -1257,8 +576,8 @@ export default function CustomizationOverlay({
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-  addInputRgbRef.current?.click();
-}); }}
+                  addInputRgbRef.current?.click();
+                }); }}
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
               >
@@ -1269,8 +588,8 @@ export default function CustomizationOverlay({
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-  cameraInputRef.current?.click();
-}); }}
+                  cameraInputRef.current?.click();
+                }); }}
                 disabled={!ready}
                 title="Tomar foto con cámara"
               >
@@ -1431,58 +750,58 @@ export default function CustomizationOverlay({
           </>
         )}
 
-     {/* Inputs ocultos */}
-<input
-  ref={addInputVectorRef}
-  type="file"
-  accept="image/*"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "vector");
-    }
-    // 🔧 limpiar inmediatamente para permitir reusar el input
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
+        {/* Inputs ocultos */}
+        <input
+          ref={addInputVectorRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "vector");
+            }
+            // 🔧 limpiar inmediatamente para permitir reusar el input
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
 
-<input
-  ref={addInputRgbRef}
-  type="file"
-  accept="image/*"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "rgb");
-    }
-    // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
+        <input
+          ref={addInputRgbRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "rgb");
+            }
+            // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
 
-<input
-  ref={cameraInputRef}
-  id="cameraInput"
-  type="file"
-  accept="image/*"
-  capture="environment"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
-    }
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
-</div>
-  ); 
-};
+        <input
+          ref={cameraInputRef}
+          id="cameraInput"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
+            }
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      </div>
+    ); 
+  };
 
   return (
     <>
