@@ -1173,64 +1173,49 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
-  // ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
-  const OverlayCanvas = (
-    <div
-      ref={overlayRef}
+// ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
+const OverlayCanvas = (
+  <div
+    ref={overlayRef}
+    style={{
+      position: "absolute",
+      left: overlayBox.left,
+      top: overlayBox.top,
+      width: overlayBox.w,
+      height: overlayBox.h,
+      zIndex: Z_CANVAS,
+      overflow: "hidden",
+      pointerEvents: editing ? "auto" : "none", // Solo interactivo cuando se está editando
+      // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
+      touchAction: editing ? "none" : "pan-y pinch-zoom",
+      msTouchAction: editing ? "none" : "pan-y pinch-zoom",
+      overscrollBehavior: "contain",
+      // Prevenir rebote en iOS
+      WebkitOverflowScrolling: "touch",
+    }}
+    // Eliminar estos manejadores que estaban bloqueando eventos
+  >
+    <canvas
+      data-dobo-design="1"
+      ref={canvasRef}
+      width={overlayBox.w}
+      height={overlayBox.h}
       style={{
-        position: "absolute",
-        left: overlayBox.left,
-        top: overlayBox.top,
-        width: overlayBox.w,
-        height: overlayBox.h,
-        zIndex: Z_CANVAS,
-        overflow: "hidden",
-        pointerEvents: "auto", // SIEMPRE permitir interacción
-        // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
+        width: "100%",
+        height: "100%",
+        display: "block",
+        background: "transparent",
+        // Configuración táctil específica
         touchAction: editing ? "none" : "pan-y pinch-zoom",
         msTouchAction: editing ? "none" : "pan-y pinch-zoom",
-        overscrollBehavior: "contain",
-        // Prevenir rebote en iOS
-        WebkitOverflowScrolling: "touch",
+        WebkitTouchCallout: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        pointerEvents: editing ? "auto" : "none", // Solo interactivo cuando se está editando
       }}
-      onPointerDown={(e) => { 
-        if (editing) {
-          e.stopPropagation();
-        }
-      }}
-      onTouchStart={(e) => { 
-        if (editing) {
-          e.stopPropagation();
-        }
-      }}
-      onTouchMove={(e) => {
-        if (editing) {
-          e.stopPropagation();
-        }
-      }}
-    >
-      <canvas
-        data-dobo-design="1"
-        ref={canvasRef}
-        width={overlayBox.w}
-        height={overlayBox.h}
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "block",
-          background: "transparent",
-          // Configuración táctil específica - NO BLOQUEAR
-          touchAction: editing ? "none" : "pan-y pinch-zoom",
-          msTouchAction: editing ? "none" : "pan-y pinch-zoom",
-          WebkitTouchCallout: "none",
-          WebkitUserSelect: "none",
-          userSelect: "none",
-          // Asegurar que sea interactivo
-          pointerEvents: "auto",
-        }}
-      />
-    </div>
-  );
+    />
+  </div>
+);
 
   // ====== Menú ======
   const Menu = () => {
@@ -1330,14 +1315,17 @@ export default function CustomizationOverlay({
         {/* Línea 2: acciones básicas */}
         {editing && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            <button
-              type="button" className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={addText} disabled={!ready}
-              title="Agregar texto"
-            >
-              <i className="fa fa-font" aria-hidden="true"></i> Texto
-            </button>
+            // En la función Menu(), ajustar los botones:
+<button
+  type="button" className="btn btn-sm btn-outline-secondary"
+  onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+  onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
+  onClick={addText} 
+  disabled={!ready}
+  title="Agregar texto"
+>
+  <i className="fa fa-font" aria-hidden="true"></i> Texto
+</button>
 
             <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
               {/* Subir Vector */}
@@ -1584,16 +1572,31 @@ export default function CustomizationOverlay({
     ); 
   };
 
-  return (
-    <>
-      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+ // En el return final, verificar que el menú se renderice fuera del área del canvas:
+return (
+  <>
+    {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
-      {anchorRef?.current ? createPortal(
-        <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none", marginTop: 8 }}>
-          <div style={{ pointerEvents: "auto", display: "inline-flex" }}><Menu /></div>
-        </div>,
-        document.getElementById("dobo-menu-dock") || document.body
-      ) : null}
-    </>
-  );
-}
+    {anchorRef?.current ? createPortal(
+      <div style={{ 
+        position: "relative", 
+        width: "100%", 
+        display: "flex", 
+        justifyContent: "center", 
+        pointerEvents: "none", 
+        marginTop: 8,
+        zIndex: Z_CANVAS + 1 // Asegurar que esté por encima del canvas
+      }}>
+        <div style={{ 
+          pointerEvents: "auto", 
+          display: "inline-flex",
+          position: "relative",
+          zIndex: Z_CANVAS + 2 
+        }}>
+          <Menu />
+        </div>
+      </div>,
+      document.getElementById("dobo-menu-dock") || document.body
+    ) : null}
+  </>
+);
