@@ -1246,151 +1246,224 @@ const reflectTypo = () => {
     </div>
   );
 
-// ====== Menú con eventos completamente aislados ======
+// ====== Menú completamente independiente del canvas ======
 const Menu = () => {
   const c = fabricCanvasRef.current;
   const a = c?.getActiveObject();
-  const isVectorSelected =
-    selType === "image" && a && a._doboKind === "vector";
-  const isRgbSelected =
-    selType === "image" && a && a._doboKind === "rgb";
+  const isVectorSelected = selType === "image" && a && a._doboKind === "vector";
+  const isRgbSelected = selType === "image" && a && a._doboKind === "rgb";
 
-  // Handler específico para móvil que previene interferencias
-  const handleTap = (callback) => {
-    return (e) => {
-      // Detener TODA la propagación en móvil
-      if (isMobileRef.current) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
+  // Función para manejar clicks en móvil SIN interferencias
+  const mobileClick = (callback) => (e) => {
+    // En móvil: prevenir TODO y ejecutar callback
+    if ('ontouchstart' in window) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+      
+      // Forzar blur de cualquier input activo
+      if (document.activeElement) {
+        document.activeElement.blur();
       }
       
-      // Pequeño delay para móvil
-      if (isMobileRef.current) {
-        setTimeout(callback, 10);
-      } else {
-        callback();
+      // Ejecutar con delay mínimo
+      setTimeout(callback, 10);
+      return;
+    }
+    
+    // En desktop: comportamiento normal
+    callback();
+  };
+
+  // Función específica para inputs de archivo
+  const triggerFileInput = (inputRef) => () => {
+    if ('ontouchstart' in window) {
+      // En móvil: delay más largo y asegurar clic
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.click();
+        }
+      }, 100);
+    } else {
+      // En desktop: inmediato
+      if (inputRef.current) {
+        inputRef.current.click();
       }
-    };
+    }
   };
 
   return (
     <div
       ref={menuRef}
+      // CRÍTICO: Estos estilos aseguran que el menú sea independiente
       style={{
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        background: "rgba(253, 253, 253, 0.98)",
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        border: "1px solid #ddd",
-        borderRadius: 12,
-        padding: "10px 12px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+        background: "rgba(255, 255, 255, 0.98)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        border: "2px solid #e0e0e0",
+        borderRadius: 16,
+        padding: "12px 14px",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
         width: "auto",
-        maxWidth: "94vw",
-        fontSize: 12,
+        maxWidth: "95vw",
+        fontSize: 13,
         userSelect: "none",
-        zIndex: Z_MENU,
-        // CRÍTICO: Configuración para móvil
+        zIndex: 999999, // Z-index extremadamente alto
         touchAction: "manipulation",
         msTouchAction: "manipulation",
         WebkitUserSelect: "none",
         MozUserSelect: "none",
         pointerEvents: "auto",
-        // Aislar completamente del canvas
         position: "relative",
         isolation: "isolate",
+        // Prevenir cualquier efecto táctil del padre
+        transform: "translate3d(0,0,0)",
+        willChange: "transform",
       }}
-      // NO usar onPointerDown/onTouchStart en el contenedor principal
-      // Solo en botones individuales
+      // NO usar ningún event handler aquí
     >
-      {/* Línea 1: historial + zoom + modos */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      {/* Línea 1: Botones principales */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {/* Historial */}
         <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
           <button
-            type="button" 
+            type="button"
             className="btn btn-outline-secondary"
-            onClick={handleTap(() => { 
-              const s = historyRef.current?.undo(); 
-              if (s) applySnapshot(s); 
-              refreshCaps(); 
+            onClick={mobileClick(() => {
+              const s = historyRef.current?.undo();
+              if (s) applySnapshot(s);
+              refreshCaps();
             })}
-            onMouseDown={(e) => e.preventDefault()} // Prevenir focus
-            disabled={!histCaps.canUndo} 
-            title="Atrás (Ctrl+Z)" 
-            aria-label="Atrás"
-            style={{ 
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            disabled={!histCaps.canUndo}
+            title="Atrás"
+            style={{
               touchAction: "manipulation",
               WebkitTapHighlightColor: "transparent",
+              minWidth: "40px",
+              minHeight: "32px",
             }}
           >
             <i className="fa fa-undo" aria-hidden="true"></i>
           </button>
           <button
-            type="button" 
+            type="button"
             className="btn btn-outline-secondary"
-            onClick={handleTap(() => { 
-              const s = historyRef.current?.redo(); 
-              if (s) applySnapshot(s); 
-              refreshCaps(); 
+            onClick={mobileClick(() => {
+              const s = historyRef.current?.redo();
+              if (s) applySnapshot(s);
+              refreshCaps();
             })}
-            onMouseDown={(e) => e.preventDefault()}
-            disabled={!histCaps.canRedo} 
-            title="Adelante (Ctrl+Shift+Z)" 
-            aria-label="Adelante"
-            style={{ 
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            disabled={!histCaps.canRedo}
+            title="Adelante"
+            style={{
               touchAction: "manipulation",
               WebkitTapHighlightColor: "transparent",
+              minWidth: "40px",
+              minHeight: "32px",
             }}
           >
             <i className="fa fa-repeat" aria-hidden="true"></i>
           </button>
         </div>
 
+        {/* Zoom */}
         {typeof setZoom === "function" && (
-          <div className="input-group input-group-sm" style={{ width: 180 }}>
-            <span className="input-group-text">Zoom</span>
+          <div className="input-group input-group-sm" style={{ width: "auto", minWidth: "160px" }}>
+            <span className="input-group-text" style={{ padding: "4px 8px" }}>Zoom</span>
             <button
-              type="button" 
+              type="button"
               className="btn btn-outline-secondary"
-              onClick={handleTap(() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2))))}
-              onMouseDown={(e) => e.preventDefault()}
-              style={{ 
+              onClick={mobileClick(() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2))))}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              style={{
                 touchAction: "manipulation",
                 WebkitTapHighlightColor: "transparent",
+                padding: "4px 8px",
               }}
             >−</button>
-            <input 
-              type="text" 
-              readOnly 
+            <input
+              type="text"
+              readOnly
               className="form-control form-control-sm text-center"
-              value={`${Math.round((zoom || 1) * 100)}%`} 
-              style={{ touchAction: "none" }}
+              value={`${Math.round((zoom || 1) * 100)}%`}
+              style={{
+                width: "60px",
+                touchAction: "none",
+                padding: "4px",
+              }}
             />
             <button
-              type="button" 
+              type="button"
               className="btn btn-outline-secondary"
-              onClick={handleTap(() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2))))}
-              onMouseDown={(e) => e.preventDefault()}
-              style={{ 
+              onClick={mobileClick(() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2))))}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              style={{
                 touchAction: "manipulation",
                 WebkitTapHighlightColor: "transparent",
+                padding: "4px 8px",
               }}
             >+</button>
           </div>
         )}
 
+        {/* Botones de modo */}
         <button
           type="button"
           className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-          onClick={handleTap(() => setEditing(false))}
-          onMouseDown={(e) => e.preventDefault()}
-          style={{ 
-            minWidth: "16ch",
+          onClick={mobileClick(() => {
+            setEditing(false);
+            // Forzar deselección en el canvas
+            if (c) {
+              c.discardActiveObject();
+              c.requestRenderAll();
+            }
+          })}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          style={{
+            minWidth: "140px",
             touchAction: "manipulation",
             WebkitTapHighlightColor: "transparent",
+            padding: "6px 12px",
           }}
         >
           Seleccionar Maceta
@@ -1399,93 +1472,124 @@ const Menu = () => {
         <button
           type="button"
           className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-          onClick={handleTap(() => setEditing(true))}
-          onMouseDown={(e) => e.preventDefault()}
-          style={{ 
-            minWidth: "12ch",
+          onClick={mobileClick(() => setEditing(true))}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          style={{
+            minWidth: "100px",
             touchAction: "manipulation",
             WebkitTapHighlightColor: "transparent",
+            padding: "6px 12px",
           }}
         >
           Diseñar
         </button>
       </div>
 
-      {/* Línea 2: acciones básicas - CONTINÚA IGUAL PERO CON handleTap */}
+      {/* Línea 2: Acciones de edición */}
       {editing && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
           <button
-            type="button" 
+            type="button"
             className="btn btn-sm btn-outline-secondary"
-            onClick={handleTap(addText)} 
-            onMouseDown={(e) => e.preventDefault()}
+            onClick={mobileClick(addText)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             disabled={!ready}
             title="Agregar texto"
-            style={{ 
+            style={{
               touchAction: "manipulation",
               WebkitTapHighlightColor: "transparent",
+              padding: "6px 12px",
             }}
           >
             <i className="fa fa-font" aria-hidden="true"></i> Texto
           </button>
 
           <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
-            {/* Subir Vector */}
             <button
-              type="button" 
+              type="button"
               className="btn btn-outline-secondary"
-              onClick={handleTap(() => { 
-                setUploadMode("vector"); 
-                setTimeout(() => {
-                  addInputVectorRef.current?.click();
-                }, 50);
+              onClick={mobileClick(() => {
+                setUploadMode("vector");
+                triggerFileInput(addInputVectorRef)();
               })}
-              onMouseDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               disabled={!ready}
-              title="Subir vector (usa Detalles y Color)"
-              style={{ 
+              title="Subir vector"
+              style={{
                 touchAction: "manipulation",
                 WebkitTapHighlightColor: "transparent",
+                padding: "6px 10px",
               }}
             >
               <i className="fa fa-magic" aria-hidden="true"></i> Vector
             </button>
-            {/* Subir RGB */}
             <button
-              type="button" 
+              type="button"
               className="btn btn-outline-secondary"
-              onClick={handleTap(() => { 
-                setUploadMode("rgb"); 
-                setTimeout(() => {
-                  addInputRgbRef.current?.click();
-                }, 50);
+              onClick={mobileClick(() => {
+                setUploadMode("rgb");
+                triggerFileInput(addInputRgbRef)();
               })}
-              onMouseDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               disabled={!ready}
-              title="Subir imagen RGB (color original)"
-              style={{ 
+              title="Subir imagen"
+              style={{
                 touchAction: "manipulation",
                 WebkitTapHighlightColor: "transparent",
+                padding: "6px 10px",
               }}
             >
               <i className="fa fa-image" aria-hidden="true"></i> Imagen
             </button>
-            {/* Cámara */}
             <button
-              type="button" 
+              type="button"
               className="btn btn-outline-secondary"
-              onClick={handleTap(() => { 
-                setUploadMode("rgb"); 
-                setTimeout(() => {
-                  cameraInputRef.current?.click();
-                }, 50);
+              onClick={mobileClick(() => {
+                setUploadMode("rgb");
+                triggerFileInput(cameraInputRef)();
               })}
-              onMouseDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               disabled={!ready}
-              title="Tomar foto con cámara"
-              style={{ 
+              title="Tomar foto"
+              style={{
                 touchAction: "manipulation",
                 WebkitTapHighlightColor: "transparent",
+                padding: "6px 10px",
               }}
             >
               <i className="fa fa-camera" aria-hidden="true"></i> Cámara
@@ -1493,282 +1597,247 @@ const Menu = () => {
           </div>
 
           <button
-            type="button" 
+            type="button"
             className="btn btn-sm btn-outline-danger"
-            onClick={handleTap(onDelete)}
-            onMouseDown={(e) => e.preventDefault()}
+            onClick={mobileClick(onDelete)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             disabled={!ready || selType === "none"}
             title="Eliminar seleccionado"
-            style={{ 
+            style={{
               touchAction: "manipulation",
               WebkitTapHighlightColor: "transparent",
+              padding: "6px 12px",
             }}
           >
-          <i className="fa fa-trash" aria-hidden="true"></i> Borrar
+            <i className="fa fa-trash" aria-hidden="true"></i> Borrar
           </button>
         </div>
       )}
 
-        {/* Línea 3: propiedades */}
-        {editing && (
-          <>
-            {/* Texto */}
-            {selType === "text" && (
-              <>
-                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                  <span className="input-group-text">Color</span>
+      {/* Línea 3: Propiedades de edición (mantén igual pero con mobileClick) */}
+      {editing && (
+        <>
+          {/* Texto */}
+          {selType === "text" && (
+            <>
+              <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
+                <span className="input-group-text">Color</span>
+                <input
+                  type="color"
+                  className="form-control form-control-color"
+                  value={shapeColor}
+                  onChange={(e) => {
+                    setShapeColor(e.target.value);
+                    applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` }));
+                  }}
+                  style={{ touchAction: "manipulation" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
+                  <span className="input-group-text">Fuente</span>
+                  <select
+                    className="form-select form-select-sm"
+                    value={fontFamily}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setFontFamily(v);
+                      applyToSelection(o => o.set({ fontFamily: v }));
+                    }}
+                    style={{ touchAction: "manipulation" }}
+                  >
+                    {FONT_OPTIONS.map(f => (
+                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                  <button
+                    type="button"
+                    className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
+                    onClick={mobileClick(() => {
+                      const nv = !isBold;
+                      setIsBold(nv);
+                      applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" }));
+                    })}
+                    title="Negrita"
+                    style={{ touchAction: "manipulation" }}
+                  >B</button>
+                  <button
+                    type="button"
+                    className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
+                    onClick={mobileClick(() => {
+                      const nv = !isItalic;
+                      setIsItalic(nv);
+                      applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" }));
+                    })}
+                    title="Cursiva"
+                    style={{ touchAction: "manipulation" }}
+                  >I</button>
+                  <button
+                    type="button"
+                    className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
+                    onClick={mobileClick(() => {
+                      const nv = !isUnderline;
+                      setIsUnderline(nv);
+                      applyToSelection(o => o.set({ underline: nv }));
+                    })}
+                    title="Subrayado"
+                    style={{ touchAction: "manipulation" }}
+                  >U</button>
+                </div>
+
+                <div className="input-group input-group-sm" style={{ width: 160 }}>
+                  <span className="input-group-text">Tamaño</span>
                   <input
-                    type="color" 
-                    className="form-control form-control-color"
-                    value={shapeColor}
-                    onChange={(e)=>{ 
-                      setShapeColor(e.target.value); 
-                      applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); 
+                    type="number"
+                    className="form-control form-control-sm"
+                    min={8}
+                    max={200}
+                    step={1}
+                    value={fontSize}
+                    onChange={(e) => {
+                      const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
+                      setFontSize(v);
+                      applyToSelection(o => o.set({ fontSize: v }));
                     }}
                     style={{ touchAction: "manipulation" }}
                   />
                 </div>
 
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-                  <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
-                    <span className="input-group-text">Fuente</span>
-                    <select
-                      className="form-select form-select-sm"
-                      value={fontFamily}
-                      onChange={(e) => { 
-                        const v = e.target.value; 
-                        setFontFamily(v); 
-                        applyToSelection(o => o.set({ fontFamily: v })); 
-                      }}
-                      style={{ touchAction: "manipulation" }}
-                    >
-                      {FONT_OPTIONS.map(f => (
-                        <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
+                <div className="btn-group dropup">
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={mobileClick(() => setShowAlignMenu(v => !v))}
+                    title="Alineación"
+                    style={{ touchAction: "manipulation" }}
+                  >
+                    {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
+                  </button>
+                  {showAlignMenu && (
+                    <ul className="dropdown-menu show" style={{ position: "absolute" }}>
+                      {["left", "center", "right", "justify"].map(a => (
+                        <li key={a}>
+                          <button
+                            type="button"
+                            className={`dropdown-item ${textAlign === a ? "active" : ""}`}
+                            onClick={mobileClick(() => {
+                              setTextAlign(a);
+                              setShowAlignMenu(false);
+                              applyToSelection(o => o.set({ textAlign: a }));
+                            })}
+                            style={{ touchAction: "manipulation" }}
+                          >
+                            {a}
+                          </button>
+                        </li>
                       ))}
-                    </select>
-                  </div>
-
-                  <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                    <button
-                      type="button" 
-                      className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
-                      onClick={(e) => handleMobileClick(e, () => { 
-                        const nv = !isBold; 
-                        setIsBold(nv); 
-                        applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); 
-                      })}
-                      title="Negrita"
-                      style={{ touchAction: "manipulation" }}
-                    >B</button>
-                    <button
-                      type="button" 
-                      className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
-                      onClick={(e) => handleMobileClick(e, () => { 
-                        const nv = !isItalic; 
-                        setIsItalic(nv); 
-                        applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); 
-                      })}
-                      title="Cursiva"
-                      style={{ touchAction: "manipulation" }}
-                    >I</button>
-                    <button
-                      type="button" 
-                      className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
-                      onClick={(e) => handleMobileClick(e, () => { 
-                        const nv = !isUnderline; 
-                        setIsUnderline(nv); 
-                        applyToSelection(o => o.set({ underline: nv })); 
-                      })}
-                      title="Subrayado"
-                      style={{ touchAction: "manipulation" }}
-                    >U</button>
-                  </div>
-
-                  <div className="input-group input-group-sm" style={{ width: 160 }}>
-                    <span className="input-group-text">Tamaño</span>
-                    <input
-                      type="number" 
-                      className="form-control form-control-sm"
-                      min={8} 
-                      max={200} 
-                      step={1}
-                      value={fontSize}
-                      onChange={(e) => {
-                        const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
-                        setFontSize(v); 
-                        applyToSelection(o => o.set({ fontSize: v }));
-                      }}
-                      style={{ touchAction: "manipulation" }}
-                    />
-                  </div>
-
-                  <div className="btn-group dropup">
-                    <button
-                      type="button" 
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={(e) => handleMobileClick(e, () => setShowAlignMenu(v => !v))}
-                      title="Alineación"
-                      style={{ touchAction: "manipulation" }}
-                    >
-                      {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
-                    </button>
-                    {showAlignMenu && (
-                      <ul className="dropdown-menu show" style={{ position: "absolute" }}>
-                        {["left","center","right","justify"].map(a => (
-                          <li key={a}>
-                            <button
-                              type="button"
-                              className={`dropdown-item ${textAlign === a ? "active" : ""}`}
-                              onClick={(e) => handleMobileClick(e, () => { 
-                                setTextAlign(a); 
-                                setShowAlignMenu(false); 
-                                applyToSelection(o => o.set({ textAlign: a })); 
-                              })}
-                              style={{ touchAction: "manipulation" }}
-                            >
-                              {a}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Imagen */}
-            {selType === "image" && (
-              <>
-                {/* Color: solo afecta a vectores */}
-                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                  <span className="input-group-text">Color</span>
-                  <input
-                    type="color" 
-                    className="form-control form-control-color"
-                    value={shapeColor}
-                    onChange={(e)=>{ 
-                      setShapeColor(e.target.value); 
-                      if (isVectorSelected) applyColorToActive(e.target.value); 
-                    }}
-                    disabled={!isVectorSelected}
-                    title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
-                    style={{ touchAction: "manipulation" }}
-                  />
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                  {/* Detalles: solo para vectores */}
-                  <div className="input-group input-group-sm" style={{ width: 230 }}>
-                    <span className="input-group-text">Detalles</span>
-                    <button
-                      type="button" 
-                      className="btn btn-outline-secondary"
-                      onClick={(e) => handleMobileClick(e, () => setVecBias(v => clamp(v - 5, -60, 60)))}
-                      disabled={!isVectorSelected}
-                      style={{ touchAction: "manipulation" }}
-                    >−</button>
-                    <input 
-                      type="text" 
-                      readOnly 
-                      className="form-control form-control-sm text-center" 
-                      value={vecBias} 
-                      style={{ touchAction: "manipulation" }}
-                    />
-                    <button
-                      type="button" 
-                      className="btn btn-outline-secondary"
-                      onClick={(e) => handleMobileClick(e, () => setVecBias(v => clamp(v + 5, -60, 60)))}
-                      disabled={!isVectorSelected}
-                      style={{ touchAction: "manipulation" }}
-                    >+</button>
-                  </div>
-
-                  {/* Indicador RGB */}
-                  {isRgbSelected && (
-                    <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
+                    </ul>
                   )}
                 </div>
-              </>
-            )}
-          </>
-        )}
+              </div>
+            </>
+          )}
 
-        {/* Inputs ocultos */}
-        <input
-          ref={addInputVectorRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) {
-              addImageFromFile(f, "vector");
-            }
-            e.target.value = null;
-          }}
-        />
+          {/* Imagen */}
+          {selType === "image" && (
+            <>
+              <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
+                <span className="input-group-text">Color</span>
+                <input
+                  type="color"
+                  className="form-control form-control-color"
+                  value={shapeColor}
+                  onChange={(e) => {
+                    setShapeColor(e.target.value);
+                    if (isVectorSelected) applyColorToActive(e.target.value);
+                  }}
+                  disabled={!isVectorSelected}
+                  title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
+                  style={{ touchAction: "manipulation" }}
+                />
+              </div>
 
-        <input
-          ref={addInputRgbRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) {
-              addImageFromFile(f, "rgb");
-            }
-            e.target.value = null;
-          }}
-        />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                <div className="input-group input-group-sm" style={{ width: 230 }}>
+                  <span className="input-group-text">Detalles</span>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={mobileClick(() => setVecBias(v => clamp(v - 5, -60, 60)))}
+                    disabled={!isVectorSelected}
+                    style={{ touchAction: "manipulation" }}
+                  >−</button>
+                  <input
+                    type="text"
+                    readOnly
+                    className="form-control form-control-sm text-center"
+                    value={vecBias}
+                    style={{ touchAction: "none" }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={mobileClick(() => setVecBias(v => clamp(v + 5, -60, 60)))}
+                    disabled={!isVectorSelected}
+                    style={{ touchAction: "manipulation" }}
+                  >+</button>
+                </div>
 
-        <input
-          ref={cameraInputRef}
-          id="cameraInput"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) {
-              addImageFromFile(f, "camera");
-            }
-            e.target.value = null;
-          }}
-        />
-      </div>
-    ); 
-  };
+                {isRgbSelected && (
+                  <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
 
- return (
+return (
   <>
     {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
     {anchorRef?.current ? createPortal(
-      <div style={{ 
-        position: "relative", 
-        width: "100%", 
-        display: "flex", 
-        justifyContent: "center", 
-        // IMPORTANTE: pointerEvents debe ser "auto" aquí
-        pointerEvents: "auto", 
-        marginTop: 8,
-        zIndex: Z_MENU,
-        // Aislar completamente del canvas
-        isolation: "isolate",
-      }}>
-        <div style={{ 
-          // CRÍTICO: Esto debe ser "auto" para que los botones funcionen
-          pointerEvents: "auto", 
-          display: "inline-flex",
-          touchAction: "manipulation",
-        }}>
+      <div
+        key="menu-container" // Key importante
+        style={{
+          position: "fixed", // Cambiado a fixed
+          bottom: "20px", // Posicionado abajo
+          left: "0",
+          width: "100%",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          pointerEvents: "none", // Contenedor no interactivo
+          zIndex: 999999,
+          padding: "0 10px",
+        }}
+      >
+        <div
+          style={{
+            pointerEvents: "auto", // Solo el contenido es interactivo
+            display: "inline-flex",
+            touchAction: "manipulation",
+            maxWidth: "100%",
+          }}
+        >
           <Menu />
         </div>
       </div>,
-      document.getElementById("dobo-menu-dock") || document.body
+      document.body // Renderizar directamente en body
     ) : null}
   </>
 );
