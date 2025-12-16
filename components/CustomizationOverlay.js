@@ -1,5 +1,5 @@
 // components/CustomizationOverlay.js
-// DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con “Detalles”
+// DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con "Detalles"
 // Español neutro. No cambia lo que ya funciona, solo corrige y extiende según solicitud.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -10,13 +10,56 @@ import HistoryManager from "../lib/history";
 // ======= Constantes =======
 const Z_CANVAS = 4000;
 const FONT_OPTIONS = [
+  // === SISTEMA / CLÁSICAS ===
   { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
+  { name: "Helvetica", css: 'Helvetica, Arial, sans-serif' },
+  { name: "Verdana", css: 'Verdana, Geneva, sans-serif' },
+  { name: "Tahoma", css: 'Tahoma, Verdana, sans-serif' },
+  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
   { name: "Georgia", css: 'Georgia, serif' },
   { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
   { name: "Courier New", css: '"Courier New", Courier, monospace' },
-  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
+  { name: "Lucida Console", css: '"Lucida Console", Monaco, monospace' },
+
+  // === SANS MODERNAS (GOOGLE FONTS) ===
   { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
   { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
+  { name: "Inter", css: 'Inter, Arial, sans-serif' },
+  { name: "Roboto", css: 'Roboto, Arial, sans-serif' },
+  { name: "Open Sans", css: '"Open Sans", Arial, sans-serif' },
+  { name: "Lato", css: 'Lato, Arial, sans-serif' },
+  { name: "Nunito", css: 'Nunito, Arial, sans-serif' },
+  { name: "Raleway", css: 'Raleway, Arial, sans-serif' },
+  { name: "Source Sans Pro", css: '"Source Sans Pro", Arial, sans-serif' },
+  { name: "Ubuntu", css: 'Ubuntu, Arial, sans-serif' },
+  { name: "Work Sans", css: '"Work Sans", Arial, sans-serif' },
+
+  // === SERIF MODERNAS / EDITORIALES ===
+  { name: "Playfair Display", css: '"Playfair Display", Georgia, serif' },
+  { name: "Merriweather", css: 'Merriweather, Georgia, serif' },
+  { name: "Libre Baskerville", css: '"Libre Baskerville", Georgia, serif' },
+  { name: "Cormorant", css: 'Cormorant, Georgia, serif' },
+  { name: "Crimson Text", css: '"Crimson Text", Georgia, serif' },
+
+  // === DISPLAY / CREATIVAS ===
+  { name: "Bebas Neue", css: '"Bebas Neue", Arial, sans-serif' },
+  { name: "Oswald", css: 'Oswald, Arial, sans-serif' },
+  { name: "Anton", css: 'Anton, Arial, sans-serif' },
+  { name: "Abril Fatface", css: '"Abril Fatface", serif' },
+  { name: "Pacifico", css: 'Pacifico, cursive' },
+  { name: "Lobster", css: 'Lobster, cursive' },
+  { name: "Fredoka", css: 'Fredoka, Arial, sans-serif' },
+
+  // === MONO / TÉCNICAS ===
+  { name: "Roboto Mono", css: '"Roboto Mono", monospace' },
+  { name: "Source Code Pro", css: '"Source Code Pro", monospace' },
+  { name: "JetBrains Mono", css: '"JetBrains Mono", monospace' },
+
+  // === ORGÁNICAS / ARTESANALES (BUENAS PARA MACETAS) ===
+  { name: "Quicksand", css: 'Quicksand, Arial, sans-serif' },
+  { name: "Comfortaa", css: 'Comfortaa, Arial, sans-serif' },
+  { name: "Baloo 2", css: '"Baloo 2", Arial, sans-serif' },
+  { name: "Amatic SC", css: '"Amatic SC", cursive' }
 ];
 
 const VECTOR_SAMPLE_DIM = 500;
@@ -81,7 +124,7 @@ function downscale(imgEl) {
   return cv;
 }
 
-// ======= Vectorización (igual sistema usado antes: binarización con “Detalles/vecBias” y color) =======
+// ======= Vectorización (igual sistema usado antes: binarización con "Detalles/vecBias" y color) =======
 function vectorizeElementToBitmap(element, opts = {}) {
   const {
     maxDim = VECTOR_SAMPLE_DIM,
@@ -254,6 +297,7 @@ export default function CustomizationOverlay({
 
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
+  const isMobileRef = useRef(false);
 
   // ====== helpers de historial
   const getSnapshot = () => {
@@ -340,7 +384,18 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== init Fabric
+  // ====== Detectar si es móvil ======
+  useEffect(() => {
+    const checkMobile = () => {
+      isMobileRef.current = window.innerWidth <= 768;
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // ====== init Fabric con mejor configuración para móvil ======
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
@@ -350,125 +405,157 @@ export default function CustomizationOverlay({
       preserveObjectStacking: true,
       selection: true,
       perPixelTargetFind: true,
-      targetFindTolerance: 8
+      targetFindTolerance: 8,
+      // Configuración mejorada para móvil
+      allowTouchScrolling: true, // Siempre permitir scroll táctil
+      stopContextMenu: true,
+      backgroundColor: 'transparent',
     });
     fabricCanvasRef.current = c;
 
-    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
+    // Configurar eventos táctiles específicos para móvil
+    if ('ontouchstart' in window) {
+      const upperCanvas = c.upperCanvasEl;
+      if (upperCanvas) {
+        // Configuración para permitir interacción pero también scroll
+        upperCanvas.style.touchAction = 'manipulation';
+        upperCanvas.style.msTouchAction = 'manipulation';
+        upperCanvas.style.WebkitTouchCallout = "none";
+        
+        // No prevenir eventos táctiles - dejar que Fabric los maneje
+        const handleTouchStart = (e) => {
+          // Dejar que Fabric maneje los eventos táctiles
+          if (c.selection && c.getActiveObject()) {
+            // Si hay un objeto seleccionado, permitir que Fabric lo maneje
+            e.stopPropagation();
+          }
+        };
 
-  // 0) Foco y tolerancias táctiles
-  if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
-    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-  }
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
-
-  // 1) Utilidades
-  const isTextTarget = (t) =>
-    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
-
-  const enterEdit = (t) => {
-    if (!isTextTarget(t)) return;
-    requestAnimationFrame(() => {
-      if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true; t.editable = true; t.evented = true;
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
-      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
+        upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        
+        // Limpiar al desmontar
+        return () => {
+          upperCanvas.removeEventListener('touchstart', handleTouchStart);
+        };
       }
-      c.requestRenderAll();
-    });
-  };
-
-  // 2) Tap vs Drag + candado anti-doble-disparo
-  let downInfo = null;
-  let moved = false;
-  let editLockUntil = 0; // ms timestamp: previene doble disparo
-
-  const TAP_MAX_MS = 220;
-  const TAP_MAX_MOVE = 6; // px
-  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
-
-  c.on("mouse:down", (opt) => {
-    const now = performance.now();
-    moved = false;
-    downInfo = {
-      x: opt.pointer?.x ?? 0,
-      y: opt.pointer?.y ?? 0,
-      t: now,
-      target: opt.target || null
-    };
-  });
-
-  c.on("mouse:move", (opt) => {
-    if (!downInfo) return;
-    const p = opt.pointer || { x: 0, y: 0 };
-    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-      moved = true;
-    }
-  });
-
-  c.on("mouse:up", (opt) => {
-    const now = performance.now();
-    if (!downInfo) return;
-
-    const t = downInfo.target;
-    const duration = now - downInfo.t;
-
-    // Candado activo → nada
-    if (now < editLockUntil) { downInfo = null; return; }
-
-    // TAP corto sobre texto => editar
-    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
-      opt.e?.preventDefault?.();
-      opt.e?.stopPropagation?.();
-      enterEdit(t);
-      editLockUntil = now + 300; // evita doble disparo inmediato
     }
 
-    downInfo = null;
-  });
+    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+    (() => {
+      const c = fabricCanvasRef.current;
+      if (!c) return;
 
-  // Doble clic / doble tap → editar (respetando candado)
-  c.on("mouse:dblclick", (opt) => {
-    const now = performance.now();
-    const t = opt.target;
-    if (!isTextTarget(t)) return;
-    if (now < editLockUntil) return;
+      // 0) Foco y tolerancias táctiles
+      if (c.upperCanvasEl) {
+        c.upperCanvasEl.setAttribute("tabindex", "0");
+        c.upperCanvasEl.style.touchAction = 'manipulation'; // Permite scroll y zoom
+        c.upperCanvasEl.addEventListener("touchstart", () => {
+          c.upperCanvasEl.focus();
+        }, { passive: true });
+      }
+      c.perPixelTargetFind = true;
+      c.targetFindTolerance = 12;
+      if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-    opt.e?.preventDefault?.();
-    opt.e?.stopPropagation?.();
-    enterEdit(t);
-    editLockUntil = now + 300;
-  });
+      // 1) Utilidades
+      const isTextTarget = (t) =>
+        !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
-  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
-  c.on("text:editing:exited", (opt) => {
-    const t = opt?.target;
-    if (!t) return;
+      const enterEdit = (t) => {
+        if (!isTextTarget(t)) return;
+        requestAnimationFrame(() => {
+          if (t.type === "textbox" || t.type === "i-text") {
+            t.selectable = true; t.editable = true; t.evented = true;
+            c.setActiveObject(t);
+            t.enterEditing?.();
+            t.hiddenTextarea?.focus?.();
+          } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+            startInlineTextEdit(t);
+            c.setActiveObject(t);
+          }
+          c.requestRenderAll();
+        });
+      };
 
-    // Asegura movimiento/selección otra vez
-    t.editable = true;
-    t.selectable = true;
-    t.evented = true;
-    t.hasControls = true;
-    t.lockMovementX = false;
-    t.lockMovementY = false;
+      // 2) Tap vs Drag + candado anti-doble-disparo
+      let downInfo = null;
+      let moved = false;
+      let editLockUntil = 0; // ms timestamp: previene doble disparo
 
-    c.setActiveObject(t);
-    c.requestRenderAll();
-  });
-})();
+      const TAP_MAX_MS = 220;
+      const TAP_MAX_MOVE = 6; // px
+      const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
 
+      c.on("mouse:down", (opt) => {
+        const now = performance.now();
+        moved = false;
+        downInfo = {
+          x: opt.pointer?.x ?? 0,
+          y: opt.pointer?.y ?? 0,
+          t: now,
+          target: opt.target || null
+        };
+      });
+
+      c.on("mouse:move", (opt) => {
+        if (!downInfo) return;
+        const p = opt.pointer || { x: 0, y: 0 };
+        if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
+          moved = true;
+        }
+      });
+
+      c.on("mouse:up", (opt) => {
+        const now = performance.now();
+        if (!downInfo) return;
+
+        const t = downInfo.target;
+        const duration = now - downInfo.t;
+
+        // Candado activo → nada
+        if (now < editLockUntil) { downInfo = null; return; }
+
+        // TAP corto sobre texto => editar
+        if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+          opt.e?.preventDefault?.();
+          opt.e?.stopPropagation?.();
+          enterEdit(t);
+          editLockUntil = now + 300; // evita doble disparo inmediato
+        }
+
+        downInfo = null;
+      });
+
+      // Doble clic / doble tap → editar (respetando candado)
+      c.on("mouse:dblclick", (opt) => {
+        const now = performance.now();
+        const t = opt.target;
+        if (!isTextTarget(t)) return;
+        if (now < editLockUntil) return;
+
+        opt.e?.preventDefault?.();
+        opt.e?.stopPropagation?.();
+        enterEdit(t);
+        editLockUntil = now + 300;
+      });
+
+      // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
+      c.on("text:editing:exited", (opt) => {
+        const t = opt?.target;
+        if (!t) return;
+
+        // Asegura movimiento/selección otra vez
+        t.editable = true;
+        t.selectable = true;
+        t.evented = true;
+        t.hasControls = true;
+        t.lockMovementX = false;
+        t.lockMovementY = false;
+
+        c.setActiveObject(t);
+        c.requestRenderAll();
+      });
+    })();
 
     // Delimitar bounds (margen 10 px)
     const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
@@ -582,28 +669,28 @@ export default function CustomizationOverlay({
 
     setReady(true);
     
-// === DOBO: exponer API global para correo y checkout ===
-if (typeof window !== "undefined") {
- const api = {
-    // existentes
-    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+    // === DOBO: exponer API global para correo y checkout ===
+    if (typeof window !== "undefined") {
+      const api = {
+        // existentes
+        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
 
-    toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    exportDesignSnapshot: () => {
-      try { return c.toJSON(); } catch { return null; }
-    },
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-  };
-  window.doboDesignAPI = api;
-  try {
-    window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
-    console.log("[DOBO] API global inicializada ✅");
-  } catch {}
-}
+        toSVG: () => c.toSVG({ suppressPreamble: true }),
+        getCanvas: () => c,
+        exportDesignSnapshot: () => {
+          try { return c.toJSON(); } catch { return null; }
+        },
+        importDesignSnapshot: (snap) => new Promise(res => {
+          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+        }),
+        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+      };
+      window.doboDesignAPI = api;
+      try {
+        window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
+        console.log("[DOBO] API global inicializada ✅");
+      } catch {}
+    }
 
     return () => {
       c.off("mouse:dblclick");
@@ -625,17 +712,7 @@ if (typeof window !== "undefined") {
     };
   }, [visible]);
 
-  // Ajuste de tamaño si cambian baseSize
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
-
-  // Interactividad segun "editing"
+  // ====== Ajustar interactividad según modo edición (CORREGIDO - NO BLOQUEAR INTERACCIÓN) ======
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -649,7 +726,9 @@ if (typeof window !== "undefined") {
       o.lockMovementY = !on;
       o.hasControls = on;
       o.hasBorders = on;
-      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) o.editable = on;
+      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) {
+        o.editable = on;
+      }
       o.hoverCursor = on ? "move" : "default";
       if (isGroup) return;
       const children = o._objects || (typeof o.getObjects === "function" ? o.getObjects() : null);
@@ -660,14 +739,20 @@ if (typeof window !== "undefined") {
       c.skipTargetFind = !on;
       c.selection = on;
       (c.getObjects?.() || []).forEach(o => enableNode(o, on));
+      
       const upper = c.upperCanvasEl;
       if (upper) {
-        upper.style.pointerEvents = on ? "auto" : "none";
-        upper.style.touchAction = on ? "none" : "auto";
+        // IMPORTANTE: NO bloquear pointer-events, solo ajustar touch-action
+        upper.style.pointerEvents = "auto"; // Siempre permitir interacción
+        upper.style.touchAction = on ? "none" : "pan-y pinch-zoom"; // Permitir scroll/zoom cuando no se edita
+        upper.style.msTouchAction = on ? "none" : "pan-y pinch-zoom";
         upper.tabIndex = on ? 0 : -1;
       }
+      
       c.defaultCursor = on ? "move" : "default";
-      try { c.discardActiveObject(); } catch {}
+      if (!on) {
+        try { c.discardActiveObject(); } catch {}
+      }
       c.calcOffset?.();
       c.requestRenderAll?.();
       setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
@@ -675,6 +760,16 @@ if (typeof window !== "undefined") {
 
     setAll(!!editing);
   }, [editing]);
+
+  // Ajuste de tamaño si cambian baseSize
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+    c.setWidth(baseSize.w);
+    c.setHeight(baseSize.h);
+    c.calcOffset?.();
+    c.requestRenderAll?.();
+  }, [baseSize.w, baseSize.h]);
 
   // ======= Edición inline de texto (grupo) =======
   const startInlineTextEdit = (group) => {
@@ -758,66 +853,100 @@ if (typeof window !== "undefined") {
     return cobj;
   };
 
-// Carga imagen (RGB / Cámara / Vector) con espera inteligente a que el canvas esté listo.
-// Evita el error "fabric: Error loading blob:" usando FileReader (DataURL) y sincroniza el render.
-// Carga de imágenes robusta (funciona al primer intento, incluso en montajes lentos)
-const addImageFromFile = (file, mode) => {
-  if (!file) return;
+  // Carga imagen (RGB / Cámara / Vector) con espera inteligente a que el canvas esté listo.
+  const addImageFromFile = (file, mode) => {
+    if (!file) return;
 
-  const waitForCanvasReady = (attempt = 0) => {
-    const c = fabricCanvasRef.current;
-    if (!c || !c.getContext || !c.getContext()) {
-      if (attempt < 10) {
-        console.warn(`[DOBO] Canvas aún inicializando (${attempt + 1}/10)...`);
-        setTimeout(() => waitForCanvasReady(attempt + 1), 80);
-      } else {
-        console.error("[DOBO] Canvas no disponible tras varios intentos.");
+    const waitForCanvasReady = (attempt = 0) => {
+      const c = fabricCanvasRef.current;
+      if (!c || !c.getContext || !c.getContext()) {
+        if (attempt < 10) {
+          console.warn(`[DOBO] Canvas aún inicializando (${attempt + 1}/10)...`);
+          setTimeout(() => waitForCanvasReady(attempt + 1), 80);
+        } else {
+          console.error("[DOBO] Canvas no disponible tras varios intentos.");
+        }
+        return;
       }
-      return;
-    }
 
-    // --- ya hay canvas listo ---
-    const reader = new FileReader();
+      // --- ya hay canvas listo ---
+      const reader = new FileReader();
 
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      const imgEl = new Image();
-      imgEl.crossOrigin = "anonymous";
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const imgEl = new Image();
+        imgEl.crossOrigin = "anonymous";
 
-      imgEl.onload = () => {
-        const src = typeof downscale === "function" ? downscale(imgEl) : imgEl;
+        imgEl.onload = () => {
+          const src = typeof downscale === "function" ? downscale(imgEl) : imgEl;
 
-        // vector mode
-        if (mode === "vector") {
-          const rgb = hexToRgb?.(shapeColor) ?? { r: 0, g: 0, b: 0 };
-          const vectorImg = vectorizeElementToBitmap?.(src, {
-            maxDim: typeof VECTOR_SAMPLE_DIM !== "undefined" ? VECTOR_SAMPLE_DIM : 1024,
-            makeDark: true,
-            drawColor: rgb,
-            thrBias: typeof vecBias !== "undefined" ? vecBias : 0
-          });
-          if (!vectorImg) return;
+          // vector mode
+          if (mode === "vector") {
+            const rgb = hexToRgb?.(shapeColor) ?? { r: 0, g: 0, b: 0 };
+            const vectorImg = vectorizeElementToBitmap?.(src, {
+              maxDim: typeof VECTOR_SAMPLE_DIM !== "undefined" ? VECTOR_SAMPLE_DIM : 1024,
+              makeDark: true,
+              drawColor: rgb,
+              thrBias: typeof vecBias !== "undefined" ? vecBias : 0
+            });
+            if (!vectorImg) return;
 
-          const maxW = c.getWidth() * 0.8;
-          const maxH = c.getHeight() * 0.8;
-          const vw = vectorImg._vecMeta?.w || vectorImg.width || 1;
-          const vh = vectorImg._vecMeta?.h || vectorImg.height || 1;
-          const s = Math.min(maxW / vw, maxH / vh, 1);
+            const maxW = c.getWidth() * 0.8;
+            const maxH = c.getHeight() * 0.8;
+            const vw = vectorImg._vecMeta?.w || vectorImg.width || 1;
+            const vh = vectorImg._vecMeta?.h || vectorImg.height || 1;
+            const s = Math.min(maxW / vw, maxH / vh, 1);
 
-          vectorImg.set({
+            vectorImg.set({
+              originX: "center",
+              originY: "center",
+              left: c.getWidth() / 2,
+              top: c.getHeight() / 2,
+              scaleX: s,
+              scaleY: s,
+              selectable: true,
+              evented: true,
+              objectCaching: false
+            });
+
+            c.add(vectorImg);
+            c.setActiveObject(vectorImg);
+            setSelType?.("image");
+            setEditing?.(true);
+
+            requestAnimationFrame(() => {
+              c.calcOffset?.();
+              c.renderAll?.();
+            });
+            return;
+          }
+
+          // RGB / Cámara
+          const baseEl =
+            src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
+              ? src
+              : imgEl;
+
+          const fabricImg = new fabric.Image(baseEl, {
             originX: "center",
             originY: "center",
             left: c.getWidth() / 2,
             top: c.getHeight() / 2,
-            scaleX: s,
-            scaleY: s,
             selectable: true,
             evented: true,
             objectCaching: false
           });
+          fabricImg._doboKind = mode === "camera" ? "camera" : "rgb";
 
-          c.add(vectorImg);
-          c.setActiveObject(vectorImg);
+          const maxW = c.getWidth() * 0.85;
+          const maxH = c.getHeight() * 0.85;
+          const naturalW = baseEl.naturalWidth || baseEl.width || fabricImg.width || 1;
+          const naturalH = baseEl.naturalHeight || baseEl.height || fabricImg.height || 1;
+          const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
+          fabricImg.set({ scaleX: scale, scaleY: scale });
+
+          c.add(fabricImg);
+          c.setActiveObject(fabricImg);
           setSelType?.("image");
           setEditing?.(true);
 
@@ -825,59 +954,18 @@ const addImageFromFile = (file, mode) => {
             c.calcOffset?.();
             c.renderAll?.();
           });
-          return;
-        }
+        };
 
-        // RGB / Cámara
-        const baseEl =
-          src && (src instanceof HTMLCanvasElement || src instanceof HTMLImageElement)
-            ? src
-            : imgEl;
-
-        const fabricImg = new fabric.Image(baseEl, {
-          originX: "center",
-          originY: "center",
-          left: c.getWidth() / 2,
-          top: c.getHeight() / 2,
-          selectable: true,
-          evented: true,
-          objectCaching: false
-        });
-        fabricImg._doboKind = mode === "camera" ? "camera" : "rgb";
-
-        const maxW = c.getWidth() * 0.85;
-        const maxH = c.getHeight() * 0.85;
-        const naturalW = baseEl.naturalWidth || baseEl.width || fabricImg.width || 1;
-        const naturalH = baseEl.naturalHeight || baseEl.height || fabricImg.height || 1;
-        const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
-        fabricImg.set({ scaleX: scale, scaleY: scale });
-
-        c.add(fabricImg);
-        c.setActiveObject(fabricImg);
-        setSelType?.("image");
-        setEditing?.(true);
-
-        requestAnimationFrame(() => {
-          c.calcOffset?.();
-          c.renderAll?.();
-        });
+        imgEl.onerror = () => console.error("[DOBO] Error cargando imagen");
+        imgEl.src = dataUrl;
       };
 
-      imgEl.onerror = () => console.error("[DOBO] Error cargando imagen");
-      imgEl.src = dataUrl;
+      reader.readAsDataURL(file);
     };
 
-    reader.readAsDataURL(file);
+    // inicia flujo
+    waitForCanvasReady();
   };
-
-  // inicia flujo
-  waitForCanvasReady();
-};
-
-
-
-
-
 
   const onDelete = () => {
     const c = fabricCanvasRef.current; if (!c) return;
@@ -975,7 +1063,7 @@ const addImageFromFile = (file, mode) => {
     c.requestRenderAll();
   };
 
-  // Re-vectorizar cuando cambia “Detalles” (vecBias) SOLO si hay vector seleccionado
+  // Re-vectorizar cuando cambia "Detalles" (vecBias) SOLO si hay vector seleccionado
   useEffect(() => {
     if (!editing || selType !== "image") return;
     const c = fabricCanvasRef.current; if (!c) return;
@@ -1014,10 +1102,11 @@ const addImageFromFile = (file, mode) => {
     c.requestRenderAll();
   }, [vecBias]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== Zoom de rueda básico (opcional)
+  // ====== Zoom de rueda básico (opcional) - MEJORADO PARA MÓVIL ======
   useEffect(() => {
     const host = stageRef?.current || fabricCanvasRef.current?.upperCanvasEl;
     if (!host) return;
+    
     const onWheel = (e) => {
       if (textEditing) return;
       e.preventDefault();
@@ -1026,13 +1115,65 @@ const addImageFromFile = (file, mode) => {
       stageRef?.current?.style.setProperty("--zoom", String(next));
       if (typeof setZoom === "function") setZoom(next);
     };
+    
+    // Para móvil: gestos de pellizco
+    let initialDistance = 0;
+    let initialZoom = zoom || 0.6;
+    
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 2 && editing) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        initialDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        initialZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
+      }
+    };
+    
+    const handleTouchMove = (e) => {
+      if (e.touches.length === 2 && editing) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        
+        if (initialDistance > 0) {
+          const scale = currentDistance / initialDistance;
+          const newZoom = clamp(initialZoom * scale, 0.6, 2.5);
+          stageRef?.current?.style.setProperty("--zoom", String(newZoom));
+          if (typeof setZoom === "function") setZoom(newZoom);
+        }
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      initialDistance = 0;
+    };
+    
     host.addEventListener("wheel", onWheel, { passive: false });
-    return () => host.removeEventListener("wheel", onWheel);
-  }, [stageRef, setZoom, textEditing]);
+    
+    // Solo agregar gestos de pellizco si es móvil y estamos editando
+    if (isMobileRef.current) {
+      host.addEventListener("touchstart", handleTouchStart, { passive: false });
+      host.addEventListener("touchmove", handleTouchMove, { passive: false });
+      host.addEventListener("touchend", handleTouchEnd);
+      host.addEventListener("touchcancel", handleTouchEnd);
+    }
+    
+    return () => {
+      host.removeEventListener("wheel", onWheel);
+      if (isMobileRef.current) {
+        host.removeEventListener("touchstart", handleTouchStart);
+        host.removeEventListener("touchmove", handleTouchMove);
+        host.removeEventListener("touchend", handleTouchEnd);
+        host.removeEventListener("touchcancel", handleTouchEnd);
+      }
+    };
+  }, [stageRef, setZoom, textEditing, editing]);
 
   if (!visible) return null;
 
-  // ====== Overlay Canvas (posicionado dentro del anchor/stage)
+  // ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -1044,11 +1185,29 @@ const addImageFromFile = (file, mode) => {
         height: overlayBox.h,
         zIndex: Z_CANVAS,
         overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "none" : "auto",
-        overscrollBehavior: "contain"
+        pointerEvents: "auto", // SIEMPRE permitir interacción
+        // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
+        touchAction: editing ? "none" : "pan-y pinch-zoom",
+        msTouchAction: editing ? "none" : "pan-y pinch-zoom",
+        overscrollBehavior: "contain",
+        // Prevenir rebote en iOS
+        WebkitOverflowScrolling: "touch",
       }}
-      onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
+      onPointerDown={(e) => { 
+        if (editing) {
+          e.stopPropagation();
+        }
+      }}
+      onTouchStart={(e) => { 
+        if (editing) {
+          e.stopPropagation();
+        }
+      }}
+      onTouchMove={(e) => {
+        if (editing) {
+          e.stopPropagation();
+        }
+      }}
     >
       <canvas
         data-dobo-design="1"
@@ -1060,7 +1219,14 @@ const addImageFromFile = (file, mode) => {
           height: "100%",
           display: "block",
           background: "transparent",
-          touchAction: editing ? "none" : "auto"
+          // Configuración táctil específica - NO BLOQUEAR
+          touchAction: editing ? "none" : "pan-y pinch-zoom",
+          msTouchAction: editing ? "none" : "pan-y pinch-zoom",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          // Asegurar que sea interactivo
+          pointerEvents: "auto",
         }}
       />
     </div>
@@ -1097,6 +1263,9 @@ const addImageFromFile = (file, mode) => {
         onPointerDown={(e) => e.stopPropagation()}
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Línea 1: historial + zoom + modos */}
         <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -1176,8 +1345,8 @@ const addImageFromFile = (file, mode) => {
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
-  addInputVectorRef.current?.click();
-}); }}
+                  addInputVectorRef.current?.click();
+                }); }}
                 disabled={!ready}
                 title="Subir vector (usa Detalles y Color)"
               >
@@ -1188,8 +1357,8 @@ const addImageFromFile = (file, mode) => {
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-  addInputRgbRef.current?.click();
-}); }}
+                  addInputRgbRef.current?.click();
+                }); }}
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
               >
@@ -1200,8 +1369,8 @@ const addImageFromFile = (file, mode) => {
                 type="button" className="btn btn-outline-secondary"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-  cameraInputRef.current?.click();
-}); }}
+                  cameraInputRef.current?.click();
+                }); }}
                 disabled={!ready}
                 title="Tomar foto con cámara"
               >
@@ -1362,58 +1531,58 @@ const addImageFromFile = (file, mode) => {
           </>
         )}
 
-     {/* Inputs ocultos */}
-<input
-  ref={addInputVectorRef}
-  type="file"
-  accept="image/*"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "vector");
-    }
-    // 🔧 limpiar inmediatamente para permitir reusar el input
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
+        {/* Inputs ocultos */}
+        <input
+          ref={addInputVectorRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "vector");
+            }
+            // 🔧 limpiar inmediatamente para permitir reusar el input
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
 
-<input
-  ref={addInputRgbRef}
-  type="file"
-  accept="image/*"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "rgb");
-    }
-    // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
+        <input
+          ref={addInputRgbRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "rgb");
+            }
+            // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
 
-<input
-  ref={cameraInputRef}
-  id="cameraInput"
-  type="file"
-  accept="image/*"
-  capture="environment"
-  style={{ display: "none" }}
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
-    }
-    e.target.value = null;
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-/>
-</div>
-  ); 
-};
+        <input
+          ref={cameraInputRef}
+          id="cameraInput"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
+            }
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      </div>
+    ); 
+  };
 
   return (
     <>
