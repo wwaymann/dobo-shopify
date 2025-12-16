@@ -633,22 +633,24 @@ export default function CustomizationOverlay({
 
     const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
 
-    const reflectTypo = () => {
-      const a = c.getActiveObject();
-      if (!a) return;
-      let first = null;
-      if (a._kind === "textGroup") first = a._textChildren?.base || null;
-      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
-      else if (isTextObj(a)) first = a;
-      if (first) {
-        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-        setFontSize(first.fontSize || 60);
-        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic");
-        setIsUnderline(!!first.underline);
-        setTextAlign(first.textAlign || "center");
-      }
-    };
+   // Busca en el archivo esta función reflectTypo (alrededor de línea 640-650):
+
+const reflectTypo = () => {
+  const a = c.getActiveObject();
+  if (!a) return;
+  let first = null;
+  if (a._kind === "textGroup") first = a._textChildren?.base || null;
+  else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
+  else if (isTextObj(a)) first = a;
+  if (first) {
+    setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
+    setFontSize(first.fontSize || 60);
+    setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
+    setIsItalic((first.fontStyle + "" === "italic"));
+    setIsUnderline(!!first.underline);
+    setTextAlign(first.textAlign || "center");
+  }
+};
 
     const onSel = () => {
       const cobj = c.getActiveObject();
