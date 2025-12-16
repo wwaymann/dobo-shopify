@@ -9,58 +9,14 @@ import HistoryManager from "../lib/history";
 
 // ======= Constantes =======
 const Z_CANVAS = 4000;
-const Z_MENU = 5000; // Añadido: Menú por encima del canvas
 const FONT_OPTIONS = [
-  // === SISTEMA / CLÁSICAS ===
   { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
-  { name: "Helvetica", css: 'Helvetica, Arial, sans-serif' },
-  { name: "Verdana", css: 'Verdana, Geneva, sans-serif' },
-  { name: "Tahoma", css: 'Tahoma, Verdana, sans-serif' },
-  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
   { name: "Georgia", css: 'Georgia, serif' },
   { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
   { name: "Courier New", css: '"Courier New", Courier, monospace' },
-  { name: "Lucida Console", css: '"Lucida Console", Monaco, monospace' },
-
-  // === SANS MODERNAS (GOOGLE FONTS) ===
+  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
   { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
   { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
-  { name: "Inter", css: 'Inter, Arial, sans-serif' },
-  { name: "Roboto", css: 'Roboto, Arial, sans-serif' },
-  { name: "Open Sans", css: '"Open Sans", Arial, sans-serif' },
-  { name: "Lato", css: 'Lato, Arial, sans-serif' },
-  { name: "Nunito", css: 'Nunito, Arial, sans-serif' },
-  { name: "Raleway", css: 'Raleway, Arial, sans-serif' },
-  { name: "Source Sans Pro", css: '"Source Sans Pro", Arial, sans-serif' },
-  { name: "Ubuntu", css: 'Ubuntu, Arial, sans-serif' },
-  { name: "Work Sans", css: '"Work Sans", Arial, sans-serif' },
-
-  // === SERIF MODERNAS / EDITORIALES ===
-  { name: "Playfair Display", css: '"Playfair Display", Georgia, serif' },
-  { name: "Merriweather", css: 'Merriweather, Georgia, serif' },
-  { name: "Libre Baskerville", css: '"Libre Baskerville", Georgia, serif' },
-  { name: "Cormorant", css: 'Cormorant, Georgia, serif' },
-  { name: "Crimson Text", css: '"Crimson Text", Georgia, serif' },
-
-  // === DISPLAY / CREATIVAS ===
-  { name: "Bebas Neue", css: '"Bebas Neue", Arial, sans-serif' },
-  { name: "Oswald", css: 'Oswald, Arial, sans-serif' },
-  { name: "Anton", css: 'Anton, Arial, sans-serif' },
-  { name: "Abril Fatface", css: '"Abril Fatface", serif' },
-  { name: "Pacifico", css: 'Pacifico, cursive' },
-  { name: "Lobster", css: 'Lobster, cursive' },
-  { name: "Fredoka", css: 'Fredoka, Arial, sans-serif' },
-
-  // === MONO / TÉCNICAS ===
-  { name: "Roboto Mono", css: '"Roboto Mono", monospace' },
-  { name: "Source Code Pro", css: '"Source Code Pro", monospace' },
-  { name: "JetBrains Mono", css: '"JetBrains Mono", monospace' },
-
-  // === ORGÁNICAS / ARTESANALES (BUENAS PARA MACETAS) ===
-  { name: "Quicksand", css: 'Quicksand, Arial, sans-serif' },
-  { name: "Comfortaa", css: 'Comfortaa, Arial, sans-serif' },
-  { name: "Baloo 2", css: '"Baloo 2", Arial, sans-serif' },
-  { name: "Amatic SC", css: '"Amatic SC", cursive' }
 ];
 
 const VECTOR_SAMPLE_DIM = 500;
@@ -298,8 +254,11 @@ export default function CustomizationOverlay({
 
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
-  const isMobileRef = useRef(false);
-  const touchStartTimeRef = useRef(0);
+  
+  // 🔧 REF para control de zoom táctil
+  const isPinchingRef = useRef(false);
+  const lastPinchDistanceRef = useRef(0);
+  const lastTouchCenterRef = useRef({ x: 0, y: 0 });
 
   // ====== helpers de historial
   const getSnapshot = () => {
@@ -386,18 +345,121 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // ====== Detectar si es móvil ======
-  useEffect(() => {
-    const checkMobile = () => {
-      isMobileRef.current = window.innerWidth <= 768;
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  // ====== 🔧 FUNCIONES DE ZOOM Y PAN TÁCTIL ======
+  const calculateDistance = (touch1, touch2) => {
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
 
-  // ====== init Fabric con mejor configuración para móvil ======
+  const calculateCenter = (touch1, touch2) => {
+    return {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2
+    };
+  };
+
+  const handleTouchStart = (e) => {
+    if (!editing || textEditing) return;
+    
+    const touches = e.touches;
+    if (touches.length === 2) {
+      // Inicio de pinch para zoom
+      isPinchingRef.current = true;
+      lastPinchDistanceRef.current = calculateDistance(touches[0], touches[1]);
+      lastTouchCenterRef.current = calculateCenter(touches[0], touches[1]);
+      e.preventDefault();
+      e.stopPropagation();
+    } else if (touches.length === 1) {
+      // Inicio de pan con un dedo (si no hay objeto seleccionado)
+      const c = fabricCanvasRef.current;
+      if (c && !c.getActiveObject()) {
+        const touch = touches[0];
+        c.lastTouchX = touch.clientX;
+        c.lastTouchY = touch.clientY;
+        c.isPanning = true;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!editing || textEditing) return;
+    
+    const touches = e.touches;
+    
+    if (isPinchingRef.current && touches.length === 2) {
+      // Zoom con pinch
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const currentDistance = calculateDistance(touches[0], touches[1]);
+      const currentCenter = calculateCenter(touches[0], touches[1]);
+      
+      if (lastPinchDistanceRef.current > 0) {
+        const scaleChange = currentDistance / lastPinchDistanceRef.current;
+        const currentZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
+        const newZoom = clamp(currentZoom * scaleChange, 0.6, 2.5);
+        
+        stageRef?.current?.style.setProperty("--zoom", String(newZoom));
+        if (typeof setZoom === "function") setZoom(newZoom);
+        
+        // Ajustar posición del viewport
+        const c = fabricCanvasRef.current;
+        if (c) {
+          const deltaX = currentCenter.x - lastTouchCenterRef.current.x;
+          const deltaY = currentCenter.y - lastTouchCenterRef.current.y;
+          const vpt = c.viewportTransform;
+          vpt[4] += deltaX;
+          vpt[5] += deltaY;
+          c.requestRenderAll();
+        }
+      }
+      
+      lastPinchDistanceRef.current = currentDistance;
+      lastTouchCenterRef.current = currentCenter;
+    } else if (touches.length === 1) {
+      // Pan con un dedo
+      const c = fabricCanvasRef.current;
+      if (c && c.isPanning && !c.getActiveObject()) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = touches[0];
+        const deltaX = touch.clientX - (c.lastTouchX || 0);
+        const deltaY = touch.clientY - (c.lastTouchY || 0);
+        
+        const vpt = c.viewportTransform;
+        vpt[4] += deltaX;
+        vpt[5] += deltaY;
+        c.requestRenderAll();
+        
+        c.lastTouchX = touch.clientX;
+        c.lastTouchY = touch.clientY;
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!editing) return;
+    
+    const c = fabricCanvasRef.current;
+    if (isPinchingRef.current) {
+      isPinchingRef.current = false;
+      lastPinchDistanceRef.current = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (c) {
+      c.isPanning = false;
+      c.lastTouchX = null;
+      c.lastTouchY = null;
+    }
+  };
+
+  // ====== init Fabric
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
 
@@ -408,49 +470,19 @@ export default function CustomizationOverlay({
       selection: true,
       perPixelTargetFind: true,
       targetFindTolerance: 8,
-      // Configuración mejorada para móvil
-      allowTouchScrolling: true,
-      stopContextMenu: true,
-      backgroundColor: 'transparent',
+      // 🔧 Configuración para móviles
+      allowTouchScrolling: false,
+      stopContextMenu: true
     });
     fabricCanvasRef.current = c;
 
-    // Configurar eventos táctiles específicos para móvil
-    if ('ontouchstart' in window) {
-      const upperCanvas = c.upperCanvasEl;
-      if (upperCanvas) {
-        // Permitir interacción pero controlar el scroll
-        upperCanvas.style.touchAction = 'manipulation';
-        upperCanvas.style.msTouchAction = 'manipulation';
-        upperCanvas.style.WebkitTouchCallout = "none";
-        
-        // Manejar eventos táctiles con cuidado
-        const handleTouchStart = (e) => {
-          touchStartTimeRef.current = Date.now();
-          // Solo prevenir si estamos en modo edición y hay objeto seleccionado
-          if (editing && c.selection && c.getActiveObject()) {
-            e.stopPropagation();
-          }
-        };
-
-        const handleTouchMove = (e) => {
-          // Si ha pasado poco tiempo desde el touchstart, podría ser un gesto
-          const timeSinceStart = Date.now() - touchStartTimeRef.current;
-          if (timeSinceStart < 100 && e.touches.length === 1) {
-            // Podría ser un intento de arrastre, dejar que Fabric lo maneje
-            e.stopPropagation();
-          }
-        };
-
-        upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: true });
-        upperCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-        
-        // Limpiar al desmontar
-        return () => {
-          upperCanvas.removeEventListener('touchstart', handleTouchStart);
-          upperCanvas.removeEventListener('touchmove', handleTouchMove);
-        };
-      }
+    // 🔧 Configurar eventos táctiles en el canvas
+    const upperCanvas = c.upperCanvasEl;
+    if (upperCanvas) {
+      upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      upperCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      upperCanvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+      upperCanvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
     }
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
@@ -461,12 +493,10 @@ export default function CustomizationOverlay({
       // 0) Foco y tolerancias táctiles
       if (c.upperCanvasEl) {
         c.upperCanvasEl.setAttribute("tabindex", "0");
-        c.upperCanvasEl.style.touchAction = 'manipulation';
-        c.upperCanvasEl.addEventListener("touchstart", () => {
-          c.upperCanvasEl.focus();
-        }, { passive: true });
+        c.upperCanvasEl.style.touchAction = "none"; // evita scroll/zoom del navegador sobre el canvas
+        c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
       }
-      c.perPixelTargetFind = true;
+      c.perPixelTargetFind = false;
       c.targetFindTolerance = 12;
       if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
@@ -633,24 +663,22 @@ export default function CustomizationOverlay({
 
     const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
 
-   // Busca en el archivo esta función reflectTypo (alrededor de línea 640-650):
-
-const reflectTypo = () => {
-  const a = c.getActiveObject();
-  if (!a) return;
-  let first = null;
-  if (a._kind === "textGroup") first = a._textChildren?.base || null;
-  else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
-  else if (isTextObj(a)) first = a;
-  if (first) {
-    setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
-    setFontSize(first.fontSize || 60);
-    setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-    setIsItalic((first.fontStyle + "" === "italic"));
-    setIsUnderline(!!first.underline);
-    setTextAlign(first.textAlign || "center");
-  }
-};
+    const reflectTypo = () => {
+      const a = c.getActiveObject();
+      if (!a) return;
+      let first = null;
+      if (a._kind === "textGroup") first = a._textChildren?.base || null;
+      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
+      else if (isTextObj(a)) first = a;
+      if (first) {
+        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
+        setFontSize(first.fontSize || 60);
+        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
+        setIsItalic((first.fontStyle + "" === "italic"));
+        setIsUnderline(!!first.underline);
+        setTextAlign(first.textAlign || "center");
+      }
+    };
 
     const onSel = () => {
       const cobj = c.getActiveObject();
@@ -708,6 +736,15 @@ const reflectTypo = () => {
     }
 
     return () => {
+      // 🔧 Limpiar eventos táctiles
+      const upperCanvas = c.upperCanvasEl;
+      if (upperCanvas) {
+        upperCanvas.removeEventListener('touchstart', handleTouchStart);
+        upperCanvas.removeEventListener('touchmove', handleTouchMove);
+        upperCanvas.removeEventListener('touchend', handleTouchEnd);
+        upperCanvas.removeEventListener('touchcancel', handleTouchEnd);
+      }
+      
       c.off("mouse:dblclick");
       c.off("selection:created", onSel);
       c.off("selection:updated", onSel);
@@ -727,7 +764,17 @@ const reflectTypo = () => {
     };
   }, [visible]);
 
-  // ====== Ajustar interactividad según modo edición ======
+  // Ajuste de tamaño si cambian baseSize
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+    c.setWidth(baseSize.w);
+    c.setHeight(baseSize.h);
+    c.calcOffset?.();
+    c.requestRenderAll?.();
+  }, [baseSize.w, baseSize.h]);
+
+  // Interactividad segun "editing"
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -741,9 +788,7 @@ const reflectTypo = () => {
       o.lockMovementY = !on;
       o.hasControls = on;
       o.hasBorders = on;
-      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) {
-        o.editable = on;
-      }
+      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) o.editable = on;
       o.hoverCursor = on ? "move" : "default";
       if (isGroup) return;
       const children = o._objects || (typeof o.getObjects === "function" ? o.getObjects() : null);
@@ -754,20 +799,14 @@ const reflectTypo = () => {
       c.skipTargetFind = !on;
       c.selection = on;
       (c.getObjects?.() || []).forEach(o => enableNode(o, on));
-      
       const upper = c.upperCanvasEl;
       if (upper) {
-        // IMPORTANTE: Permitir interacción pero controlar scroll
-        upper.style.pointerEvents = "auto";
-        upper.style.touchAction = on ? "manipulation" : "pan-y pinch-zoom";
-        upper.style.msTouchAction = on ? "manipulation" : "pan-y pinch-zoom";
+        upper.style.pointerEvents = on ? "auto" : "none";
+        upper.style.touchAction = on ? "none" : "auto";
         upper.tabIndex = on ? 0 : -1;
       }
-      
       c.defaultCursor = on ? "move" : "default";
-      if (!on) {
-        try { c.discardActiveObject(); } catch {}
-      }
+      try { c.discardActiveObject(); } catch {}
       c.calcOffset?.();
       c.requestRenderAll?.();
       setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
@@ -775,16 +814,6 @@ const reflectTypo = () => {
 
     setAll(!!editing);
   }, [editing]);
-
-  // Ajuste de tamaño si cambian baseSize
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    c.setWidth(baseSize.w);
-    c.setHeight(baseSize.h);
-    c.calcOffset?.();
-    c.requestRenderAll?.();
-  }, [baseSize.w, baseSize.h]);
 
   // ======= Edición inline de texto (grupo) =======
   const startInlineTextEdit = (group) => {
@@ -869,6 +898,8 @@ const reflectTypo = () => {
   };
 
   // Carga imagen (RGB / Cámara / Vector) con espera inteligente a que el canvas esté listo.
+  // Evita el error "fabric: Error loading blob:" usando FileReader (DataURL) y sincroniza el render.
+  // Carga de imágenes robusta (funciona al primer intento, incluso en montajes lentos)
   const addImageFromFile = (file, mode) => {
     if (!file) return;
 
@@ -1117,11 +1148,10 @@ const reflectTypo = () => {
     c.requestRenderAll();
   }, [vecBias]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== Zoom de rueda básico (opcional) - MEJORADO PARA MÓVIL ======
+  // ====== Zoom de rueda básico (opcional)
   useEffect(() => {
     const host = stageRef?.current || fabricCanvasRef.current?.upperCanvasEl;
     if (!host) return;
-    
     const onWheel = (e) => {
       if (textEditing) return;
       e.preventDefault();
@@ -1130,65 +1160,13 @@ const reflectTypo = () => {
       stageRef?.current?.style.setProperty("--zoom", String(next));
       if (typeof setZoom === "function") setZoom(next);
     };
-    
-    // Para móvil: gestos de pellizco
-    let initialDistance = 0;
-    let initialZoom = zoom || 0.6;
-    
-    const handleTouchStart = (e) => {
-      if (e.touches.length === 2 && editing) {
-        e.preventDefault();
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        initialDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-        initialZoom = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
-      }
-    };
-    
-    const handleTouchMove = (e) => {
-      if (e.touches.length === 2 && editing) {
-        e.preventDefault();
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        const currentDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-        
-        if (initialDistance > 0) {
-          const scale = currentDistance / initialDistance;
-          const newZoom = clamp(initialZoom * scale, 0.6, 2.5);
-          stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-          if (typeof setZoom === "function") setZoom(newZoom);
-        }
-      }
-    };
-    
-    const handleTouchEnd = () => {
-      initialDistance = 0;
-    };
-    
     host.addEventListener("wheel", onWheel, { passive: false });
-    
-    // Solo agregar gestos de pellizco si es móvil y estamos editando
-    if (isMobileRef.current) {
-      host.addEventListener("touchstart", handleTouchStart, { passive: false });
-      host.addEventListener("touchmove", handleTouchMove, { passive: false });
-      host.addEventListener("touchend", handleTouchEnd);
-      host.addEventListener("touchcancel", handleTouchEnd);
-    }
-    
-    return () => {
-      host.removeEventListener("wheel", onWheel);
-      if (isMobileRef.current) {
-        host.removeEventListener("touchstart", handleTouchStart);
-        host.removeEventListener("touchmove", handleTouchMove);
-        host.removeEventListener("touchend", handleTouchEnd);
-        host.removeEventListener("touchcancel", handleTouchEnd);
-      }
-    };
-  }, [stageRef, setZoom, textEditing, editing]);
+    return () => host.removeEventListener("wheel", onWheel);
+  }, [stageRef, setZoom, textEditing]);
 
   if (!visible) return null;
 
-  // ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
+  // ====== Overlay Canvas (posicionado dentro del anchor/stage)
   const OverlayCanvas = (
     <div
       ref={overlayRef}
@@ -1200,29 +1178,24 @@ const reflectTypo = () => {
         height: overlayBox.h,
         zIndex: Z_CANVAS,
         overflow: "hidden",
-        pointerEvents: "auto",
-        // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
-        touchAction: editing ? "manipulation" : "pan-y pinch-zoom",
-        msTouchAction: editing ? "manipulation" : "pan-y pinch-zoom",
+        pointerEvents: editing ? "auto" : "none",
+        touchAction: editing ? "none" : "auto",
         overscrollBehavior: "contain",
-        // Prevenir rebote en iOS
+        // 🔧 Mejor control táctil
         WebkitOverflowScrolling: "touch",
-      }}
-      onPointerDown={(e) => { 
-        if (editing) {
-          e.stopPropagation();
-        }
+        WebkitTapHighlightColor: "transparent"
       }}
       onTouchStart={(e) => { 
         if (editing) {
           e.stopPropagation();
         }
       }}
-      onTouchMove={(e) => {
+      onTouchMove={(e) => { 
         if (editing) {
           e.stopPropagation();
         }
       }}
+      onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
     >
       <canvas
         data-dobo-design="1"
@@ -1234,611 +1207,375 @@ const reflectTypo = () => {
           height: "100%",
           display: "block",
           background: "transparent",
-          // Configuración táctil específica
-          touchAction: editing ? "manipulation" : "pan-y pinch-zoom",
-          msTouchAction: editing ? "manipulation" : "pan-y pinch-zoom",
+          touchAction: editing ? "none" : "auto",
+          // 🔧 Mejor rendimiento táctil
           WebkitTouchCallout: "none",
           WebkitUserSelect: "none",
-          userSelect: "none",
-          pointerEvents: "auto",
+          userSelect: "none"
         }}
       />
     </div>
   );
 
-// ====== Menú completamente independiente del canvas ======
-const Menu = () => {
-  const c = fabricCanvasRef.current;
-  const a = c?.getActiveObject();
-  const isVectorSelected = selType === "image" && a && a._doboKind === "vector";
-  const isRgbSelected = selType === "image" && a && a._doboKind === "rgb";
+  // ====== Menú ======
+  const Menu = () => {
+    const c = fabricCanvasRef.current;
+    const a = c?.getActiveObject();
+    const isVectorSelected =
+      selType === "image" && a && a._doboKind === "vector";
+    const isRgbSelected =
+      selType === "image" && a && a._doboKind === "rgb";
 
-  // Función para manejar clicks en móvil SIN interferencias
-  const mobileClick = (callback) => (e) => {
-    // En móvil: prevenir TODO y ejecutar callback
-    if ('ontouchstart' in window) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation?.();
-      
-      // Forzar blur de cualquier input activo
-      if (document.activeElement) {
-        document.activeElement.blur();
-      }
-      
-      // Ejecutar con delay mínimo
-      setTimeout(callback, 10);
-      return;
-    }
-    
-    // En desktop: comportamiento normal
-    callback();
-  };
+    return (
+      <div
+        ref={menuRef}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          background: "rgba(253, 253, 253, 0.34)",
+          backdropFilter: "blur(4px)",
+          WebkitBackdropFilter: "blur(4px)",
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: "10px 12px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          width: "auto",
+          maxWidth: "94vw",
+          fontSize: 12,
+          userSelect: "none"
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
+        {/* Línea 1: historial + zoom + modos */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+            <button
+              type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
+              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás"
+            >
+              <i className="fa fa-undo" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
+              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante"
+            >
+              <i className="fa fa-repeat" aria-hidden="true"></i>
+            </button>
+          </div>
 
-  // Función específica para inputs de archivo
-  const triggerFileInput = (inputRef) => () => {
-    if ('ontouchstart' in window) {
-      // En móvil: delay más largo y asegurar clic
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.click();
-        }
-      }, 100);
-    } else {
-      // En desktop: inmediato
-      if (inputRef.current) {
-        inputRef.current.click();
-      }
-    }
-  };
+          {typeof setZoom === "function" && (
+            <div className="input-group input-group-sm" style={{ width: 180 }}>
+              <span className="input-group-text">Zoom</span>
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
+              >−</button>
+              <input type="text" readOnly className="form-control form-control-sm text-center"
+                value={`${Math.round((zoom || 1) * 100)}%`} />
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
+              >+</button>
+            </div>
+          )}
 
-  return (
-    <div
-      ref={menuRef}
-      // CRÍTICO: Estos estilos aseguran que el menú sea independiente
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        background: "rgba(255, 255, 255, 0.98)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        border: "2px solid #e0e0e0",
-        borderRadius: 16,
-        padding: "12px 14px",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-        width: "auto",
-        maxWidth: "95vw",
-        fontSize: 13,
-        userSelect: "none",
-        zIndex: 999999, // Z-index extremadamente alto
-        touchAction: "manipulation",
-        msTouchAction: "manipulation",
-        WebkitUserSelect: "none",
-        MozUserSelect: "none",
-        pointerEvents: "auto",
-        position: "relative",
-        isolation: "isolate",
-        // Prevenir cualquier efecto táctil del padre
-        transform: "translate3d(0,0,0)",
-        willChange: "transform",
-      }}
-      // NO usar ningún event handler aquí
-    >
-      {/* Línea 1: Botones principales */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        {/* Historial */}
-        <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
           <button
             type="button"
-            className="btn btn-outline-secondary"
-            onClick={mobileClick(() => {
-              const s = historyRef.current?.undo();
-              if (s) applySnapshot(s);
-              refreshCaps();
-            })}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            disabled={!histCaps.canUndo}
-            title="Atrás"
-            style={{
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              minWidth: "40px",
-              minHeight: "32px",
-            }}
+            className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => setEditing(false)}
+            style={{ minWidth: "16ch" }}
           >
-            <i className="fa fa-undo" aria-hidden="true"></i>
+            Seleccionar Maceta
           </button>
+
           <button
             type="button"
-            className="btn btn-outline-secondary"
-            onClick={mobileClick(() => {
-              const s = historyRef.current?.redo();
-              if (s) applySnapshot(s);
-              refreshCaps();
-            })}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            disabled={!histCaps.canRedo}
-            title="Adelante"
-            style={{
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              minWidth: "40px",
-              minHeight: "32px",
-            }}
+            className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => setEditing(true)}
+            style={{ minWidth: "12ch" }}
           >
-            <i className="fa fa-repeat" aria-hidden="true"></i>
+            Diseñar
           </button>
         </div>
 
-        {/* Zoom */}
-        {typeof setZoom === "function" && (
-          <div className="input-group input-group-sm" style={{ width: "auto", minWidth: "160px" }}>
-            <span className="input-group-text" style={{ padding: "4px 8px" }}>Zoom</span>
+        {/* Línea 2: acciones básicas */}
+        {editing && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
             <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={mobileClick(() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2))))}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              style={{
-                touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                padding: "4px 8px",
-              }}
-            >−</button>
-            <input
-              type="text"
-              readOnly
-              className="form-control form-control-sm text-center"
-              value={`${Math.round((zoom || 1) * 100)}%`}
-              style={{
-                width: "60px",
-                touchAction: "none",
-                padding: "4px",
-              }}
-            />
+              type="button" className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={addText} disabled={!ready}
+              title="Agregar texto"
+            >
+              <i className="fa fa-font" aria-hidden="true"></i> Texto
+            </button>
+
+            <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
+              {/* Subir Vector */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>e.stopPropagation()}
+                onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
+  addInputVectorRef.current?.click();
+}); }}
+                disabled={!ready}
+                title="Subir vector (usa Detalles y Color)"
+              >
+                <i className="fa fa-magic" aria-hidden="true"></i> Vector
+              </button>
+              {/* Subir RGB */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>e.stopPropagation()}
+                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
+  addInputRgbRef.current?.click();
+}); }}
+                disabled={!ready}
+                title="Subir imagen RGB (color original)"
+              >
+                <i className="fa fa-image" aria-hidden="true"></i> Imagen
+              </button>
+              {/* Cámara */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>e.stopPropagation()}
+                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
+  cameraInputRef.current?.click();
+}); }}
+                disabled={!ready}
+                title="Tomar foto con cámara"
+              >
+                <i className="fa fa-camera" aria-hidden="true"></i> Cámara
+              </button>
+            </div>
+
             <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={mobileClick(() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2))))}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              style={{
-                touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                padding: "4px 8px",
-              }}
-            >+</button>
+              type="button" className="btn btn-sm btn-outline-danger"
+              onPointerDown={(e)=>e.stopPropagation()}
+              onClick={onDelete}
+              disabled={!ready || selType === "none"}
+              title="Eliminar seleccionado"
+            >
+              <i className="fa fa-trash" aria-hidden="true"></i> Borrar
+            </button>
           </div>
         )}
 
-        {/* Botones de modo */}
-        <button
-          type="button"
-          className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-          onClick={mobileClick(() => {
-            setEditing(false);
-            // Forzar deselección en el canvas
-            if (c) {
-              c.discardActiveObject();
-              c.requestRenderAll();
-            }
-          })}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          style={{
-            minWidth: "140px",
-            touchAction: "manipulation",
-            WebkitTapHighlightColor: "transparent",
-            padding: "6px 12px",
-          }}
-        >
-          Seleccionar Maceta
-        </button>
-
-        <button
-          type="button"
-          className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-          onClick={mobileClick(() => setEditing(true))}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          style={{
-            minWidth: "100px",
-            touchAction: "manipulation",
-            WebkitTapHighlightColor: "transparent",
-            padding: "6px 12px",
-          }}
-        >
-          Diseñar
-        </button>
-      </div>
-
-      {/* Línea 2: Acciones de edición */}
-      {editing && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary"
-            onClick={mobileClick(addText)}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            disabled={!ready}
-            title="Agregar texto"
-            style={{
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              padding: "6px 12px",
-            }}
-          >
-            <i className="fa fa-font" aria-hidden="true"></i> Texto
-          </button>
-
-          <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={mobileClick(() => {
-                setUploadMode("vector");
-                triggerFileInput(addInputVectorRef)();
-              })}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              disabled={!ready}
-              title="Subir vector"
-              style={{
-                touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                padding: "6px 10px",
-              }}
-            >
-              <i className="fa fa-magic" aria-hidden="true"></i> Vector
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={mobileClick(() => {
-                setUploadMode("rgb");
-                triggerFileInput(addInputRgbRef)();
-              })}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              disabled={!ready}
-              title="Subir imagen"
-              style={{
-                touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                padding: "6px 10px",
-              }}
-            >
-              <i className="fa fa-image" aria-hidden="true"></i> Imagen
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={mobileClick(() => {
-                setUploadMode("rgb");
-                triggerFileInput(cameraInputRef)();
-              })}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              disabled={!ready}
-              title="Tomar foto"
-              style={{
-                touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                padding: "6px 10px",
-              }}
-            >
-              <i className="fa fa-camera" aria-hidden="true"></i> Cámara
-            </button>
-          </div>
-
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger"
-            onClick={mobileClick(onDelete)}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            disabled={!ready || selType === "none"}
-            title="Eliminar seleccionado"
-            style={{
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              padding: "6px 12px",
-            }}
-          >
-            <i className="fa fa-trash" aria-hidden="true"></i> Borrar
-          </button>
-        </div>
-      )}
-
-      {/* Línea 3: Propiedades de edición (mantén igual pero con mobileClick) */}
-      {editing && (
-        <>
-          {/* Texto */}
-          {selType === "text" && (
-            <>
-              <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                <span className="input-group-text">Color</span>
-                <input
-                  type="color"
-                  className="form-control form-control-color"
-                  value={shapeColor}
-                  onChange={(e) => {
-                    setShapeColor(e.target.value);
-                    applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` }));
-                  }}
-                  style={{ touchAction: "manipulation" }}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-                <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
-                  <span className="input-group-text">Fuente</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={fontFamily}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setFontFamily(v);
-                      applyToSelection(o => o.set({ fontFamily: v }));
-                    }}
-                    style={{ touchAction: "manipulation" }}
-                  >
-                    {FONT_OPTIONS.map(f => (
-                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                  <button
-                    type="button"
-                    className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
-                    onClick={mobileClick(() => {
-                      const nv = !isBold;
-                      setIsBold(nv);
-                      applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" }));
-                    })}
-                    title="Negrita"
-                    style={{ touchAction: "manipulation" }}
-                  >B</button>
-                  <button
-                    type="button"
-                    className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
-                    onClick={mobileClick(() => {
-                      const nv = !isItalic;
-                      setIsItalic(nv);
-                      applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" }));
-                    })}
-                    title="Cursiva"
-                    style={{ touchAction: "manipulation" }}
-                  >I</button>
-                  <button
-                    type="button"
-                    className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
-                    onClick={mobileClick(() => {
-                      const nv = !isUnderline;
-                      setIsUnderline(nv);
-                      applyToSelection(o => o.set({ underline: nv }));
-                    })}
-                    title="Subrayado"
-                    style={{ touchAction: "manipulation" }}
-                  >U</button>
-                </div>
-
-                <div className="input-group input-group-sm" style={{ width: 160 }}>
-                  <span className="input-group-text">Tamaño</span>
+        {/* Línea 3: propiedades */}
+        {editing && (
+          <>
+            {/* Texto */}
+            {selType === "text" && (
+              <>
+                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
+                  <span className="input-group-text">Color</span>
                   <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    min={8}
-                    max={200}
-                    step={1}
-                    value={fontSize}
-                    onChange={(e) => {
-                      const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
-                      setFontSize(v);
-                      applyToSelection(o => o.set({ fontSize: v }));
-                    }}
-                    style={{ touchAction: "manipulation" }}
+                    type="color" className="form-control form-control-color"
+                    value={shapeColor}
+                    onChange={(e)=>{ setShapeColor(e.target.value); applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); }}
+                    onPointerDown={(e)=>e.stopPropagation()}
                   />
                 </div>
 
-                <div className="btn-group dropup">
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={mobileClick(() => setShowAlignMenu(v => !v))}
-                    title="Alineación"
-                    style={{ touchAction: "manipulation" }}
-                  >
-                    {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
-                  </button>
-                  {showAlignMenu && (
-                    <ul className="dropdown-menu show" style={{ position: "absolute" }}>
-                      {["left", "center", "right", "justify"].map(a => (
-                        <li key={a}>
-                          <button
-                            type="button"
-                            className={`dropdown-item ${textAlign === a ? "active" : ""}`}
-                            onClick={mobileClick(() => {
-                              setTextAlign(a);
-                              setShowAlignMenu(false);
-                              applyToSelection(o => o.set({ textAlign: a }));
-                            })}
-                            style={{ touchAction: "manipulation" }}
-                          >
-                            {a}
-                          </button>
-                        </li>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                  <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
+                    <span className="input-group-text">Fuente</span>
+                    <select
+                      className="form-select form-select-sm"
+                      value={fontFamily}
+                      onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                    >
+                      {FONT_OPTIONS.map(f => (
+                        <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
                       ))}
-                    </ul>
+                    </select>
+                  </div>
+
+                  <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                    <button
+                      type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); }}
+                      title="Negrita"
+                    >B</button>
+                    <button
+                      type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); }}
+                      title="Cursiva"
+                    >I</button>
+                    <button
+                      type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
+                      title="Subrayado"
+                    >U</button>
+                  </div>
+
+                  <div className="input-group input-group-sm" style={{ width: 160 }}>
+                    <span className="input-group-text">Tamaño</span>
+                    <input
+                      type="number" className="form-control form-control-sm"
+                      min={8} max={200} step={1}
+                      value={fontSize}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onChange={(e) => {
+                        const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
+                        setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                      }}
+                    />
+                  </div>
+
+                  <div className="btn-group dropup">
+                    <button
+                      type="button" className="btn btn-outline-secondary btn-sm"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setShowAlignMenu(v => !v)}
+                      title="Alineación"
+                    >
+                      {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
+                    </button>
+                    {showAlignMenu && (
+                      <ul className="dropdown-menu show" style={{ position: "absolute" }}>
+                        {["left","center","right","justify"].map(a => (
+                          <li key={a}>
+                            <button
+                              type="button"
+                              className={`dropdown-item ${textAlign === a ? "active" : ""}`}
+                              onPointerDown={(e)=>e.stopPropagation()}
+                              onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
+                            >
+                              {a}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Imagen */}
+            {selType === "image" && (
+              <>
+                {/* Color: solo afecta a vectores */}
+                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
+                  <span className="input-group-text">Color</span>
+                  <input
+                    type="color" className="form-control form-control-color"
+                    value={shapeColor}
+                    onChange={(e)=>{ setShapeColor(e.target.value); if (isVectorSelected) applyColorToActive(e.target.value); }}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    disabled={!isVectorSelected}
+                    title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
+                  />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                  {/* Detalles: solo para vectores */}
+                  <div className="input-group input-group-sm" style={{ width: 230 }}>
+                    <span className="input-group-text">Detalles</span>
+                    <button
+                      type="button" className="btn btn-outline-secondary"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}
+                      disabled={!isVectorSelected}
+                    >−</button>
+                    <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                    <button
+                      type="button" className="btn btn-outline-secondary"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}
+                      disabled={!isVectorSelected}
+                    >+</button>
+                  </div>
+
+                  {/* Indicador RGB */}
+                  {isRgbSelected && (
+                    <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
                   )}
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </>
+        )}
 
-          {/* Imagen */}
-          {selType === "image" && (
-            <>
-              <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                <span className="input-group-text">Color</span>
-                <input
-                  type="color"
-                  className="form-control form-control-color"
-                  value={shapeColor}
-                  onChange={(e) => {
-                    setShapeColor(e.target.value);
-                    if (isVectorSelected) applyColorToActive(e.target.value);
-                  }}
-                  disabled={!isVectorSelected}
-                  title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
-                  style={{ touchAction: "manipulation" }}
-                />
-              </div>
+     {/* Inputs ocultos */}
+<input
+  ref={addInputVectorRef}
+  type="file"
+  accept="image/*"
+  style={{ display: "none" }}
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      addImageFromFile(f, "vector");
+    }
+    // 🔧 limpiar inmediatamente para permitir reusar el input
+    e.target.value = null;
+  }}
+  onPointerDown={(e) => e.stopPropagation()}
+/>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                <div className="input-group input-group-sm" style={{ width: 230 }}>
-                  <span className="input-group-text">Detalles</span>
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    onClick={mobileClick(() => setVecBias(v => clamp(v - 5, -60, 60)))}
-                    disabled={!isVectorSelected}
-                    style={{ touchAction: "manipulation" }}
-                  >−</button>
-                  <input
-                    type="text"
-                    readOnly
-                    className="form-control form-control-sm text-center"
-                    value={vecBias}
-                    style={{ touchAction: "none" }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    onClick={mobileClick(() => setVecBias(v => clamp(v + 5, -60, 60)))}
-                    disabled={!isVectorSelected}
-                    style={{ touchAction: "manipulation" }}
-                  >+</button>
-                </div>
+<input
+  ref={addInputRgbRef}
+  type="file"
+  accept="image/*"
+  style={{ display: "none" }}
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      addImageFromFile(f, "rgb");
+    }
+    // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
+    e.target.value = null;
+  }}
+  onPointerDown={(e) => e.stopPropagation()}
+/>
 
-                {isRgbSelected && (
-                  <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
-                )}
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
-  );
+<input
+  ref={cameraInputRef}
+  id="cameraInput"
+  type="file"
+  accept="image/*"
+  capture="environment"
+  style={{ display: "none" }}
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
+    }
+    e.target.value = null;
+  }}
+  onPointerDown={(e) => e.stopPropagation()}
+/>
+</div>
+  ); 
 };
 
-return (
-  <>
-    {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+  return (
+    <>
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
-    {anchorRef?.current ? createPortal(
-      <div
-        key="menu-container" // Key importante
-        style={{
-          position: "fixed", // Cambiado a fixed
-          bottom: "20px", // Posicionado abajo
-          left: "0",
-          width: "100%",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          pointerEvents: "none", // Contenedor no interactivo
-          zIndex: 999999,
-          padding: "0 10px",
-        }}
-      >
-        <div
-          style={{
-            pointerEvents: "auto", // Solo el contenido es interactivo
-            display: "inline-flex",
-            touchAction: "manipulation",
-            maxWidth: "100%",
-          }}
-        >
-          <Menu />
-        </div>
-      </div>,
-      document.body // Renderizar directamente en body
-    ) : null}
-  </>
-);
+      {anchorRef?.current ? createPortal(
+        <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none", marginTop: 8 }}>
+          <div style={{ pointerEvents: "auto", display: "inline-flex" }}><Menu /></div>
+        </div>,
+        document.getElementById("dobo-menu-dock") || document.body
+      ) : null}
+    </>
+  );
 }
