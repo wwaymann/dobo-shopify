@@ -1,3 +1,792 @@
+// components/CustomizationOverlay.js
+// DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con "Detalles"
+// Español neutro. No cambia lo que ya funciona, solo corrige y extiende según solicitud.
+
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import * as fabric from "fabric";
+import { createPortal } from "react-dom";
+import HistoryManager from "../lib/history";
+
+// ======= Constantes =======
+const Z_CANVAS = 4000;
+const FONT_OPTIONS = [
+  // === SISTEMA / CLÁSICAS ===
+  { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
+  { name: "Helvetica", css: 'Helvetica, Arial, sans-serif' },
+  { name: "Verdana", css: 'Verdana, Geneva, sans-serif' },
+  { name: "Tahoma", css: 'Tahoma, Verdana, sans-serif' },
+  { name: "Trebuchet MS", css: '"Trebuchet MS", Tahoma, sans-serif' },
+  { name: "Georgia", css: 'Georgia, serif' },
+  { name: "Times New Roman", css: '"Times New Roman", Times, serif' },
+  { name: "Courier New", css: '"Courier New", Courier, monospace' },
+  { name: "Lucida Console", css: '"Lucida Console", Monaco, monospace' },
+
+  // === SANS MODERNAS (GOOGLE FONTS) ===
+  { name: "Montserrat", css: 'Montserrat, Arial, sans-serif' },
+  { name: "Poppins", css: 'Poppins, Arial, sans-serif' },
+  { name: "Inter", css: 'Inter, Arial, sans-serif' },
+  { name: "Roboto", css: 'Roboto, Arial, sans-serif' },
+  { name: "Open Sans", css: '"Open Sans", Arial, sans-serif' },
+  { name: "Lato", css: 'Lato, Arial, sans-serif' },
+  { name: "Nunito", css: 'Nunito, Arial, sans-serif' },
+  { name: "Raleway", css: 'Raleway, Arial, sans-serif' },
+  { name: "Source Sans Pro", css: '"Source Sans Pro", Arial, sans-serif' },
+  { name: "Ubuntu", css: 'Ubuntu, Arial, sans-serif' },
+  { name: "Work Sans", css: '"Work Sans", Arial, sans-serif' },
+
+  // === SERIF MODERNAS / EDITORIALES ===
+  { name: "Playfair Display", css: '"Playfair Display", Georgia, serif' },
+  { name: "Merriweather", css: 'Merriweather, Georgia, serif' },
+  { name: "Libre Baskerville", css: '"Libre Baskerville", Georgia, serif' },
+  { name: "Cormorant", css: 'Cormorant, Georgia, serif' },
+  { name: "Crimson Text", css: '"Crimson Text", Georgia, serif' },
+
+  // === DISPLAY / CREATIVAS ===
+  { name: "Bebas Neue", css: '"Bebas Neue", Arial, sans-serif' },
+  { name: "Oswald", css: 'Oswald, Arial, sans-serif' },
+  { name: "Anton", css: 'Anton, Arial, sans-serif' },
+  { name: "Abril Fatface", css: '"Abril Fatface", serif' },
+  { name: "Pacifico", css: 'Pacifico, cursive' },
+  { name: "Lobster", css: 'Lobster, cursive' },
+  { name: "Fredoka", css: 'Fredoka, Arial, sans-serif' },
+
+  // === MONO / TÉCNICAS ===
+  { name: "Roboto Mono", css: '"Roboto Mono", monospace' },
+  { name: "Source Code Pro", css: '"Source Code Pro", monospace' },
+  { name: "JetBrains Mono", css: '"JetBrains Mono", monospace' },
+
+  // === ORGÁNICAS / ARTESANALES (BUENAS PARA MACETAS) ===
+  { name: "Quicksand", css: 'Quicksand, Arial, sans-serif' },
+  { name: "Comfortaa", css: 'Comfortaa, Arial, sans-serif' },
+  { name: "Baloo 2", css: '"Baloo 2", Arial, sans-serif' },
+  { name: "Amatic SC", css: '"Amatic SC", cursive' }
+];
+
+const VECTOR_SAMPLE_DIM = 500;
+const MAX_TEXTURE_DIM = 1600;
+
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+function hexToRgb(hex) {
+  const m = String(hex || "").replace("#", "").match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return [51, 51, 51];
+  let s = m[1];
+  if (s.length === 3) s = s.split("").map(ch => ch + ch).join("");
+  const n = parseInt(s, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// ======= Otsu =======
+function otsuThreshold(gray, total) {
+  if (!gray || !total || total <= 0) return 127;
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < total; i++) hist[gray[i]]++;
+
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+
+  let sumB = 0, wB = 0;
+  let varMax = -1;
+  let threshold = 127;
+
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const diff = mB - mF;
+    const between = wB * wF * diff * diff;
+
+    if (Number.isFinite(between) && between > varMax) {
+      varMax = between;
+      threshold = t;
+    }
+  }
+  return threshold;
+}
+
+function downscale(imgEl) {
+  const w = imgEl.naturalWidth || imgEl.width;
+  const h = imgEl.naturalHeight || imgEl.height;
+  const r = Math.min(MAX_TEXTURE_DIM / w, MAX_TEXTURE_DIM / h, 1);
+  if (!w || !h || r === 1) return imgEl;
+  const cw = Math.round(w * r), ch = Math.round(h * r);
+  const cv = document.createElement("canvas");
+  cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(imgEl, 0, 0, cw, ch);
+  return cv;
+}
+
+// ======= Vectorización (igual sistema usado antes: binarización con "Detalles/vecBias" y color) =======
+function vectorizeElementToBitmap(element, opts = {}) {
+  const {
+    maxDim = VECTOR_SAMPLE_DIM,
+    makeDark = true,
+    drawColor = [51, 51, 51],
+    thrBias = 0
+  } = opts;
+
+  const iw = element?.width, ih = element?.height;
+  if (!iw || !ih) return null;
+
+  const scale = (iw > ih) ? maxDim / iw : maxDim / ih;
+  const w = Math.max(1, Math.round(iw * scale));
+  const h = Math.max(1, Math.round(ih * scale));
+
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(element, 0, 0, w, h);
+
+  let img;
+  try {
+    img = ctx.getImageData(0, 0, w, h);
+  } catch {
+    return null;
+  }
+
+  const data = img?.data;
+  const total = w * h;
+  if (!data || data.length < total * 4) return null;
+
+  const gray = new Uint8Array(total);
+  for (let i = 0, j = 0; j < total; i += 4, j++) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    gray[j] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+  }
+  const thr0 = otsuThreshold(gray, total);
+  const thr = clamp(thr0 + thrBias, 0, 255);
+
+  for (let j = 0, i = 0; j < total; j++, i += 4) {
+    const keep = makeDark ? (gray[j] <= thr) : (gray[j] > thr);
+    if (keep) {
+      data[i] = drawColor[0];
+      data[i + 1] = drawColor[1];
+      data[i + 2] = drawColor[2];
+      data[i + 3] = 255;
+    } else {
+      data[i + 3] = 0;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const bm = new fabric.Image(cv, {
+    left: 0, top: 0,
+    originX: "left", originY: "top",
+    objectCaching: false,
+    noScaleCache: true,
+    selectable: true,
+    evented: true
+  });
+  bm._vecSourceEl = element; // importante para recolorear y re-vectorizar
+  bm._vecMeta = { w, h };
+  bm._doboKind = "vector"; // etiqueta para el menú
+  return bm;
+}
+
+// ======= Texto con pseudo-relieve plano (sólo capas visuales) y editable =======
+function makeTextGroup(text, opts = {}) {
+  // Grupo simple: base es el que define estilo/tamaño; sin relieve real.
+  const base = new fabric.Textbox(text, {
+    ...opts,
+    originX: "center", originY: "center",
+    selectable: true, evented: true,
+    objectCaching: false,
+    fill: opts.fill ?? "rgba(35,35,35,1)"
+  });
+
+  // Sombra y luz muy sutiles (opcional). Si no deseas nada, comenta shadow/highlight.
+  const shadow = new fabric.Textbox(text, {
+    ...opts,
+    originX: "center", originY: "center",
+    left: -1, top: -1,
+    selectable: false, evented: false,
+    objectCaching: false,
+    fill: "",
+    stroke: "rgba(0,0,0,0.25)", strokeWidth: 0.8
+  });
+  const highlight = new fabric.Textbox(text, {
+    ...opts,
+    originX: "center", originY: "center",
+    left: +1, top: +1,
+    selectable: false, evented: false,
+    objectCaching: false,
+    fill: "",
+    stroke: "rgba(255,255,255,0.45)", strokeWidth: 0.5
+  });
+
+  const group = new fabric.Group([shadow, highlight, base], {
+    originX: "center", originY: "center",
+    subTargetCheck: false,
+    objectCaching: false,
+    selectable: true, evented: true,
+    scaleX: 1, scaleY: 1
+  });
+  group._kind = "textGroup";
+  group._textChildren = { base, shadow, highlight };
+
+  const sync = () => {
+    const sx = Math.max(1e-6, Math.abs(group.scaleX || 1));
+    const sy = Math.max(1e-6, Math.abs(group.scaleY || 1));
+    const ox = 1 / sx, oy = 1 / sy;
+    shadow.set({ left: -ox, top: -oy });
+    highlight.set({ left: +ox, top: +oy });
+    group.setCoords();
+    group.canvas?.requestRenderAll?.();
+  };
+  group.on("scaling", sync);
+  group.on("modified", sync);
+  sync();
+
+  return group;
+}
+
+export default function CustomizationOverlay({
+  stageRef,
+  anchorRef,
+  visible = true,
+  zoom = 0.6,
+  setZoom
+}) {
+  // ---- Refs y estado ----
+  const canvasRef = useRef(null);
+  const fabricCanvasRef = useRef(null);
+  const overlayRef = useRef(null);
+  const addInputVectorRef = useRef(null);
+  const addInputRgbRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const [uploadMode, setUploadMode] = useState(null); // "vector" | "rgb"
+  const [baseSize, setBaseSize] = useState({ w: 1, h: 1 });
+  const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, w: 1, h: 1 });
+  const [editing, setEditing] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [selType, setSelType] = useState("none"); // 'none'|'text'|'image'
+
+  // Historial
+  const historyRef = useRef(null);
+  const [histCaps, setHistCaps] = useState({ canUndo: false, canRedo: false });
+
+  // Tipografía
+  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].css);
+  const [fontSize, setFontSize] = useState(60);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+  const [isUnderline, setIsUnderline] = useState(false);
+  const [textAlign, setTextAlign] = useState("center");
+  const [textEditing, setTextEditing] = useState(false);
+
+  // UI
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
+
+  // Color (texto y vector)
+  const [shapeColor, setShapeColor] = useState("#333333");
+
+  // Vector
+  const [vecBias, setVecBias] = useState(0); // -60..+60
+
+  const suppressSelectionRef = useRef(false);
+  const designBoundsRef = useRef(null);
+  const isMobileRef = useRef(false);
+
+  // ====== helpers de historial
+  const getSnapshot = () => {
+    const c = fabricCanvasRef.current;
+    if (!c) return null;
+    return c.toJSON(["_kind", "_textChildren", "_vecSourceEl", "_vecMeta", "_doboKind"]);
+  };
+
+  const applySnapshot = (snap) => {
+    const c = fabricCanvasRef.current;
+    if (!c || !snap) return;
+    c._skipHistory = true;
+    c.loadFromJSON(snap, () => {
+      c._skipHistory = false;
+      c.requestRenderAll();
+    });
+  };
+
+  const refreshCaps = () => setHistCaps({
+    canUndo: !!historyRef.current?.canUndo(),
+    canRedo: !!historyRef.current?.canRedo()
+  });
+
+  const recordChange = (() => {
+    let t = null;
+    return () => {
+      if (fabricCanvasRef.current?._skipHistory) return;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const s = getSnapshot();
+        if (s && historyRef.current) historyRef.current.push(s);
+        refreshCaps();
+      }, 140);
+    };
+  })();
+
+  // ====== layout a partir de anchor y stage
+  useLayoutEffect(() => {
+    const el = anchorRef?.current;
+    if (!el) return;
+    const prev = el.style.position;
+    if (getComputedStyle(el).position === "static") el.style.position = "relative";
+    return () => { try { el.style.position = prev; } catch {} };
+  }, [anchorRef]);
+
+  useLayoutEffect(() => {
+    const stage = stageRef?.current;
+    const anchor = anchorRef?.current;
+    if (!stage || !anchor) return;
+
+    const measure = () => {
+      const w = Math.max(1, anchor.clientWidth);
+      const h = Math.max(1, anchor.clientHeight);
+      let left = 0, top = 0;
+      let el = anchor;
+      while (el && el !== stage) {
+        left += el.offsetLeft || 0;
+        top += el.offsetTop || 0;
+        el = el.offsetParent;
+      }
+      setBaseSize({ w, h });
+      setOverlayBox({ left, top, w, h });
+
+      const c = fabricCanvasRef.current;
+      if (c) { c.setWidth(w); c.setHeight(h); c.calcOffset?.(); c.requestRenderAll?.(); }
+    };
+
+    measure();
+    const roA = new ResizeObserver(measure);
+    const roS = new ResizeObserver(measure);
+    try { roA.observe(anchor); } catch {}
+    try { roS.observe(stage); } catch {}
+    window.addEventListener("resize", measure, { passive: true });
+
+    return () => {
+      try { roA.disconnect(); } catch {}
+      try { roS.disconnect(); } catch {}
+      window.removeEventListener("resize", measure);
+    };
+  }, [stageRef, anchorRef]);
+
+  useEffect(() => {
+    const v = typeof zoom === "number" ? zoom : 0.6;
+    stageRef?.current?.style.setProperty("--zoom", String(v));
+  }, [zoom, stageRef]);
+
+  // ====== Detectar si es móvil ======
+  useEffect(() => {
+    const checkMobile = () => {
+      isMobileRef.current = window.innerWidth <= 768;
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // ====== init Fabric con mejor configuración para móvil ======
+  useEffect(() => {
+    if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
+
+    const c = new fabric.Canvas(canvasRef.current, {
+      width: 1,
+      height: 1,
+      preserveObjectStacking: true,
+      selection: true,
+      perPixelTargetFind: true,
+      targetFindTolerance: 8,
+      // Configuración mejorada para móvil
+      allowTouchScrolling: true, // Siempre permitir scroll táctil
+      stopContextMenu: true,
+      backgroundColor: 'transparent',
+    });
+    fabricCanvasRef.current = c;
+
+    // Configurar eventos táctiles específicos para móvil
+    if ('ontouchstart' in window) {
+      const upperCanvas = c.upperCanvasEl;
+      if (upperCanvas) {
+        // Configuración para permitir interacción pero también scroll
+        upperCanvas.style.touchAction = 'manipulation';
+        upperCanvas.style.msTouchAction = 'manipulation';
+        upperCanvas.style.WebkitTouchCallout = "none";
+        
+        // No prevenir eventos táctiles - dejar que Fabric los maneje
+        const handleTouchStart = (e) => {
+          // Dejar que Fabric maneje los eventos táctiles
+          if (c.selection && c.getActiveObject()) {
+            // Si hay un objeto seleccionado, permitir que Fabric lo maneje
+            e.stopPropagation();
+          }
+        };
+
+        upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        
+        // Limpiar al desmontar
+        return () => {
+          upperCanvas.removeEventListener('touchstart', handleTouchStart);
+        };
+      }
+    }
+
+    // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
+    (() => {
+      const c = fabricCanvasRef.current;
+      if (!c) return;
+
+      // 0) Foco y tolerancias táctiles
+      if (c.upperCanvasEl) {
+        c.upperCanvasEl.setAttribute("tabindex", "0");
+        c.upperCanvasEl.style.touchAction = 'manipulation'; // Permite scroll y zoom
+        c.upperCanvasEl.addEventListener("touchstart", () => {
+          c.upperCanvasEl.focus();
+        }, { passive: true });
+      }
+      c.perPixelTargetFind = true;
+      c.targetFindTolerance = 12;
+      if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
+
+      // 1) Utilidades
+      const isTextTarget = (t) =>
+        !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
+
+      const enterEdit = (t) => {
+        if (!isTextTarget(t)) return;
+        requestAnimationFrame(() => {
+          if (t.type === "textbox" || t.type === "i-text") {
+            t.selectable = true; t.editable = true; t.evented = true;
+            c.setActiveObject(t);
+            t.enterEditing?.();
+            t.hiddenTextarea?.focus?.();
+          } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+            startInlineTextEdit(t);
+            c.setActiveObject(t);
+          }
+          c.requestRenderAll();
+        });
+      };
+
+      // 2) Tap vs Drag + candado anti-doble-disparo
+      let downInfo = null;
+      let moved = false;
+      let editLockUntil = 0; // ms timestamp: previene doble disparo
+
+      const TAP_MAX_MS = 220;
+      const TAP_MAX_MOVE = 6; // px
+      const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
+
+      c.on("mouse:down", (opt) => {
+        const now = performance.now();
+        moved = false;
+        downInfo = {
+          x: opt.pointer?.x ?? 0,
+          y: opt.pointer?.y ?? 0,
+          t: now,
+          target: opt.target || null
+        };
+      });
+
+      c.on("mouse:move", (opt) => {
+        if (!downInfo) return;
+        const p = opt.pointer || { x: 0, y: 0 };
+        if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
+          moved = true;
+        }
+      });
+
+      c.on("mouse:up", (opt) => {
+        const now = performance.now();
+        if (!downInfo) return;
+
+        const t = downInfo.target;
+        const duration = now - downInfo.t;
+
+        // Candado activo → nada
+        if (now < editLockUntil) { downInfo = null; return; }
+
+        // TAP corto sobre texto => editar
+        if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+          opt.e?.preventDefault?.();
+          opt.e?.stopPropagation?.();
+          enterEdit(t);
+          editLockUntil = now + 300; // evita doble disparo inmediato
+        }
+
+        downInfo = null;
+      });
+
+      // Doble clic / doble tap → editar (respetando candado)
+      c.on("mouse:dblclick", (opt) => {
+        const now = performance.now();
+        const t = opt.target;
+        if (!isTextTarget(t)) return;
+        if (now < editLockUntil) return;
+
+        opt.e?.preventDefault?.();
+        opt.e?.stopPropagation?.();
+        enterEdit(t);
+        editLockUntil = now + 300;
+      });
+
+      // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
+      c.on("text:editing:exited", (opt) => {
+        const t = opt?.target;
+        if (!t) return;
+
+        // Asegura movimiento/selección otra vez
+        t.editable = true;
+        t.selectable = true;
+        t.evented = true;
+        t.hasControls = true;
+        t.lockMovementX = false;
+        t.lockMovementY = false;
+
+        c.setActiveObject(t);
+        c.requestRenderAll();
+      });
+    })();
+
+    // Delimitar bounds (margen 10 px)
+    const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
+    setDesignBounds({ x: 10, y: 10, w: c.getWidth() - 20, h: c.getHeight() - 20 });
+
+    // Enforcers de límites
+    const clampObjectToBounds = (obj) => {
+      const b = designBoundsRef.current; if (!b || !obj) return;
+      obj.setCoords();
+      const r = obj.getBoundingRect(true);
+      let dx = 0, dy = 0;
+      if (r.left < b.x) dx = b.x - r.left;
+      if (r.top < b.y) dy = b.y - r.top;
+      if (r.left + r.width > b.x + b.w) dx = (b.x + b.w) - (r.left + r.width);
+      if (r.top + r.height > b.y + b.h) dy = (b.y + b.h) - (r.top + r.height);
+      if (dx || dy) {
+        obj.left = (obj.left ?? 0) + dx;
+        obj.top = (obj.top ?? 0) + dy;
+        obj.setCoords();
+      }
+    };
+    const __bounds_onMove = e => clampObjectToBounds(e.target);
+    const __bounds_onScale = e => clampObjectToBounds(e.target);
+    const __bounds_onRotate = e => clampObjectToBounds(e.target);
+    const __bounds_onAdded = e => clampObjectToBounds(e.target);
+    c.on("object:moving", __bounds_onMove);
+    c.on("object:scaling", __bounds_onScale);
+    c.on("object:rotating", __bounds_onRotate);
+    c.on("object:added", __bounds_onAdded);
+
+    const __bounds_ro = new ResizeObserver(() => {
+      const cw = c.getWidth(), ch = c.getHeight();
+      setDesignBounds({ x: 10, y: 10, w: cw - 20, h: ch - 20 });
+      const a = c.getActiveObject(); if (a) clampObjectToBounds(a);
+    });
+    __bounds_ro.observe(c.upperCanvasEl);
+
+    // Historial
+    historyRef.current = new HistoryManager({ limit: 200, onChange: refreshCaps });
+    c.once("after:render", () => {
+      const s = getSnapshot(); if (s) historyRef.current.push(s);
+      refreshCaps();
+    });
+    const __hist_onAdded = () => recordChange();
+    const __hist_onModified = () => recordChange();
+    const __hist_onRemoved = () => recordChange();
+    const __hist_onPath = () => recordChange();
+    c.on("object:added", __hist_onAdded);
+    c.on("object:modified", __hist_onModified);
+    c.on("object:removed", __hist_onRemoved);
+    c.on("path:created", __hist_onPath);
+
+    // Selección: clasificar
+    const classify = (a) => {
+      if (!a) return "none";
+      if (a._kind === "textGroup") return "text";
+      if (a._doboKind === "vector") return "image";
+      if (a.type === "image") return "image";
+      if (a.type === "i-text" || a.type === "textbox" || a.type === "text") return "text";
+      return "none";
+    };
+
+    const isTextObj = (o) => o && (o.type === "i-text" || o.type === "textbox" || o.type === "text");
+
+    const reflectTypo = () => {
+      const a = c.getActiveObject();
+      if (!a) return;
+      let first = null;
+      if (a._kind === "textGroup") first = a._textChildren?.base || null;
+      else if (a.type === "activeSelection") first = a._objects?.find(x => x._kind === "textGroup")?._textChildren?.base || null;
+      else if (isTextObj(a)) first = a;
+      if (first) {
+        setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
+        setFontSize(first.fontSize || 60);
+        setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
+        setIsItalic((first.fontStyle + "" === "italic"));
+        setIsUnderline(!!first.underline);
+        setTextAlign(first.textAlign || "center");
+      }
+    };
+
+    const onSel = () => {
+      const cobj = c.getActiveObject();
+      if (suppressSelectionRef.current) {
+        try { if (cobj?.type === "activeSelection") cobj.discard(); } catch {}
+        try { c.discardActiveObject(); } catch {}
+        try { c.setActiveObject(null); } catch {}
+        try { c._activeObject = null; } catch {}
+        setSelType("none");
+        c.requestRenderAll();
+        return;
+      }
+      setSelType(classify(cobj));
+      reflectTypo();
+    };
+    c.on("selection:created", onSel);
+    c.on("selection:updated", onSel);
+    c.on("selection:cleared", () => setSelType("none"));
+
+    // Doble-clic para texto editable
+    c.on("mouse:dblclick", (e) => {
+      const t = e.target;
+      if (!t) return;
+      if (t._kind === "textGroup") {
+        startInlineTextEdit(t);
+      } else if (isTextObj(t) && typeof t.enterEditing === "function") {
+        t.enterEditing();
+        c.requestRenderAll();
+      }
+    });
+
+    setReady(true);
+    
+    // === DOBO: exponer API global para correo y checkout ===
+    if (typeof window !== "undefined") {
+      const api = {
+        // existentes
+        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+
+        toSVG: () => c.toSVG({ suppressPreamble: true }),
+        getCanvas: () => c,
+        exportDesignSnapshot: () => {
+          try { return c.toJSON(); } catch { return null; }
+        },
+        importDesignSnapshot: (snap) => new Promise(res => {
+          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+        }),
+        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+      };
+      window.doboDesignAPI = api;
+      try {
+        window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
+        console.log("[DOBO] API global inicializada ✅");
+      } catch {}
+    }
+
+    return () => {
+      c.off("mouse:dblclick");
+      c.off("selection:created", onSel);
+      c.off("selection:updated", onSel);
+      c.off("selection:cleared");
+      c.off("object:added", __hist_onAdded);
+      c.off("object:modified", __hist_onModified);
+      c.off("object:removed", __hist_onRemoved);
+      c.off("path:created", __hist_onPath);
+
+      c.off("object:moving", __bounds_onMove);
+      c.off("object:scaling", __bounds_onScale);
+      c.off("object:rotating", __bounds_onRotate);
+      c.off("object:added", __bounds_onAdded);
+      try { __bounds_ro.disconnect(); } catch {}
+      try { c.dispose(); } catch {}
+      fabricCanvasRef.current = null;
+    };
+  }, [visible]);
+
+  // ====== Ajustar interactividad según modo edición (CORREGIDO - NO BLOQUEAR INTERACCIÓN) ======
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+
+    const enableNode = (o, on) => {
+      if (!o) return;
+      const isGroup = o._kind === "textGroup";
+      o.selectable = on;
+      o.evented = on;
+      o.lockMovementX = !on;
+      o.lockMovementY = !on;
+      o.hasControls = on;
+      o.hasBorders = on;
+      if (!isGroup && (o.type === "i-text" || typeof o.enterEditing === "function")) {
+        o.editable = on;
+      }
+      o.hoverCursor = on ? "move" : "default";
+      if (isGroup) return;
+      const children = o._objects || (typeof o.getObjects === "function" ? o.getObjects() : null);
+      if (Array.isArray(children)) children.forEach(ch => enableNode(ch, on));
+    };
+
+    const setAll = (on) => {
+      c.skipTargetFind = !on;
+      c.selection = on;
+      (c.getObjects?.() || []).forEach(o => enableNode(o, on));
+      
+      const upper = c.upperCanvasEl;
+      if (upper) {
+        // IMPORTANTE: NO bloquear pointer-events, solo ajustar touch-action
+        upper.style.pointerEvents = "auto"; // Siempre permitir interacción
+        upper.style.touchAction = on ? "none" : "pan-y pinch-zoom"; // Permitir scroll/zoom cuando no se edita
+        upper.style.msTouchAction = on ? "none" : "pan-y pinch-zoom";
+        upper.tabIndex = on ? 0 : -1;
+      }
+      
+      c.defaultCursor = on ? "move" : "default";
+      if (!on) {
+        try { c.discardActiveObject(); } catch {}
+      }
+      c.calcOffset?.();
+      c.requestRenderAll?.();
+      setTimeout(() => { c.calcOffset?.(); c.requestRenderAll?.(); }, 0);
+    };
+
+    setAll(!!editing);
+  }, [editing]);
+
+  // Ajuste de tamaño si cambian baseSize
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+    c.setWidth(baseSize.w);
+    c.setHeight(baseSize.h);
+    c.calcOffset?.();
+    c.requestRenderAll?.();
+  }, [baseSize.w, baseSize.h]);
+
+  // ======= Edición inline de texto (grupo) =======
+  const startInlineTextEdit = (group) => {
+    const c = fabricCanvasRef.current; if (!c || !group || group._kind !== "textGroup") return;
+    const base = group._textChildren?.base; if (!base) return;
+
+    const pose = {
+      left: group.left, top: group.top, originX: "center", originY: "center",
+      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
+    };
+
+    try { c.remove(group); } catch {}
+
+    const tb = new fabric.Textbox(base.text || "Texto", {
+      left: pose.left, top: pose.top, originX: "center", originY: "center",
+      width: Math.min(baseSize.w * 0.9, base.width || 240),
+      fontFamily: base.fontFamily, fontSize: base.fontSize, fontWeight: base.fontWeight,
       fontStyle: base.fontStyle, underline: base.underline, textAlign: base.textAlign,
       editable: true, selectable: true, evented: true, objectCaching: false,
       fill: base.fill || "rgba(35,35,35,1)"
@@ -396,36 +1185,26 @@
         height: overlayBox.h,
         zIndex: Z_CANVAS,
         overflow: "hidden",
-        pointerEvents: editing ? "auto" : "none",
-        // IMPORTANTE: Configuración diferente para móvil
-        touchAction: editing ? "none" : "pan-y",
-        msTouchAction: editing ? "none" : "pan-y",
+        pointerEvents: "auto", // SIEMPRE permitir interacción
+        // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
+        touchAction: editing ? "none" : "pan-y pinch-zoom",
+        msTouchAction: editing ? "none" : "pan-y pinch-zoom",
         overscrollBehavior: "contain",
         // Prevenir rebote en iOS
-        WebkitOverflowScrolling: editing ? "auto" : "touch",
+        WebkitOverflowScrolling: "touch",
       }}
       onPointerDown={(e) => { 
         if (editing) {
           e.stopPropagation();
-          // Solo prevenir si estamos sobre un objeto seleccionado
-          const c = fabricCanvasRef.current;
-          if (c && c.getActiveObject()) {
-            e.preventDefault();
-          }
         }
       }}
       onTouchStart={(e) => { 
         if (editing) {
           e.stopPropagation();
-          // Solo prevenir si estamos sobre un objeto seleccionado
-          const c = fabricCanvasRef.current;
-          if (c && c.getActiveObject()) {
-            e.preventDefault();
-          }
         }
       }}
       onTouchMove={(e) => {
-        if (editing && fabricCanvasRef.current?.getActiveObject()) {
+        if (editing) {
           e.stopPropagation();
         }
       }}
@@ -440,12 +1219,14 @@
           height: "100%",
           display: "block",
           background: "transparent",
-          // Configuración táctil específica
-          touchAction: editing ? "none" : "pan-y",
-          msTouchAction: editing ? "none" : "pan-y",
+          // Configuración táctil específica - NO BLOQUEAR
+          touchAction: editing ? "none" : "pan-y pinch-zoom",
+          msTouchAction: editing ? "none" : "pan-y pinch-zoom",
           WebkitTouchCallout: "none",
           WebkitUserSelect: "none",
           userSelect: "none",
+          // Asegurar que sea interactivo
+          pointerEvents: "auto",
         }}
       />
     </div>
