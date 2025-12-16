@@ -9,6 +9,7 @@ import HistoryManager from "../lib/history";
 
 // ======= Constantes =======
 const Z_CANVAS = 4000;
+const Z_MENU = 5000; // Añadido: Menú por encima del canvas
 const FONT_OPTIONS = [
   // === SISTEMA / CLÁSICAS ===
   { name: "Arial", css: 'Arial, Helvetica, sans-serif' },
@@ -298,6 +299,7 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
   const isMobileRef = useRef(false);
+  const touchStartTimeRef = useRef(0);
 
   // ====== helpers de historial
   const getSnapshot = () => {
@@ -407,7 +409,7 @@ export default function CustomizationOverlay({
       perPixelTargetFind: true,
       targetFindTolerance: 8,
       // Configuración mejorada para móvil
-      allowTouchScrolling: true, // Siempre permitir scroll táctil
+      allowTouchScrolling: true,
       stopContextMenu: true,
       backgroundColor: 'transparent',
     });
@@ -417,25 +419,36 @@ export default function CustomizationOverlay({
     if ('ontouchstart' in window) {
       const upperCanvas = c.upperCanvasEl;
       if (upperCanvas) {
-        // Configuración para permitir interacción pero también scroll
+        // Permitir interacción pero controlar el scroll
         upperCanvas.style.touchAction = 'manipulation';
         upperCanvas.style.msTouchAction = 'manipulation';
         upperCanvas.style.WebkitTouchCallout = "none";
         
-        // No prevenir eventos táctiles - dejar que Fabric los maneje
+        // Manejar eventos táctiles con cuidado
         const handleTouchStart = (e) => {
-          // Dejar que Fabric maneje los eventos táctiles
-          if (c.selection && c.getActiveObject()) {
-            // Si hay un objeto seleccionado, permitir que Fabric lo maneje
+          touchStartTimeRef.current = Date.now();
+          // Solo prevenir si estamos en modo edición y hay objeto seleccionado
+          if (editing && c.selection && c.getActiveObject()) {
             e.stopPropagation();
           }
         };
 
-        upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        const handleTouchMove = (e) => {
+          // Si ha pasado poco tiempo desde el touchstart, podría ser un gesto
+          const timeSinceStart = Date.now() - touchStartTimeRef.current;
+          if (timeSinceStart < 100 && e.touches.length === 1) {
+            // Podría ser un intento de arrastre, dejar que Fabric lo maneje
+            e.stopPropagation();
+          }
+        };
+
+        upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: true });
+        upperCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         
         // Limpiar al desmontar
         return () => {
           upperCanvas.removeEventListener('touchstart', handleTouchStart);
+          upperCanvas.removeEventListener('touchmove', handleTouchMove);
         };
       }
     }
@@ -448,7 +461,7 @@ export default function CustomizationOverlay({
       // 0) Foco y tolerancias táctiles
       if (c.upperCanvasEl) {
         c.upperCanvasEl.setAttribute("tabindex", "0");
-        c.upperCanvasEl.style.touchAction = 'manipulation'; // Permite scroll y zoom
+        c.upperCanvasEl.style.touchAction = 'manipulation';
         c.upperCanvasEl.addEventListener("touchstart", () => {
           c.upperCanvasEl.focus();
         }, { passive: true });
@@ -631,7 +644,7 @@ export default function CustomizationOverlay({
         setFontFamily(first.fontFamily || FONT_OPTIONS[0].css);
         setFontSize(first.fontSize || 60);
         setIsBold((first.fontWeight + "" === "700") || first.fontWeight === "bold");
-        setIsItalic((first.fontStyle + "" === "italic"));
+        setIsItalic((first.fontStyle + "" === "italic");
         setIsUnderline(!!first.underline);
         setTextAlign(first.textAlign || "center");
       }
@@ -712,7 +725,7 @@ export default function CustomizationOverlay({
     };
   }, [visible]);
 
-  // ====== Ajustar interactividad según modo edición (CORREGIDO - NO BLOQUEAR INTERACCIÓN) ======
+  // ====== Ajustar interactividad según modo edición ======
   useEffect(() => {
     const c = fabricCanvasRef.current;
     if (!c) return;
@@ -742,10 +755,10 @@ export default function CustomizationOverlay({
       
       const upper = c.upperCanvasEl;
       if (upper) {
-        // IMPORTANTE: NO bloquear pointer-events, solo ajustar touch-action
-        upper.style.pointerEvents = "auto"; // Siempre permitir interacción
-        upper.style.touchAction = on ? "none" : "pan-y pinch-zoom"; // Permitir scroll/zoom cuando no se edita
-        upper.style.msTouchAction = on ? "none" : "pan-y pinch-zoom";
+        // IMPORTANTE: Permitir interacción pero controlar scroll
+        upper.style.pointerEvents = "auto";
+        upper.style.touchAction = on ? "manipulation" : "pan-y pinch-zoom";
+        upper.style.msTouchAction = on ? "manipulation" : "pan-y pinch-zoom";
         upper.tabIndex = on ? 0 : -1;
       }
       
@@ -1185,10 +1198,10 @@ export default function CustomizationOverlay({
         height: overlayBox.h,
         zIndex: Z_CANVAS,
         overflow: "hidden",
-        pointerEvents: "auto", // SIEMPRE permitir interacción
+        pointerEvents: "auto",
         // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
-        touchAction: editing ? "none" : "pan-y pinch-zoom",
-        msTouchAction: editing ? "none" : "pan-y pinch-zoom",
+        touchAction: editing ? "manipulation" : "pan-y pinch-zoom",
+        msTouchAction: editing ? "manipulation" : "pan-y pinch-zoom",
         overscrollBehavior: "contain",
         // Prevenir rebote en iOS
         WebkitOverflowScrolling: "touch",
@@ -1219,20 +1232,19 @@ export default function CustomizationOverlay({
           height: "100%",
           display: "block",
           background: "transparent",
-          // Configuración táctil específica - NO BLOQUEAR
-          touchAction: editing ? "none" : "pan-y pinch-zoom",
-          msTouchAction: editing ? "none" : "pan-y pinch-zoom",
+          // Configuración táctil específica
+          touchAction: editing ? "manipulation" : "pan-y pinch-zoom",
+          msTouchAction: editing ? "manipulation" : "pan-y pinch-zoom",
           WebkitTouchCallout: "none",
           WebkitUserSelect: "none",
           userSelect: "none",
-          // Asegurar que sea interactivo
           pointerEvents: "auto",
         }}
       />
     </div>
   );
 
-  // ====== Menú ======
+  // ====== Menú con eventos mejorados para móvil ======
   const Menu = () => {
     const c = fabricCanvasRef.current;
     const a = c?.getActiveObject();
@@ -1241,6 +1253,20 @@ export default function CustomizationOverlay({
     const isRgbSelected =
       selType === "image" && a && a._doboKind === "rgb";
 
+    // Función para manejar clicks en móvil
+    const handleMobileClick = (e, callback) => {
+      if (isMobileRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Pequeño delay para asegurar que el evento táctil termine
+        setTimeout(() => {
+          callback();
+        }, 50);
+      } else {
+        callback();
+      }
+    };
+
     return (
       <div
         ref={menuRef}
@@ -1248,7 +1274,7 @@ export default function CustomizationOverlay({
           display: "flex",
           flexDirection: "column",
           gap: 8,
-          background: "rgba(253, 253, 253, 0.34)",
+          background: "rgba(253, 253, 253, 0.94)",
           backdropFilter: "blur(4px)",
           WebkitBackdropFilter: "blur(4px)",
           border: "1px solid #ddd",
@@ -1258,31 +1284,57 @@ export default function CustomizationOverlay({
           width: "auto",
           maxWidth: "94vw",
           fontSize: 12,
-          userSelect: "none"
+          userSelect: "none",
+          zIndex: Z_MENU,
+          // IMPORTANTE: Asegurar que el menú sea completamente interactivo
+          touchAction: "manipulation",
+          msTouchAction: "manipulation",
+          pointerEvents: "auto",
         }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => e.stopPropagation()}
+        // NO detener propagación aquí - dejar que los botones manejen sus propios eventos
+        onPointerDown={(e) => {
+          // Solo detener si no es un botón
+          if (!e.target.closest('button, input, select')) {
+            e.stopPropagation();
+          }
+        }}
+        onTouchStart={(e) => {
+          // Solo detener si no es un botón
+          if (!e.target.closest('button, input, select')) {
+            e.stopPropagation();
+          }
+        }}
       >
         {/* Línea 1: historial + zoom + modos */}
         <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
             <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás"
+              type="button" 
+              className="btn btn-outline-secondary"
+              onClick={(e) => handleMobileClick(e, () => { 
+                const s = historyRef.current?.undo(); 
+                if (s) applySnapshot(s); 
+                refreshCaps(); 
+              })}
+              disabled={!histCaps.canUndo} 
+              title="Atrás (Ctrl+Z)" 
+              aria-label="Atrás"
+              style={{ touchAction: "manipulation" }}
             >
               <i className="fa fa-undo" aria-hidden="true"></i>
             </button>
             <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
-              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante"
+              type="button" 
+              className="btn btn-outline-secondary"
+              onClick={(e) => handleMobileClick(e, () => { 
+                const s = historyRef.current?.redo(); 
+                if (s) applySnapshot(s); 
+                refreshCaps(); 
+              })}
+              disabled={!histCaps.canRedo} 
+              title="Adelante (Ctrl+Shift+Z)" 
+              aria-label="Adelante"
+              style={{ touchAction: "manipulation" }}
             >
               <i className="fa fa-repeat" aria-hidden="true"></i>
             </button>
@@ -1292,14 +1344,23 @@ export default function CustomizationOverlay({
             <div className="input-group input-group-sm" style={{ width: 180 }}>
               <span className="input-group-text">Zoom</span>
               <button
-                type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
+                type="button" 
+                className="btn btn-outline-secondary"
+                onClick={(e) => handleMobileClick(e, () => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2))))}
+                style={{ touchAction: "manipulation" }}
               >−</button>
-              <input type="text" readOnly className="form-control form-control-sm text-center"
-                value={`${Math.round((zoom || 1) * 100)}%`} />
+              <input 
+                type="text" 
+                readOnly 
+                className="form-control form-control-sm text-center"
+                value={`${Math.round((zoom || 1) * 100)}%`} 
+                style={{ touchAction: "manipulation" }}
+              />
               <button
-                type="button" className="btn btn-outline-secondary"
-                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
+                type="button" 
+                className="btn btn-outline-secondary"
+                onClick={(e) => handleMobileClick(e, () => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2))))}
+                style={{ touchAction: "manipulation" }}
               >+</button>
             </div>
           )}
@@ -1307,10 +1368,11 @@ export default function CustomizationOverlay({
           <button
             type="button"
             className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => setEditing(false)}
-            style={{ minWidth: "16ch" }}
+            onClick={(e) => handleMobileClick(e, () => setEditing(false))}
+            style={{ 
+              minWidth: "16ch",
+              touchAction: "manipulation"
+            }}
           >
             Seleccionar Maceta
           </button>
@@ -1318,10 +1380,11 @@ export default function CustomizationOverlay({
           <button
             type="button"
             className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-            onMouseDown={(e)=>e.preventDefault()}
-            onPointerDown={(e)=>e.stopPropagation()}
-            onClick={() => setEditing(true)}
-            style={{ minWidth: "12ch" }}
+            onClick={(e) => handleMobileClick(e, () => setEditing(true))}
+            style={{ 
+              minWidth: "12ch",
+              touchAction: "manipulation"
+            }}
           >
             Diseñar
           </button>
@@ -1331,10 +1394,12 @@ export default function CustomizationOverlay({
         {editing && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
             <button
-              type="button" className="btn btn-sm btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={addText} disabled={!ready}
+              type="button" 
+              className="btn btn-sm btn-outline-secondary"
+              onClick={(e) => handleMobileClick(e, addText)} 
+              disabled={!ready}
               title="Agregar texto"
+              style={{ touchAction: "manipulation" }}
             >
               <i className="fa fa-font" aria-hidden="true"></i> Texto
             </button>
@@ -1342,48 +1407,61 @@ export default function CustomizationOverlay({
             <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
               {/* Subir Vector */}
               <button
-                type="button" className="btn btn-outline-secondary"
-                onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
-                  addInputVectorRef.current?.click();
-                }); }}
+                type="button" 
+                className="btn btn-outline-secondary"
+                onClick={(e) => handleMobileClick(e, () => { 
+                  setUploadMode("vector"); 
+                  requestAnimationFrame(() => {
+                    addInputVectorRef.current?.click();
+                  }); 
+                })}
                 disabled={!ready}
                 title="Subir vector (usa Detalles y Color)"
+                style={{ touchAction: "manipulation" }}
               >
                 <i className="fa fa-magic" aria-hidden="true"></i> Vector
               </button>
               {/* Subir RGB */}
               <button
-                type="button" className="btn btn-outline-secondary"
-                onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-                  addInputRgbRef.current?.click();
-                }); }}
+                type="button" 
+                className="btn btn-outline-secondary"
+                onClick={(e) => handleMobileClick(e, () => { 
+                  setUploadMode("rgb"); 
+                  requestAnimationFrame(() => {
+                    addInputRgbRef.current?.click();
+                  }); 
+                })}
                 disabled={!ready}
                 title="Subir imagen RGB (color original)"
+                style={{ touchAction: "manipulation" }}
               >
                 <i className="fa fa-image" aria-hidden="true"></i> Imagen
               </button>
               {/* Cámara */}
               <button
-                type="button" className="btn btn-outline-secondary"
-                onPointerDown={(e)=>e.stopPropagation()}
-                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-                  cameraInputRef.current?.click();
-                }); }}
+                type="button" 
+                className="btn btn-outline-secondary"
+                onClick={(e) => handleMobileClick(e, () => { 
+                  setUploadMode("rgb"); 
+                  requestAnimationFrame(() => {
+                    cameraInputRef.current?.click();
+                  }); 
+                })}
                 disabled={!ready}
                 title="Tomar foto con cámara"
+                style={{ touchAction: "manipulation" }}
               >
                 <i className="fa fa-camera" aria-hidden="true"></i> Cámara
               </button>
             </div>
 
             <button
-              type="button" className="btn btn-sm btn-outline-danger"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onClick={onDelete}
+              type="button" 
+              className="btn btn-sm btn-outline-danger"
+              onClick={(e) => handleMobileClick(e, onDelete)}
               disabled={!ready || selType === "none"}
               title="Eliminar seleccionado"
+              style={{ touchAction: "manipulation" }}
             >
               <i className="fa fa-trash" aria-hidden="true"></i> Borrar
             </button>
@@ -1399,10 +1477,14 @@ export default function CustomizationOverlay({
                 <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
                   <span className="input-group-text">Color</span>
                   <input
-                    type="color" className="form-control form-control-color"
+                    type="color" 
+                    className="form-control form-control-color"
                     value={shapeColor}
-                    onChange={(e)=>{ setShapeColor(e.target.value); applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
+                    onChange={(e)=>{ 
+                      setShapeColor(e.target.value); 
+                      applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); 
+                    }}
+                    style={{ touchAction: "manipulation" }}
                   />
                 </div>
 
@@ -1412,8 +1494,12 @@ export default function CustomizationOverlay({
                     <select
                       className="form-select form-select-sm"
                       value={fontFamily}
-                      onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                      onPointerDown={(e)=>e.stopPropagation()}
+                      onChange={(e) => { 
+                        const v = e.target.value; 
+                        setFontFamily(v); 
+                        applyToSelection(o => o.set({ fontFamily: v })); 
+                      }}
+                      style={{ touchAction: "manipulation" }}
                     >
                       {FONT_OPTIONS.map(f => (
                         <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
@@ -1423,45 +1509,65 @@ export default function CustomizationOverlay({
 
                   <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
                     <button
-                      type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); }}
+                      type="button" 
+                      className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
+                      onClick={(e) => handleMobileClick(e, () => { 
+                        const nv = !isBold; 
+                        setIsBold(nv); 
+                        applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); 
+                      })}
                       title="Negrita"
+                      style={{ touchAction: "manipulation" }}
                     >B</button>
                     <button
-                      type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); }}
+                      type="button" 
+                      className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
+                      onClick={(e) => handleMobileClick(e, () => { 
+                        const nv = !isItalic; 
+                        setIsItalic(nv); 
+                        applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); 
+                      })}
                       title="Cursiva"
+                      style={{ touchAction: "manipulation" }}
                     >I</button>
                     <button
-                      type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
+                      type="button" 
+                      className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
+                      onClick={(e) => handleMobileClick(e, () => { 
+                        const nv = !isUnderline; 
+                        setIsUnderline(nv); 
+                        applyToSelection(o => o.set({ underline: nv })); 
+                      })}
                       title="Subrayado"
+                      style={{ touchAction: "manipulation" }}
                     >U</button>
                   </div>
 
                   <div className="input-group input-group-sm" style={{ width: 160 }}>
                     <span className="input-group-text">Tamaño</span>
                     <input
-                      type="number" className="form-control form-control-sm"
-                      min={8} max={200} step={1}
+                      type="number" 
+                      className="form-control form-control-sm"
+                      min={8} 
+                      max={200} 
+                      step={1}
                       value={fontSize}
-                      onPointerDown={(e)=>e.stopPropagation()}
                       onChange={(e) => {
                         const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
-                        setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                        setFontSize(v); 
+                        applyToSelection(o => o.set({ fontSize: v }));
                       }}
+                      style={{ touchAction: "manipulation" }}
                     />
                   </div>
 
                   <div className="btn-group dropup">
                     <button
-                      type="button" className="btn btn-outline-secondary btn-sm"
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => setShowAlignMenu(v => !v)}
+                      type="button" 
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={(e) => handleMobileClick(e, () => setShowAlignMenu(v => !v))}
                       title="Alineación"
+                      style={{ touchAction: "manipulation" }}
                     >
                       {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
                     </button>
@@ -1472,8 +1578,12 @@ export default function CustomizationOverlay({
                             <button
                               type="button"
                               className={`dropdown-item ${textAlign === a ? "active" : ""}`}
-                              onPointerDown={(e)=>e.stopPropagation()}
-                              onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
+                              onClick={(e) => handleMobileClick(e, () => { 
+                                setTextAlign(a); 
+                                setShowAlignMenu(false); 
+                                applyToSelection(o => o.set({ textAlign: a })); 
+                              })}
+                              style={{ touchAction: "manipulation" }}
                             >
                               {a}
                             </button>
@@ -1493,12 +1603,16 @@ export default function CustomizationOverlay({
                 <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
                   <span className="input-group-text">Color</span>
                   <input
-                    type="color" className="form-control form-control-color"
+                    type="color" 
+                    className="form-control form-control-color"
                     value={shapeColor}
-                    onChange={(e)=>{ setShapeColor(e.target.value); if (isVectorSelected) applyColorToActive(e.target.value); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
+                    onChange={(e)=>{ 
+                      setShapeColor(e.target.value); 
+                      if (isVectorSelected) applyColorToActive(e.target.value); 
+                    }}
                     disabled={!isVectorSelected}
                     title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
+                    style={{ touchAction: "manipulation" }}
                   />
                 </div>
 
@@ -1507,17 +1621,25 @@ export default function CustomizationOverlay({
                   <div className="input-group input-group-sm" style={{ width: 230 }}>
                     <span className="input-group-text">Detalles</span>
                     <button
-                      type="button" className="btn btn-outline-secondary"
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}
+                      type="button" 
+                      className="btn btn-outline-secondary"
+                      onClick={(e) => handleMobileClick(e, () => setVecBias(v => clamp(v - 5, -60, 60)))}
                       disabled={!isVectorSelected}
+                      style={{ touchAction: "manipulation" }}
                     >−</button>
-                    <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                    <input 
+                      type="text" 
+                      readOnly 
+                      className="form-control form-control-sm text-center" 
+                      value={vecBias} 
+                      style={{ touchAction: "manipulation" }}
+                    />
                     <button
-                      type="button" className="btn btn-outline-secondary"
-                      onPointerDown={(e)=>e.stopPropagation()}
-                      onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}
+                      type="button" 
+                      className="btn btn-outline-secondary"
+                      onClick={(e) => handleMobileClick(e, () => setVecBias(v => clamp(v + 5, -60, 60)))}
                       disabled={!isVectorSelected}
+                      style={{ touchAction: "manipulation" }}
                     >+</button>
                   </div>
 
@@ -1542,10 +1664,8 @@ export default function CustomizationOverlay({
             if (f) {
               addImageFromFile(f, "vector");
             }
-            // 🔧 limpiar inmediatamente para permitir reusar el input
             e.target.value = null;
           }}
-          onPointerDown={(e) => e.stopPropagation()}
         />
 
         <input
@@ -1558,10 +1678,8 @@ export default function CustomizationOverlay({
             if (f) {
               addImageFromFile(f, "rgb");
             }
-            // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
             e.target.value = null;
           }}
-          onPointerDown={(e) => e.stopPropagation()}
         />
 
         <input
@@ -1574,11 +1692,10 @@ export default function CustomizationOverlay({
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) {
-              addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
+              addImageFromFile(f, "camera");
             }
             e.target.value = null;
           }}
-          onPointerDown={(e) => e.stopPropagation()}
         />
       </div>
     ); 
@@ -1589,8 +1706,22 @@ export default function CustomizationOverlay({
       {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
 
       {anchorRef?.current ? createPortal(
-        <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none", marginTop: 8 }}>
-          <div style={{ pointerEvents: "auto", display: "inline-flex" }}><Menu /></div>
+        <div style={{ 
+          position: "relative", 
+          width: "100%", 
+          display: "flex", 
+          justifyContent: "center", 
+          pointerEvents: "none", 
+          marginTop: 8,
+          zIndex: Z_MENU 
+        }}>
+          <div style={{ 
+            pointerEvents: "auto", 
+            display: "inline-flex",
+            touchAction: "manipulation"
+          }}>
+            <Menu />
+          </div>
         </div>,
         document.getElementById("dobo-menu-dock") || document.body
       ) : null}
