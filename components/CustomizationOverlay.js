@@ -1574,3 +1574,35 @@ const Menu = () => {
     </div>
   );
 }; // <-- AQUÍ ESTÁ LA LLAVE DE CIERRE QUE FALTABA
+// ... todo el código anterior ...
+
+  return (
+    <>
+      {stageRef?.current ? createPortal(OverlayCanvas, stageRef.current) : null}
+
+      {anchorRef?.current ? createPortal(
+        <div style={{ 
+          position: "relative", 
+          width: "100%", 
+          display: "flex", 
+          justifyContent: "center", 
+          pointerEvents: "none", 
+          marginTop: 8,
+          zIndex: Z_CANVAS + 1
+        }}>
+          <div style={{ 
+            pointerEvents: "auto", 
+            display: "inline-flex",
+            position: "relative",
+            zIndex: Z_CANVAS + 2 
+          }}>
+            <Menu />
+          </div>
+        </div>,
+        document.getElementById("dobo-menu-dock") || document.body
+      ) : null}
+    </>
+  );
+}; // <-- ESTE ES EL CIERRE DEL COMPONENTE CustomizationOverlay
+
+export default CustomizationOverlay;
