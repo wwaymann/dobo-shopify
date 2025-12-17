@@ -1601,5 +1601,3 @@ export default function CustomizationOverlay({
     </>
   );
 }
-
-export default CustomizationOverlay;
