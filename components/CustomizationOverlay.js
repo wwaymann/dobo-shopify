@@ -1173,408 +1173,405 @@ export default function CustomizationOverlay({
 
   if (!visible) return null;
 
-// ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
-const OverlayCanvas = (
-  <div
-    ref={overlayRef}
-    style={{
-      position: "absolute",
-      left: overlayBox.left,
-      top: overlayBox.top,
-      width: overlayBox.w,
-      height: overlayBox.h,
-      zIndex: Z_CANVAS,
-      overflow: "hidden",
-      pointerEvents: editing ? "auto" : "none", // Solo interactivo cuando se está editando
-      // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
-      touchAction: editing ? "none" : "pan-y pinch-zoom",
-      msTouchAction: editing ? "none" : "pan-y pinch-zoom",
-      overscrollBehavior: "contain",
-      // Prevenir rebote en iOS
-      WebkitOverflowScrolling: "touch",
-    }}
-    // Eliminar estos manejadores que estaban bloqueando eventos
-  >
-    <canvas
-      data-dobo-design="1"
-      ref={canvasRef}
-      width={overlayBox.w}
-      height={overlayBox.h}
+  // ====== Overlay Canvas (posicionado dentro del anchor/stage) - MEJORADO PARA MÓVIL ======
+  const OverlayCanvas = (
+    <div
+      ref={overlayRef}
       style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        background: "transparent",
-        // Configuración táctil específica
+        position: "absolute",
+        left: overlayBox.left,
+        top: overlayBox.top,
+        width: overlayBox.w,
+        height: overlayBox.h,
+        zIndex: Z_CANVAS,
+        overflow: "hidden",
+        pointerEvents: editing ? "auto" : "none", // Solo interactivo cuando se está editando
+        // IMPORTANTE: Configuración para scroll/zoom cuando no se edita
         touchAction: editing ? "none" : "pan-y pinch-zoom",
         msTouchAction: editing ? "none" : "pan-y pinch-zoom",
-        WebkitTouchCallout: "none",
-        WebkitUserSelect: "none",
-        userSelect: "none",
-        pointerEvents: editing ? "auto" : "none", // Solo interactivo cuando se está editando
+        overscrollBehavior: "contain",
+        // Prevenir rebote en iOS
+        WebkitOverflowScrolling: "touch",
       }}
-    />
-  </div>
-);
-
- // ... código anterior ...
-
-const Menu = () => {
-  const c = fabricCanvasRef.current;
-  const a = c?.getActiveObject();
-  const isVectorSelected =
-    selType === "image" && a && a._doboKind === "vector";
-  const isRgbSelected =
-    selType === "image" && a && a._doboKind === "rgb";
-
-  return (
-    <div
-      ref={menuRef}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        background: "rgba(253, 253, 253, 0.34)",
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        border: "1px solid #ddd",
-        borderRadius: 12,
-        padding: "10px 12px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-        width: "auto",
-        maxWidth: "94vw",
-        fontSize: 12,
-        userSelect: "none"
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerMove={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
     >
-      {/* Línea 1: historial + zoom + modos */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
-          <button
-            type="button" className="btn btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-            onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
-            disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás"
-          >
-            <i className="fa fa-undo" aria-hidden="true"></i>
-          </button>
-          <button
-            type="button" className="btn btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
-            onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
-            disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante"
-          >
-            <i className="fa fa-repeat" aria-hidden="true"></i>
-          </button>
-        </div>
-
-        {typeof setZoom === "function" && (
-          <div className="input-group input-group-sm" style={{ width: 180 }}>
-            <span className="input-group-text">Zoom</span>
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
-            >−</button>
-            <input type="text" readOnly className="form-control form-control-sm text-center"
-              value={`${Math.round((zoom || 1) * 100)}%`} />
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
-            >+</button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()}
-          onPointerDown={(e)=>e.stopPropagation()}
-          onClick={() => setEditing(false)}
-          style={{ minWidth: "16ch" }}
-        >
-          Seleccionar Maceta
-        </button>
-
-        <button
-          type="button"
-          className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
-          onMouseDown={(e)=>e.preventDefault()}
-          onPointerDown={(e)=>e.stopPropagation()}
-          onClick={() => setEditing(true)}
-          style={{ minWidth: "12ch" }}
-        >
-          Diseñar
-        </button>
-      </div>
-
-      {/* Línea 2: acciones básicas */}
-      {editing && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-          <button
-            type="button" className="btn btn-sm btn-outline-secondary"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-            onClick={addText} disabled={!ready}
-            title="Agregar texto"
-          >
-            <i className="fa fa-font" aria-hidden="true"></i> Texto
-          </button>
-
-          <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
-            {/* Subir Vector */}
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-              onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
-                addInputVectorRef.current?.click();
-              }); }}
-              disabled={!ready}
-              title="Subir vector (usa Detalles y Color)"
-            >
-              <i className="fa fa-magic" aria-hidden="true"></i> Vector
-            </button>
-            {/* Subir RGB */}
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-              onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-                addInputRgbRef.current?.click();
-              }); }}
-              disabled={!ready}
-              title="Subir imagen RGB (color original)"
-            >
-              <i className="fa fa-image" aria-hidden="true"></i> Imagen
-            </button>
-            {/* Cámara */}
-            <button
-              type="button" className="btn btn-outline-secondary"
-              onPointerDown={(e)=>e.stopPropagation()}
-              onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-              onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
-                cameraInputRef.current?.click();
-              }); }}
-              disabled={!ready}
-              title="Tomar foto con cámara"
-            >
-              <i className="fa fa-camera" aria-hidden="true"></i> Cámara
-            </button>
-          </div>
-
-          <button
-            type="button" className="btn btn-sm btn-outline-danger"
-            onPointerDown={(e)=>e.stopPropagation()}
-            onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-            onClick={onDelete}
-            disabled={!ready || selType === "none"}
-            title="Eliminar seleccionado"
-          >
-            <i className="fa fa-trash" aria-hidden="true"></i> Borrar
-          </button>
-        </div>
-      )}
-
-      {/* Línea 3: propiedades */}
-      {editing && (
-        <>
-          {/* Texto */}
-          {selType === "text" && (
-            <>
-              <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                <span className="input-group-text">Color</span>
-                <input
-                  type="color" className="form-control form-control-color"
-                  value={shapeColor}
-                  onChange={(e)=>{ setShapeColor(e.target.value); applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); }}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-                <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
-                  <span className="input-group-text">Fuente</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={fontFamily}
-                    onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                  >
-                    {FONT_OPTIONS.map(f => (
-                      <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
-                  <button
-                    type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); }}
-                    title="Negrita"
-                  >B</button>
-                  <button
-                    type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); }}
-                    title="Cursiva"
-                  >I</button>
-                  <button
-                    type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
-                    title="Subrayado"
-                  >U</button>
-                </div>
-
-                <div className="input-group input-group-sm" style={{ width: 160 }}>
-                  <span className="input-group-text">Tamaño</span>
-                  <input
-                    type="number" className="form-control form-control-sm"
-                    min={8} max={200} step={1}
-                    value={fontSize}
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onChange={(e) => {
-                      const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
-                      setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
-                    }}
-                  />
-                </div>
-
-                <div className="btn-group dropup">
-                  <button
-                    type="button" className="btn btn-outline-secondary btn-sm"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => setShowAlignMenu(v => !v)}
-                    title="Alineación"
-                  >
-                    {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
-                  </button>
-                  {showAlignMenu && (
-                    <ul className="dropdown-menu show" style={{ position: "absolute" }}>
-                      {["left","center","right","justify"].map(a => (
-                        <li key={a}>
-                          <button
-                            type="button"
-                            className={`dropdown-item ${textAlign === a ? "active" : ""}`}
-                            onPointerDown={(e)=>e.stopPropagation()}
-                            onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
-                          >
-                            {a}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Imagen */}
-          {selType === "image" && (
-            <>
-              {/* Color: solo afecta a vectores */}
-              <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
-                <span className="input-group-text">Color</span>
-                <input
-                  type="color" className="form-control form-control-color"
-                  value={shapeColor}
-                  onChange={(e)=>{ setShapeColor(e.target.value); if (isVectorSelected) applyColorToActive(e.target.value); }}
-                  onPointerDown={(e)=>e.stopPropagation()}
-                  disabled={!isVectorSelected}
-                  title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
-                />
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                {/* Detalles: solo para vectores */}
-                <div className="input-group input-group-sm" style={{ width: 230 }}>
-                  <span className="input-group-text">Detalles</span>
-                  <button
-                    type="button" className="btn btn-outline-secondary"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}
-                    disabled={!isVectorSelected}
-                  >−</button>
-                  <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
-                  <button
-                    type="button" className="btn btn-outline-secondary"
-                    onPointerDown={(e)=>e.stopPropagation()}
-                    onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}
-                    disabled={!isVectorSelected}
-                  >+</button>
-                </div>
-
-                {/* Indicador RGB */}
-                {isRgbSelected && (
-                  <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
-                )}
-              </div>
-            </>
-          )}
-        </>
-      )}
-
-      {/* Inputs ocultos */}
-      <input
-        ref={addInputVectorRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) {
-            addImageFromFile(f, "vector");
-          }
-          // 🔧 limpiar inmediatamente para permitir reusar el input
-          e.target.value = null;
+      <canvas
+        data-dobo-design="1"
+        ref={canvasRef}
+        width={overlayBox.w}
+        height={overlayBox.h}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          background: "transparent",
+          // Configuración táctil específica
+          touchAction: editing ? "none" : "pan-y pinch-zoom",
+          msTouchAction: editing ? "none" : "pan-y pinch-zoom",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          pointerEvents: editing ? "auto" : "none", // Solo interactivo cuando se está editando
         }}
-        onPointerDown={(e) => e.stopPropagation()}
-      />
-
-      <input
-        ref={addInputRgbRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) {
-            addImageFromFile(f, "rgb");
-          }
-          // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
-          e.target.value = null;
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-      />
-
-      <input
-        ref={cameraInputRef}
-        id="cameraInput"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) {
-            addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
-          }
-          e.target.value = null;
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
       />
     </div>
   );
-}; // <-- AQUÍ ESTÁ LA LLAVE DE CIERRE QUE FALTABA
-// ... todo el código anterior ...
+
+  // ====== Menú ======
+  const Menu = () => {
+    const c = fabricCanvasRef.current;
+    const a = c?.getActiveObject();
+    const isVectorSelected =
+      selType === "image" && a && a._doboKind === "vector";
+    const isRgbSelected =
+      selType === "image" && a && a._doboKind === "rgb";
+
+    return (
+      <div
+        ref={menuRef}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          background: "rgba(253, 253, 253, 0.34)",
+          backdropFilter: "blur(4px)",
+          WebkitBackdropFilter: "blur(4px)",
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: "10px 12px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          width: "auto",
+          maxWidth: "94vw",
+          fontSize: 12,
+          userSelect: "none"
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+      >
+        {/* Línea 1: historial + zoom + modos */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="btn-group btn-group-sm" role="group" aria-label="Historial">
+            <button
+              type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => { const s = historyRef.current?.undo(); if (s) applySnapshot(s); refreshCaps(); }}
+              disabled={!histCaps.canUndo} title="Atrás (Ctrl+Z)" aria-label="Atrás"
+            >
+              <i className="fa fa-undo" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button" className="btn btn-outline-secondary"
+              onPointerDown={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.preventDefault()}
+              onClick={() => { const s = historyRef.current?.redo(); if (s) applySnapshot(s); refreshCaps(); }}
+              disabled={!histCaps.canRedo} title="Adelante (Ctrl+Shift+Z)" aria-label="Adelante"
+            >
+              <i className="fa fa-repeat" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          {typeof setZoom === "function" && (
+            <div className="input-group input-group-sm" style={{ width: 180 }}>
+              <span className="input-group-text">Zoom</span>
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.max(0.8, +(z - 0.1).toFixed(2)))}
+              >−</button>
+              <input type="text" readOnly className="form-control form-control-sm text-center"
+                value={`${Math.round((zoom || 1) * 100)}%`} />
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onClick={() => setZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))}
+              >+</button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className={`btn ${!editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => setEditing(false)}
+            style={{ minWidth: "16ch" }}
+          >
+            Seleccionar Maceta
+          </button>
+
+          <button
+            type="button"
+            className={`btn ${editing ? "btn-dark" : "btn-outline-secondary"} text-nowrap`}
+            onMouseDown={(e)=>e.preventDefault()}
+            onPointerDown={(e)=>e.stopPropagation()}
+            onClick={() => setEditing(true)}
+            style={{ minWidth: "12ch" }}
+          >
+            Diseñar
+          </button>
+        </div>
+
+        {/* Línea 2: acciones básicas */}
+        {editing && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              type="button" className="btn btn-sm btn-outline-secondary"
+              onPointerDown={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+              onTouchStart={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+              onClick={addText} disabled={!ready}
+              title="Agregar texto"
+            >
+              <i className="fa fa-font" aria-hidden="true"></i> Texto
+            </button>
+
+            <div className="btn-group btn-group-sm" role="group" aria-label="Cargas">
+              {/* Subir Vector */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+                onTouchStart={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+                onClick={() => { setUploadMode("vector"); requestAnimationFrame(() => {
+                  addInputVectorRef.current?.click();
+                }); }}
+                disabled={!ready}
+                title="Subir vector (usa Detalles y Color)"
+              >
+                <i className="fa fa-magic" aria-hidden="true"></i> Vector
+              </button>
+              {/* Subir RGB */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+                onTouchStart={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
+                  addInputRgbRef.current?.click();
+                }); }}
+                disabled={!ready}
+                title="Subir imagen RGB (color original)"
+              >
+                <i className="fa fa-image" aria-hidden="true"></i> Imagen
+              </button>
+              {/* Cámara */}
+              <button
+                type="button" className="btn btn-outline-secondary"
+                onPointerDown={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+                onTouchStart={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+                onClick={() => { setUploadMode("rgb"); requestAnimationFrame(() => {
+                  cameraInputRef.current?.click();
+                }); }}
+                disabled={!ready}
+                title="Tomar foto con cámara"
+              >
+                <i className="fa fa-camera" aria-hidden="true"></i> Cámara
+              </button>
+            </div>
+
+            <button
+              type="button" className="btn btn-sm btn-outline-danger"
+              onPointerDown={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+              onTouchStart={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
+              onClick={onDelete}
+              disabled={!ready || selType === "none"}
+              title="Eliminar seleccionado"
+            >
+              <i className="fa fa-trash" aria-hidden="true"></i> Borrar
+            </button>
+          </div>
+        )}
+
+        {/* Línea 3: propiedades */}
+        {editing && (
+          <>
+            {/* Texto */}
+            {selType === "text" && (
+              <>
+                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
+                  <span className="input-group-text">Color</span>
+                  <input
+                    type="color" className="form-control form-control-color"
+                    value={shapeColor}
+                    onChange={(e)=>{ setShapeColor(e.target.value); applyToSelection(o => o.set({ fill: `rgba(${hexToRgb(e.target.value).join(",")},1)` })); }}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                  <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
+                    <span className="input-group-text">Fuente</span>
+                    <select
+                      className="form-select form-select-sm"
+                      value={fontFamily}
+                      onChange={(e) => { const v = e.target.value; setFontFamily(v); applyToSelection(o => o.set({ fontFamily: v })); }}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                    >
+                      {FONT_OPTIONS.map(f => (
+                        <option key={f.name} value={f.css} style={{ fontFamily: f.css }}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="btn-group btn-group-sm" role="group" aria-label="Estilos">
+                    <button
+                      type="button" className={`btn ${isBold ? "btn-dark" : "btn-outline-secondary"}`}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => { const nv = !isBold; setIsBold(nv); applyToSelection(o => o.set({ fontWeight: nv ? "700" : "normal" })); }}
+                      title="Negrita"
+                    >B</button>
+                    <button
+                      type="button" className={`btn ${isItalic ? "btn-dark" : "btn-outline-secondary"}`}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => { const nv = !isItalic; setIsItalic(nv); applyToSelection(o => o.set({ fontStyle: nv ? "italic" : "normal" })); }}
+                      title="Cursiva"
+                    >I</button>
+                    <button
+                      type="button" className={`btn ${isUnderline ? "btn-dark" : "btn-outline-secondary"}`}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => { const nv = !isUnderline; setIsUnderline(nv); applyToSelection(o => o.set({ underline: nv })); }}
+                      title="Subrayado"
+                    >U</button>
+                  </div>
+
+                  <div className="input-group input-group-sm" style={{ width: 160 }}>
+                    <span className="input-group-text">Tamaño</span>
+                    <input
+                      type="number" className="form-control form-control-sm"
+                      min={8} max={200} step={1}
+                      value={fontSize}
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onChange={(e) => {
+                        const v = clamp(parseInt(e.target.value || "0", 10), 8, 200);
+                        setFontSize(v); applyToSelection(o => o.set({ fontSize: v }));
+                      }}
+                    />
+                  </div>
+
+                  <div className="btn-group dropup">
+                    <button
+                      type="button" className="btn btn-outline-secondary btn-sm"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setShowAlignMenu(v => !v)}
+                      title="Alineación"
+                    >
+                      {textAlign === "left" ? "⟸" : textAlign === "center" ? "⟺" : textAlign === "right" ? "⟹" : "≣"}
+                    </button>
+                    {showAlignMenu && (
+                      <ul className="dropdown-menu show" style={{ position: "absolute" }}>
+                        {["left","center","right","justify"].map(a => (
+                          <li key={a}>
+                            <button
+                              type="button"
+                              className={`dropdown-item ${textAlign === a ? "active" : ""}`}
+                              onPointerDown={(e)=>e.stopPropagation()}
+                              onClick={() => { setTextAlign(a); setShowAlignMenu(false); applyToSelection(o => o.set({ textAlign: a })); }}
+                            >
+                              {a}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Imagen */}
+            {selType === "image" && (
+              <>
+                {/* Color: solo afecta a vectores */}
+                <div className="input-group input-group-sm" style={{ maxWidth: 220, marginBottom: 6 }}>
+                  <span className="input-group-text">Color</span>
+                  <input
+                    type="color" className="form-control form-control-color"
+                    value={shapeColor}
+                    onChange={(e)=>{ setShapeColor(e.target.value); if (isVectorSelected) applyColorToActive(e.target.value); }}
+                    onPointerDown={(e)=>e.stopPropagation()}
+                    disabled={!isVectorSelected}
+                    title={isVectorSelected ? "Color del vector" : "Solo para vectores"}
+                  />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                  {/* Detalles: solo para vectores */}
+                  <div className="input-group input-group-sm" style={{ width: 230 }}>
+                    <span className="input-group-text">Detalles</span>
+                    <button
+                      type="button" className="btn btn-outline-secondary"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setVecBias(v => clamp(v - 5, -60, 60))}
+                      disabled={!isVectorSelected}
+                    >−</button>
+                    <input type="text" readOnly className="form-control form-control-sm text-center" value={vecBias} />
+                    <button
+                      type="button" className="btn btn-outline-secondary"
+                      onPointerDown={(e)=>e.stopPropagation()}
+                      onClick={() => setVecBias(v => clamp(v + 5, -60, 60))}
+                      disabled={!isVectorSelected}
+                    >+</button>
+                  </div>
+
+                  {/* Indicador RGB */}
+                  {isRgbSelected && (
+                    <span className="badge bg-secondary" title="Imagen RGB (no afecta Color ni Detalles)">RGB</span>
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Inputs ocultos */}
+        <input
+          ref={addInputVectorRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "vector");
+            }
+            // 🔧 limpiar inmediatamente para permitir reusar el input
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+
+        <input
+          ref={addInputRgbRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "rgb");
+            }
+            // 🔧 limpiar inmediatamente para asegurar que onChange se dispare siempre
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+
+        <input
+          ref={cameraInputRef}
+          id="cameraInput"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              addImageFromFile(f, "camera"); // 🔧 diferenciamos modo cámara
+            }
+            e.target.value = null;
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      </div>
+    );
+  };
 
   return (
     <>
@@ -1588,7 +1585,7 @@ const Menu = () => {
           justifyContent: "center", 
           pointerEvents: "none", 
           marginTop: 8,
-          zIndex: Z_CANVAS + 1
+          zIndex: Z_CANVAS + 1 // Asegurar que esté por encima del canvas
         }}>
           <div style={{ 
             pointerEvents: "auto", 
@@ -1603,6 +1600,6 @@ const Menu = () => {
       ) : null}
     </>
   );
-}; // <-- ESTE ES EL CIERRE DEL COMPONENTE CustomizationOverlay
+}
 
 export default CustomizationOverlay;
