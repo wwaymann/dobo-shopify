@@ -40,7 +40,7 @@ function otsuThreshold(gray, total) {
   for (let i = 0; i < total; i++) hist[gray[i]]++;
 
   let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  for (let t = 0; t < 256; t) sum += t * hist[t];
 
   let sumB = 0, wB = 0;
   let varMax = -1;
@@ -255,6 +255,11 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
 
+  // 🔧 REFS para zoom táctil
+  const isPinchingRef = useRef(false);
+  const initialDistanceRef = useRef(0);
+  const initialZoomRef = useRef(zoom);
+
   // ====== helpers de historial
   const getSnapshot = () => {
     const c = fabricCanvasRef.current;
@@ -340,6 +345,11 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
+  // 🔧 EFECTO PARA ACTUALIZAR ZOOM INICIAL
+  useEffect(() => {
+    initialZoomRef.current = zoom;
+  }, [zoom]);
+
   // ====== init Fabric
   useEffect(() => {
     if (!visible || !canvasRef.current || fabricCanvasRef.current) return;
@@ -355,121 +365,119 @@ export default function CustomizationOverlay({
     fabricCanvasRef.current = c;
 
     // === Activación de edición de texto (móvil + escritorio) con movimiento restaurado ===
-(() => {
-  const c = fabricCanvasRef.current;
-  if (!c) return;
+    (() => {
+      const c = fabricCanvasRef.current;
+      if (!c) return;
 
-  // 0) Foco y tolerancias táctiles
-  if (c.upperCanvasEl) {
-    c.upperCanvasEl.setAttribute("tabindex", "0");
-    // 🔧 CAMBIO IMPORTANTE: Permitir desplazamiento vertical cuando no hay objeto seleccionado
-    c.upperCanvasEl.style.touchAction = "pan-y"; 
-    c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
-  }
-  c.perPixelTargetFind = false;
-  c.targetFindTolerance = 12;
-  if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
-
-  // 1) Utilidades
-  const isTextTarget = (t) =>
-    !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
-
-  const enterEdit = (t) => {
-    if (!isTextTarget(t)) return;
-    requestAnimationFrame(() => {
-      if (t.type === "textbox" || t.type === "i-text") {
-        t.selectable = true; t.editable = true; t.evented = true;
-        c.setActiveObject(t);
-        t.enterEditing?.();
-        t.hiddenTextarea?.focus?.();
-      } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
-        startInlineTextEdit(t);
-        c.setActiveObject(t);
+      // 0) Foco y tolerancias táctiles
+      if (c.upperCanvasEl) {
+        c.upperCanvasEl.setAttribute("tabindex", "0");
+        c.upperCanvasEl.style.touchAction = "none"; // Inicialmente none
+        c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
       }
-      c.requestRenderAll();
-    });
-  };
+      c.perPixelTargetFind = false;
+      c.targetFindTolerance = 12;
+      if (fabric?.Object?.prototype) fabric.Object.prototype.padding = 8;
 
-  // 2) Tap vs Drag + candado anti-doble-disparo
-  let downInfo = null;
-  let moved = false;
-  let editLockUntil = 0; // ms timestamp: previene doble disparo
+      // 1) Utilidades
+      const isTextTarget = (t) =>
+        !!t && (t.type === "textbox" || t.type === "i-text" || t._kind === "textGroup");
 
-  const TAP_MAX_MS = 220;
-  const TAP_MAX_MOVE = 6; // px
-  const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
+      const enterEdit = (t) => {
+        if (!isTextTarget(t)) return;
+        requestAnimationFrame(() => {
+          if (t.type === "textbox" || t.type === "i-text") {
+            t.selectable = true; t.editable = true; t.evented = true;
+            c.setActiveObject(t);
+            t.enterEditing?.();
+            t.hiddenTextarea?.focus?.();
+          } else if (t._kind === "textGroup" && typeof startInlineTextEdit === "function") {
+            startInlineTextEdit(t);
+            c.setActiveObject(t);
+          }
+          c.requestRenderAll();
+        });
+      };
 
-  c.on("mouse:down", (opt) => {
-    const now = performance.now();
-    moved = false;
-    downInfo = {
-      x: opt.pointer?.x ?? 0,
-      y: opt.pointer?.y ?? 0,
-      t: now,
-      target: opt.target || null
-    };
-  });
+      // 2) Tap vs Drag + candado anti-doble-disparo
+      let downInfo = null;
+      let moved = false;
+      let editLockUntil = 0; // ms timestamp: previene doble disparo
 
-  c.on("mouse:move", (opt) => {
-    if (!downInfo) return;
-    const p = opt.pointer || { x: 0, y: 0 };
-    if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
-      moved = true;
-    }
-  });
+      const TAP_MAX_MS = 220;
+      const TAP_MAX_MOVE = 6; // px
+      const dist = (a, b) => Math.hypot((a.x - b.x), (a.y - b.y));
 
-  c.on("mouse:up", (opt) => {
-    const now = performance.now();
-    if (!downInfo) return;
+      c.on("mouse:down", (opt) => {
+        const now = performance.now();
+        moved = false;
+        downInfo = {
+          x: opt.pointer?.x ?? 0,
+          y: opt.pointer?.y ?? 0,
+          t: now,
+          target: opt.target || null
+        };
+      });
 
-    const t = downInfo.target;
-    const duration = now - downInfo.t;
+      c.on("mouse:move", (opt) => {
+        if (!downInfo) return;
+        const p = opt.pointer || { x: 0, y: 0 };
+        if (dist({ x: p.x, y: p.y }, { x: downInfo.x, y: downInfo.y }) > TAP_MAX_MOVE) {
+          moved = true;
+        }
+      });
 
-    // Candado activo → nada
-    if (now < editLockUntil) { downInfo = null; return; }
+      c.on("mouse:up", (opt) => {
+        const now = performance.now();
+        if (!downInfo) return;
 
-    // TAP corto sobre texto => editar
-    if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
-      opt.e?.preventDefault?.();
-      opt.e?.stopPropagation?.();
-      enterEdit(t);
-      editLockUntil = now + 300; // evita doble disparo inmediato
-    }
+        const t = downInfo.target;
+        const duration = now - downInfo.t;
 
-    downInfo = null;
-  });
+        // Candado activo → nada
+        if (now < editLockUntil) { downInfo = null; return; }
 
-  // Doble clic / doble tap → editar (respetando candado)
-  c.on("mouse:dblclick", (opt) => {
-    const now = performance.now();
-    const t = opt.target;
-    if (!isTextTarget(t)) return;
-    if (now < editLockUntil) return;
+        // TAP corto sobre texto => editar
+        if (!moved && duration <= TAP_MAX_MS && isTextTarget(t)) {
+          opt.e?.preventDefault?.();
+          opt.e?.stopPropagation?.();
+          enterEdit(t);
+          editLockUntil = now + 300; // evita doble disparo inmediato
+        }
 
-    opt.e?.preventDefault?.();
-    opt.e?.stopPropagation?.();
-    enterEdit(t);
-    editLockUntil = now + 300;
-  });
+        downInfo = null;
+      });
 
-  // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
-  c.on("text:editing:exited", (opt) => {
-    const t = opt?.target;
-    if (!t) return;
+      // Doble clic / doble tap → editar (respetando candado)
+      c.on("mouse:dblclick", (opt) => {
+        const now = performance.now();
+        const t = opt.target;
+        if (!isTextTarget(t)) return;
+        if (now < editLockUntil) return;
 
-    // Asegura movimiento/selección otra vez
-    t.editable = true;
-    t.selectable = true;
-    t.evented = true;
-    t.hasControls = true;
-    t.lockMovementX = false;
-    t.lockMovementY = false;
+        opt.e?.preventDefault?.();
+        opt.e?.stopPropagation?.();
+        enterEdit(t);
+        editLockUntil = now + 300;
+      });
 
-    c.setActiveObject(t);
-    c.requestRenderAll();
-  });
-})();
+      // 3) Tras salir de edición, vuelve a permitir mover/seleccionar
+      c.on("text:editing:exited", (opt) => {
+        const t = opt?.target;
+        if (!t) return;
 
+        // Asegura movimiento/selección otra vez
+        t.editable = true;
+        t.selectable = true;
+        t.evented = true;
+        t.hasControls = true;
+        t.lockMovementX = false;
+        t.lockMovementY = false;
+
+        c.setActiveObject(t);
+        c.requestRenderAll();
+      });
+    })();
 
     // Delimitar bounds (margen 10 px)
     const setDesignBounds = ({ x, y, w, h }) => { designBoundsRef.current = { x, y, w, h }; };
@@ -581,82 +589,69 @@ export default function CustomizationOverlay({
       }
     });
 
-    // 🔧 AGREGAR: MANEJADOR DE ZOOM TÁCTIL (PINCH) CON PAN INTEGRADO
-    const handleTouchEvents = () => {
-      const upperCanvas = c.upperCanvasEl;
-      if (!upperCanvas) return;
-      
-      let initialDistance = 0;
-      let initialZoom = zoom;
-      let initialTouches = [];
-      let isPinching = false;
-      
+    // 🔧 MANEJADORES DE TOUCH PARA ZOOM
+    const upperCanvas = c.upperCanvasEl;
+    if (upperCanvas) {
       const calculateDistance = (touch1, touch2) => {
         const dx = touch2.clientX - touch1.clientX;
         const dy = touch2.clientY - touch1.clientY;
         return Math.sqrt(dx * dx + dy * dy);
       };
-      
+
       const handleTouchStart = (e) => {
         if (!editing) return;
         
         if (e.touches.length === 2) {
-          // INICIO DE PINCH PARA ZOOM
+          // Zoom con pinch - solo si no hay objeto seleccionado
           const activeObj = c.getActiveObject();
           if (!activeObj) {
-            // Solo permitir zoom si no hay objeto seleccionado
             e.preventDefault();
             e.stopPropagation();
             
-            initialTouches = [e.touches[0], e.touches[1]];
-            initialDistance = calculateDistance(initialTouches[0], initialTouches[1]);
-            initialZoom = zoom;
-            isPinching = true;
+            isPinchingRef.current = true;
+            initialDistanceRef.current = calculateDistance(e.touches[0], e.touches[1]);
+            initialZoomRef.current = zoom;
             
-            // Cambiar touch action para permitir zoom
+            // Bloquear scroll mientras hacemos zoom
             upperCanvas.style.touchAction = "none";
           }
         } else if (e.touches.length === 1) {
-          // INICIO DE PAN/SCROLL
+          // Un dedo - permitir scroll si no hay objeto seleccionado
           const activeObj = c.getActiveObject();
           if (!activeObj) {
-            // Permitir scroll vertical si no hay objeto seleccionado
             upperCanvas.style.touchAction = "pan-y";
           } else {
-            // Si hay objeto seleccionado, bloquear scroll
             upperCanvas.style.touchAction = "none";
           }
         }
       };
-      
+
       const handleTouchMove = (e) => {
         if (!editing) return;
         
-        if (e.touches.length === 2 && isPinching) {
-          // ZOOM CON PINCH
+        if (e.touches.length === 2 && isPinchingRef.current) {
+          // Aplicar zoom con pinch
           e.preventDefault();
           e.stopPropagation();
           
           const currentDistance = calculateDistance(e.touches[0], e.touches[1]);
-          if (initialDistance > 0) {
-            const scaleChange = currentDistance / initialDistance;
-            const newZoom = clamp(initialZoom * scaleChange, 0.6, 2.5);
+          if (initialDistanceRef.current > 0) {
+            const scaleChange = currentDistance / initialDistanceRef.current;
+            const newZoom = clamp(initialZoomRef.current * scaleChange, 0.6, 2.5);
             
-            if (Math.abs(newZoom - zoom) > 0.01) {
-              stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-              if (typeof setZoom === "function") setZoom(newZoom);
+            stageRef?.current?.style.setProperty("--zoom", String(newZoom));
+            if (typeof setZoom === "function") {
+              setZoom(newZoom);
             }
           }
         }
-        // El pan/scroll vertical se maneja automáticamente por el navegador
-        // gracias a touch-action: pan-y
       };
-      
+
       const handleTouchEnd = () => {
-        isPinching = false;
-        initialDistance = 0;
+        isPinchingRef.current = false;
+        initialDistanceRef.current = 0;
         
-        // Restaurar touch-action según si hay objeto seleccionado
+        // Restaurar touch-action según selección
         const activeObj = c.getActiveObject();
         if (activeObj) {
           upperCanvas.style.touchAction = "none";
@@ -664,54 +659,39 @@ export default function CustomizationOverlay({
           upperCanvas.style.touchAction = "pan-y";
         }
       };
-      
+
       upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
       upperCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
       upperCanvas.addEventListener('touchend', handleTouchEnd);
       upperCanvas.addEventListener('touchcancel', handleTouchEnd);
-      
-      // Guardar referencias para limpieza
-      c._touchHandlers = { handleTouchStart, handleTouchMove, handleTouchEnd };
-    };
-    
-    handleTouchEvents();
+    }
 
     setReady(true);
     
-// === DOBO: exponer API global para correo y checkout ===
-if (typeof window !== "undefined") {
- const api = {
-    // existentes
-    toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
+    // === DOBO: exponer API global para correo y checkout ===
+    if (typeof window !== "undefined") {
+      const api = {
+        // existentes
+        toPNG: (mult = 3) => c.toDataURL({ format: 'png', multiplier: mult, backgroundColor: 'transparent' }),
 
-    toSVG: () => c.toSVG({ suppressPreamble: true }),
-    getCanvas: () => c,
-    exportDesignSnapshot: () => {
-      try { return c.toJSON(); } catch { return null; }
-    },
-    importDesignSnapshot: (snap) => new Promise(res => {
-      try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
-    }),
-    reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
-  };
-  window.doboDesignAPI = api;
-  try {
-    window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
-    console.log("[DOBO] API global inicializada ✅");
-  } catch {}
-}
+        toSVG: () => c.toSVG({ suppressPreamble: true }),
+        getCanvas: () => c,
+        exportDesignSnapshot: () => {
+          try { return c.toJSON(); } catch { return null; }
+        },
+        importDesignSnapshot: (snap) => new Promise(res => {
+          try { c.loadFromJSON(snap, () => { c.requestRenderAll(); res(true); }); } catch { res(false); }
+        }),
+        reset: () => { try { c.clear(); c.requestRenderAll(); } catch {} }
+      };
+      window.doboDesignAPI = api;
+      try {
+        window.dispatchEvent(new CustomEvent("dobo:ready", { detail: api }));
+        console.log("[DOBO] API global inicializada ✅");
+      } catch {}
+    }
 
     return () => {
-      // 🔧 LIMPIAR EVENTOS TÁCTILES
-      const upperCanvas = c.upperCanvasEl;
-      if (upperCanvas && c._touchHandlers) {
-        const { handleTouchStart, handleTouchMove, handleTouchEnd } = c._touchHandlers;
-        upperCanvas.removeEventListener('touchstart', handleTouchStart);
-        upperCanvas.removeEventListener('touchmove', handleTouchMove);
-        upperCanvas.removeEventListener('touchend', handleTouchEnd);
-        upperCanvas.removeEventListener('touchcancel', handleTouchEnd);
-      }
-      
       c.off("mouse:dblclick");
       c.off("selection:created", onSel);
       c.off("selection:updated", onSel);
@@ -729,26 +709,7 @@ if (typeof window !== "undefined") {
       try { c.dispose(); } catch {}
       fabricCanvasRef.current = null;
     };
-  }, [visible, editing, zoom, stageRef, setZoom]);
-
-  // 🔧 AGREGAR: EFECTO PARA ACTUALIZAR TOUCH-ACTION CUANDO CAMBIA LA SELECCIÓN
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    
-    const upperCanvas = c.upperCanvasEl;
-    if (!upperCanvas) return;
-    
-    // Actualizar touch-action basado en si hay objeto seleccionado
-    const activeObj = c.getActiveObject();
-    if (activeObj) {
-      // Si hay objeto seleccionado, bloquear scroll/zoom del navegador
-      upperCanvas.style.touchAction = "none";
-    } else {
-      // Si no hay objeto seleccionado, permitir scroll vertical
-      upperCanvas.style.touchAction = "pan-y";
-    }
-  }, [selType, editing]);
+  }, [visible]);
 
   // Ajuste de tamaño si cambian baseSize
   useEffect(() => {
@@ -788,7 +749,7 @@ if (typeof window !== "undefined") {
       const upper = c.upperCanvasEl;
       if (upper) {
         upper.style.pointerEvents = on ? "auto" : "none";
-        // 🔧 IMPORTANTE: Mantener touch-action dinámico
+        // Configurar touch-action dinámicamente
         const activeObj = c.getActiveObject();
         upper.style.touchAction = (on && !activeObj) ? "pan-y" : "none";
         upper.tabIndex = on ? 0 : -1;
@@ -803,6 +764,23 @@ if (typeof window !== "undefined") {
     setAll(!!editing);
   }, [editing]);
 
+  // 🔧 EFECTO PARA ACTUALIZAR TOUCH-ACTION CUANDO CAMBIA LA SELECCIÓN
+  useEffect(() => {
+    const c = fabricCanvasRef.current;
+    if (!c) return;
+    
+    const upperCanvas = c.upperCanvasEl;
+    if (!upperCanvas) return;
+    
+    // Actualizar touch-action basado en selección
+    const activeObj = c.getActiveObject();
+    if (activeObj) {
+      upperCanvas.style.touchAction = "none";
+    } else if (editing) {
+      upperCanvas.style.touchAction = "pan-y";
+    }
+  }, [selType, editing]);
+
   // ======= Edición inline de texto (grupo) =======
   const startInlineTextEdit = (group) => {
     const c = fabricCanvasRef.current; if (!c || !group || group._kind !== "textGroup") return;
@@ -810,7 +788,7 @@ if (typeof window !== "undefined") {
 
     const pose = {
       left: group.left, top: group.top, originX: "center", originY: "center",
-      scaleX: group.scaleX || 1, scaleY = group.scaleY || 1, angle: group.angle || 0
+      scaleX: group.scaleX || 1, scaleY: group.scaleY || 1, angle: group.angle || 0
     };
 
     try { c.remove(group); } catch {}
@@ -1141,22 +1119,18 @@ const addImageFromFile = (file, mode) => {
     c.requestRenderAll();
   }, [vecBias]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== Zoom de rueda básico (opcional) - ACTUALIZADO
+  // ====== Zoom de rueda básico (opcional)
   useEffect(() => {
     const host = stageRef?.current || fabricCanvasRef.current?.upperCanvasEl;
     if (!host) return;
-    
     const onWheel = (e) => {
       if (textEditing) return;
-      
-      // 🔧 PERMITIR ZOOM CON RUEDA SIEMPRE (incluso con objetos seleccionados)
       e.preventDefault();
       const current = parseFloat(stageRef?.current?.style.getPropertyValue("--zoom") || "1") || 1;
       const next = clamp(current + (e.deltaY > 0 ? -0.08 : 0.08), 0.6, 2.5);
       stageRef?.current?.style.setProperty("--zoom", String(next));
       if (typeof setZoom === "function") setZoom(next);
     };
-    
     host.addEventListener("wheel", onWheel, { passive: false });
     return () => host.removeEventListener("wheel", onWheel);
   }, [stageRef, setZoom, textEditing]);
@@ -1176,7 +1150,6 @@ const addImageFromFile = (file, mode) => {
         zIndex: Z_CANVAS,
         overflow: "hidden",
         pointerEvents: editing ? "auto" : "none",
-        // 🔧 CAMBIO IMPORTANTE: Permitir scroll vertical siempre
         touchAction: editing ? "pan-y" : "auto",
         overscrollBehavior: "contain"
       }}
@@ -1192,7 +1165,6 @@ const addImageFromFile = (file, mode) => {
           height: "100%",
           display: "block",
           background: "transparent",
-          // 🔧 touch-action se maneja dinámicamente en el código
           touchAction: "inherit"
         }}
       />
@@ -1545,8 +1517,8 @@ const addImageFromFile = (file, mode) => {
   onPointerDown={(e) => e.stopPropagation()}
 />
 </div>
-  ); 
-};
+    ); 
+  };
 
   return (
     <>
