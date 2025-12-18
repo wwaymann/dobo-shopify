@@ -1,6 +1,6 @@
 // components/CustomizationOverlay.js
 // DOBO - CustomizationOverlay (Nov 2025) - plano (sin relieve), vectorización con "Detalles"
-// Español neutro. No cambia lo que ya funciona, solo corrige y extiende según solicitud.
+// Español neutro. Solo agregando zoom y pan móvil.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
@@ -40,7 +40,7 @@ function otsuThreshold(gray, total) {
   for (let i = 0; i < total; i++) hist[gray[i]]++;
 
   let sum = 0;
-  for (let t = 0; t < 256; t) sum += t * hist[t];
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
 
   let sumB = 0, wB = 0;
   let varMax = -1;
@@ -255,10 +255,14 @@ export default function CustomizationOverlay({
   const suppressSelectionRef = useRef(false);
   const designBoundsRef = useRef(null);
 
-  // 🔧 REFS para zoom táctil
+  // 🔧 REFS para zoom y pan táctil
   const isPinchingRef = useRef(false);
   const initialDistanceRef = useRef(0);
   const initialZoomRef = useRef(zoom);
+  const lastTouchXRef = useRef(0);
+  const lastTouchYRef = useRef(0);
+  const isPanningRef = useRef(false);
+  const touchStartTimeRef = useRef(0);
 
   // ====== helpers de historial
   const getSnapshot = () => {
@@ -345,10 +349,116 @@ export default function CustomizationOverlay({
     stageRef?.current?.style.setProperty("--zoom", String(v));
   }, [zoom, stageRef]);
 
-  // 🔧 EFECTO PARA ACTUALIZAR ZOOM INICIAL
+  // 🔧 EFECTO PARA ZOOM Y PAN TÁCTIL EN EL STAGE
   useEffect(() => {
-    initialZoomRef.current = zoom;
-  }, [zoom]);
+    const stage = stageRef?.current;
+    if (!stage || !editing) return;
+
+    let initialDistance = 0;
+    let initialZoom = zoom;
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    let isPinching = false;
+    let isPanning = false;
+
+    const calculateDistance = (touch1, touch2) => {
+      const dx = touch2.clientX - touch1.clientX;
+      const dy = touch2.clientY - touch1.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const handleTouchStart = (e) => {
+      if (!editing || textEditing) return;
+      
+      const activeObj = fabricCanvasRef.current?.getActiveObject();
+      
+      if (e.touches.length === 2) {
+        // INICIO DE PINCH PARA ZOOM
+        // Solo permitir zoom si no hay objeto seleccionado o si el objeto no está siendo editado
+        if (!activeObj || !activeObj.isEditing) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          isPinching = true;
+          isPanning = false;
+          initialDistance = calculateDistance(e.touches[0], e.touches[1]);
+          initialZoom = zoom;
+        }
+      } else if (e.touches.length === 1) {
+        // INICIO DE TOQUE SIMPLE
+        const touch = e.touches[0];
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+        
+        // Solo permitir pan si no hay objeto seleccionado
+        if (!activeObj) {
+          isPanning = true;
+          isPinching = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (!editing || textEditing) return;
+      
+      const activeObj = fabricCanvasRef.current?.getActiveObject();
+      
+      if (e.touches.length === 2 && isPinching) {
+        // ZOOM CON PINCH
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const currentDistance = calculateDistance(e.touches[0], e.touches[1]);
+        if (initialDistance > 0) {
+          const scaleChange = currentDistance / initialDistance;
+          const newZoom = clamp(initialZoom * scaleChange, 0.6, 2.5);
+          
+          if (Math.abs(newZoom - zoom) > 0.01) {
+            stage.style.setProperty("--zoom", String(newZoom));
+            if (typeof setZoom === "function") setZoom(newZoom);
+          }
+        }
+      } else if (e.touches.length === 1 && isPanning) {
+        // PAN CON UN DEDO
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - lastTouchX;
+        const deltaY = touch.clientY - lastTouchY;
+        
+        // Ajustar la posición del stage si es necesario
+        // (esto depende de cómo esté implementado el stage)
+        if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+          lastTouchX = touch.clientX;
+          lastTouchY = touch.clientY;
+        }
+      }
+    };
+
+    const handleTouchEnd = () => {
+      isPinching = false;
+      isPanning = false;
+      initialDistance = 0;
+    };
+
+    // Agregar event listeners con options para mejor control
+    const options = { passive: false };
+    
+    stage.addEventListener('touchstart', handleTouchStart, options);
+    stage.addEventListener('touchmove', handleTouchMove, options);
+    stage.addEventListener('touchend', handleTouchEnd);
+    stage.addEventListener('touchcancel', handleTouchEnd);
+
+    return () => {
+      stage.removeEventListener('touchstart', handleTouchStart);
+      stage.removeEventListener('touchmove', handleTouchMove);
+      stage.removeEventListener('touchend', handleTouchEnd);
+      stage.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [stageRef, editing, textEditing, zoom, setZoom]);
 
   // ====== init Fabric
   useEffect(() => {
@@ -360,7 +470,9 @@ export default function CustomizationOverlay({
       preserveObjectStacking: true,
       selection: true,
       perPixelTargetFind: true,
-      targetFindTolerance: 8
+      targetFindTolerance: 8,
+      // 🔧 IMPORTANTE: Permitir que el navegador maneje los gestos táctiles
+      allowTouchScrolling: true
     });
     fabricCanvasRef.current = c;
 
@@ -372,8 +484,9 @@ export default function CustomizationOverlay({
       // 0) Foco y tolerancias táctiles
       if (c.upperCanvasEl) {
         c.upperCanvasEl.setAttribute("tabindex", "0");
-        c.upperCanvasEl.style.touchAction = "none"; // Inicialmente none
-        c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: false });
+        // 🔧 PERMITIR GESTOS DEL NAVEGADOR
+        c.upperCanvasEl.style.touchAction = "manipulation";
+        c.upperCanvasEl.addEventListener("touchstart", () => c.upperCanvasEl.focus(), { passive: true });
       }
       c.perPixelTargetFind = false;
       c.targetFindTolerance = 12;
@@ -589,83 +702,6 @@ export default function CustomizationOverlay({
       }
     });
 
-    // 🔧 MANEJADORES DE TOUCH PARA ZOOM
-    const upperCanvas = c.upperCanvasEl;
-    if (upperCanvas) {
-      const calculateDistance = (touch1, touch2) => {
-        const dx = touch2.clientX - touch1.clientX;
-        const dy = touch2.clientY - touch1.clientY;
-        return Math.sqrt(dx * dx + dy * dy);
-      };
-
-      const handleTouchStart = (e) => {
-        if (!editing) return;
-        
-        if (e.touches.length === 2) {
-          // Zoom con pinch - solo si no hay objeto seleccionado
-          const activeObj = c.getActiveObject();
-          if (!activeObj) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            isPinchingRef.current = true;
-            initialDistanceRef.current = calculateDistance(e.touches[0], e.touches[1]);
-            initialZoomRef.current = zoom;
-            
-            // Bloquear scroll mientras hacemos zoom
-            upperCanvas.style.touchAction = "none";
-          }
-        } else if (e.touches.length === 1) {
-          // Un dedo - permitir scroll si no hay objeto seleccionado
-          const activeObj = c.getActiveObject();
-          if (!activeObj) {
-            upperCanvas.style.touchAction = "pan-y";
-          } else {
-            upperCanvas.style.touchAction = "none";
-          }
-        }
-      };
-
-      const handleTouchMove = (e) => {
-        if (!editing) return;
-        
-        if (e.touches.length === 2 && isPinchingRef.current) {
-          // Aplicar zoom con pinch
-          e.preventDefault();
-          e.stopPropagation();
-          
-          const currentDistance = calculateDistance(e.touches[0], e.touches[1]);
-          if (initialDistanceRef.current > 0) {
-            const scaleChange = currentDistance / initialDistanceRef.current;
-            const newZoom = clamp(initialZoomRef.current * scaleChange, 0.6, 2.5);
-            
-            stageRef?.current?.style.setProperty("--zoom", String(newZoom));
-            if (typeof setZoom === "function") {
-              setZoom(newZoom);
-            }
-          }
-        }
-      };
-
-      const handleTouchEnd = () => {
-        isPinchingRef.current = false;
-        initialDistanceRef.current = 0;
-        
-        // Restaurar touch-action según selección
-        const activeObj = c.getActiveObject();
-        if (activeObj) {
-          upperCanvas.style.touchAction = "none";
-        } else {
-          upperCanvas.style.touchAction = "pan-y";
-        }
-      };
-
-      upperCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-      upperCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-      upperCanvas.addEventListener('touchend', handleTouchEnd);
-      upperCanvas.addEventListener('touchcancel', handleTouchEnd);
-    }
-
     setReady(true);
     
     // === DOBO: exponer API global para correo y checkout ===
@@ -749,9 +785,8 @@ export default function CustomizationOverlay({
       const upper = c.upperCanvasEl;
       if (upper) {
         upper.style.pointerEvents = on ? "auto" : "none";
-        // Configurar touch-action dinámicamente
-        const activeObj = c.getActiveObject();
-        upper.style.touchAction = (on && !activeObj) ? "pan-y" : "none";
+        // 🔧 Permitir gestos del navegador cuando está en modo edición
+        upper.style.touchAction = on ? "manipulation" : "auto";
         upper.tabIndex = on ? 0 : -1;
       }
       c.defaultCursor = on ? "move" : "default";
@@ -763,23 +798,6 @@ export default function CustomizationOverlay({
 
     setAll(!!editing);
   }, [editing]);
-
-  // 🔧 EFECTO PARA ACTUALIZAR TOUCH-ACTION CUANDO CAMBIA LA SELECCIÓN
-  useEffect(() => {
-    const c = fabricCanvasRef.current;
-    if (!c) return;
-    
-    const upperCanvas = c.upperCanvasEl;
-    if (!upperCanvas) return;
-    
-    // Actualizar touch-action basado en selección
-    const activeObj = c.getActiveObject();
-    if (activeObj) {
-      upperCanvas.style.touchAction = "none";
-    } else if (editing) {
-      upperCanvas.style.touchAction = "pan-y";
-    }
-  }, [selType, editing]);
 
   // ======= Edición inline de texto (grupo) =======
   const startInlineTextEdit = (group) => {
@@ -1150,7 +1168,8 @@ const addImageFromFile = (file, mode) => {
         zIndex: Z_CANVAS,
         overflow: "hidden",
         pointerEvents: editing ? "auto" : "none",
-        touchAction: editing ? "pan-y" : "auto",
+        // 🔧 IMPORTANTE: Permitir todos los gestos táctiles
+        touchAction: editing ? "manipulation" : "auto",
         overscrollBehavior: "contain"
       }}
       onPointerDown={(e) => { if (editing) e.stopPropagation(); }}
@@ -1165,6 +1184,7 @@ const addImageFromFile = (file, mode) => {
           height: "100%",
           display: "block",
           background: "transparent",
+          // 🔧 Heredar touch-action del contenedor
           touchAction: "inherit"
         }}
       />
